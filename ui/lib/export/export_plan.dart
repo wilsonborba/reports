@@ -119,7 +119,8 @@ class ExportPlan {
               filters: CardFilterState.instance.get(project, report, s.key),
             ),
       ];
-      sections.add(ExportSection(sectionName(i), cards));
+      // A section whose cards are all gated for this viewer has nothing to export.
+      if (cards.isNotEmpty) sections.add(ExportSection(sectionName(i), cards));
     }
     return ExportPlan(
       project: project,
