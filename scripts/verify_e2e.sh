@@ -99,7 +99,7 @@ expect "stats" GET "/stats?lang=en" 200
 expect "openapi" GET "/openapi.json" 200
 
 # The first public report with a public card and a gated card, over all projects.
-REPORT_PAIR=""; PUBLIC_CARD=""; GATED_CARD=""; PUBLIC_REPORTS=()
+REPORT_PAIR=""; PUBLIC_CARD=""; GATED_CARD=""; PUBLIC_REPORTS=(); EXPORTABLE=()
 for p in $PROJECTS; do
   expect "guest report list of $p" GET "/projects/$p/reports?lang=en&page_size=100" 200
   for r in $(json "' '.join(x['slug'] for x in d.get('items', []) if x.get('can_view', True))"); do
@@ -108,6 +108,7 @@ for p in $PROJECTS; do
     [[ "$STATUS" == 200 ]] || { record FAIL "showcase $p/$r -> $STATUS"; continue; }
     leak="$(json "[c['dataset_id'] for c in d.get('cards', []) if not c.get('can_view') and any(c.get(k) is not None for k in ('rows', 'descriptor', 'total_rows'))]")"
     [[ "$leak" == "[]" ]] && record ok "showcase $p/$r: gated cards carry no data" || record FAIL "showcase $p/$r: gated cards with data $leak"
+    json "any(c.get('can_view') for c in d.get('cards', []))" | grep -q True && EXPORTABLE+=("$p/$r")
     if [[ -z "$REPORT_PAIR" ]]; then
       pub="$(json "next((c['dataset_id'] for c in d.get('cards', []) if c.get('can_view')), '')")"
       gat="$(json "next((c['dataset_id'] for c in d.get('cards', []) if not c.get('can_view')), '')")"
@@ -140,11 +141,11 @@ expect "fixture delete without a key" DELETE "/admin/fixtures/sample-v1-cortex" 
 
 echo "== Redis cache"
 if command -v redis-cli >/dev/null && [[ -n "${REDIS_URL:-}" ]]; then
-  before="$(redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | wc -l)"
+  before="$(redis-cli --no-auth-warning -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | wc -l)"
   [[ -n "$REPORT_PAIR" ]] && fetch GET "$GW/projects/${REPORT_PAIR%%/*}/showcase/${REPORT_PAIR#*/}/cards/$PUBLIC_CARD?lang=en&limit=3"
-  after="$(redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | wc -l)"
+  after="$(redis-cli --no-auth-warning -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | wc -l)"
   if [[ "$after" -gt 0 ]]; then record ok "Redis keys under $REDIS_NAMESPACE: $before before, $after after a public read"; else record FAIL "no Redis key under $REDIS_NAMESPACE"; fi
-  ttl_missing="$(redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | head -50 | while read -r k; do t="$(redis-cli -u "$REDIS_URL" ttl "$k")"; [[ "$t" == -1 ]] && echo "$k"; done | wc -l)"
+  ttl_missing="$(redis-cli --no-auth-warning -u "$REDIS_URL" --scan --pattern "${REDIS_NAMESPACE}*" 2>/dev/null | head -50 | while read -r k; do t="$(redis-cli --no-auth-warning -u "$REDIS_URL" ttl "$k")"; [[ "$t" == -1 ]] && echo "$k"; done | wc -l)"
   [[ "$ttl_missing" == 0 ]] && record ok "every sampled Redis key has a TTL" || record FAIL "$ttl_missing sampled Redis keys have no TTL"
 else
   record FAIL "Redis check skipped: redis-cli or REDIS_URL missing"
@@ -153,7 +154,8 @@ fi
 if [[ "$SKIP_EXPORTS" == 0 ]]; then
   echo "== Export files (browser code, guest showcase)"
   rm -rf "$ROOT_DIR/ui/build/real_exports"
-  pairs="$(printf '%s\n' "${PUBLIC_REPORTS[@]:0:2}" | paste -sd, -)"
+  # Reports with at least one card a guest can read (a fully gated report exports no card).
+  pairs="$(printf '%s\n' "${EXPORTABLE[@]:0:2}" | paste -sd, -)"
   if (cd "$ROOT_DIR/ui" && REPORT_API="$GW" REPORTS="$pairs" flutter test test/real_api_export_test.dart >"$OUT/exports.log" 2>&1); then
     if python3 "$ROOT_DIR/scripts/e2e/check_exports.py" "$ROOT_DIR/ui/build/real_exports" >"$OUT/exports_check.txt" 2>&1; then
       record ok "exports of $pairs: $(grep -c '^\[ok\]' "$OUT/exports_check.txt") files valid (build/e2e/exports_check.txt)"
