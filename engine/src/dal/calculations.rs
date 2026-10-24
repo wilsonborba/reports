@@ -6,7 +6,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use super::sql::{flag_col, json_col, opt_col, Db};
+use super::sql::{flag_col, json_col, opt, opt_col, opt_num, Db};
 use crate::core::error::ReportError;
 use crate::domain::datasets::spec::DatasetSpec;
 
@@ -114,10 +114,12 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
     let sql = format!(
         "INSERT INTO calculation_versions (project_slug, calculation_id, version, status, input_schema, \
          input_schema_version, inputs, definition, needs_review) \
-         VALUES ($1, $2, $3, 'draft', $4, $5, {}, {}, $8) \
+         VALUES ($1, $2, $3, 'draft', {}, {}, {}, {}, $8) \
          ON CONFLICT (project_slug, calculation_id, version) DO UPDATE SET input_schema = EXCLUDED.input_schema, \
          input_schema_version = EXCLUDED.input_schema_version, inputs = EXCLUDED.inputs, \
          definition = EXCLUDED.definition, needs_review = EXCLUDED.needs_review",
+        db.opt_in(4),
+        db.opt_num_in(5),
         db.json_in(6),
         db.json_in(7)
     );
@@ -125,8 +127,8 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
         .bind(&c.project)
         .bind(&c.calculation_id)
         .bind(c.version)
-        .bind(c.input_schema.clone())
-        .bind(c.input_schema_version)
+        .bind(opt(&c.input_schema))
+        .bind(opt_num(c.input_schema_version))
         .bind(to_json(&c.inputs)?)
         .bind(to_json(&c.definition)?)
         .bind(c.needs_review)
@@ -139,14 +141,16 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
 pub async fn publish(db: &Db, c: &CalculationVersion) -> Result<bool, ReportError> {
     let sql = format!(
         "UPDATE calculation_versions SET status = 'published', published_at = {}, needs_review = FALSE, \
-         input_schema = $1, input_schema_version = $2, inputs = {} \
+         input_schema = {}, input_schema_version = {}, inputs = {} \
          WHERE project_slug = $4 AND calculation_id = $5 AND version = $6 AND status = 'draft'",
         db.now(),
+        db.opt_in(1),
+        db.opt_num_in(2),
         db.json_in(3)
     );
     let done = sqlx::query(&sql)
-        .bind(c.input_schema.clone())
-        .bind(c.input_schema_version)
+        .bind(opt(&c.input_schema))
+        .bind(opt_num(c.input_schema_version))
         .bind(to_json(&c.inputs)?)
         .bind(&c.project)
         .bind(&c.calculation_id)
