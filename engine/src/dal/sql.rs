@@ -109,6 +109,28 @@ impl Db {
         }
     }
 
+    /// An optional text input. The sqlx 0.7 `Any` driver sends a `None` to PostgreSQL as
+    /// an int4 NULL and caches the prepared statement with that type, so a later text
+    /// value of the same statement fails ("incorrect binary data format"). Optional
+    /// values are therefore bound as plain values ([`opt`], [`opt_num`]) and become NULL
+    /// again here: `$n` holds '' for none.
+    pub fn opt_in(&self, n: usize) -> String {
+        format!("NULLIF(${n}, '')")
+    }
+
+    /// An optional number input: `$n` holds 0 for none (see [`Db::opt_in`]).
+    pub fn opt_num_in(&self, n: usize) -> String {
+        format!("NULLIF(${n}, 0)")
+    }
+
+    /// An optional UUID input: `$n` holds '' for none (see [`Db::opt_in`]).
+    pub fn opt_uuid_in(&self, n: usize) -> String {
+        match self.dialect {
+            Dialect::Postgres => format!("CAST(NULLIF(${n}, '') AS UUID)"),
+            Dialect::Sqlite => format!("NULLIF(${n}, '')"),
+        }
+    }
+
     /// A JSON, UUID or time column read as text.
     pub fn text(&self, column: &str) -> String {
         format!("CAST({column} AS TEXT)")
@@ -199,6 +221,16 @@ pub fn json_col<T: serde::de::DeserializeOwned + Default>(row: &AnyRow, column: 
         return Ok(T::default());
     }
     serde_json::from_str(&text).map_err(|e| ReportError::Database(format!("column {column} is not valid JSON: {e}")))
+}
+
+/// Bind value of an optional text: '' for None (read it with [`Db::opt_in`]).
+pub fn opt(v: &Option<String>) -> String {
+    v.clone().unwrap_or_default()
+}
+
+/// Bind value of an optional number: 0 for None (read it with [`Db::opt_num_in`]).
+pub fn opt_num(v: Option<i64>) -> i64 {
+    v.unwrap_or(0)
 }
 
 /// Reads a column selected with [`Db::opt_text`]: '' is None.

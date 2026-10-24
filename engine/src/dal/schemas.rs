@@ -6,7 +6,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use super::sql::{flag_col, opt_col, Db};
+use super::sql::{flag_col, opt, opt_col, Db};
 use crate::core::error::ReportError;
 use crate::domain::guardrail::SchemaField;
 
@@ -131,37 +131,41 @@ pub async fn save_draft(db: &Db, s: &SchemaVersion) -> Result<(), ReportError> {
         }
     }
     let mut tx = db.pool.begin().await?;
-    sqlx::query(
+    let insert_version = format!(
         "INSERT INTO schema_versions (project_slug, schema_name, version, status, description) \
-         VALUES ($1, $2, $3, 'draft', $4) \
+         VALUES ($1, $2, $3, 'draft', {}) \
          ON CONFLICT (project_slug, schema_name, version) DO UPDATE SET description = EXCLUDED.description",
-    )
-    .bind(&s.project)
-    .bind(&s.schema_name)
-    .bind(s.version)
-    .bind(&s.description)
-    .execute(&mut *tx)
-    .await?;
+        db.opt_in(4)
+    );
+    sqlx::query(&insert_version)
+        .bind(&s.project)
+        .bind(&s.schema_name)
+        .bind(s.version)
+        .bind(opt(&s.description))
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM schema_fields WHERE project_slug = $1 AND schema_name = $2 AND version = $3")
         .bind(&s.project)
         .bind(&s.schema_name)
         .bind(s.version)
         .execute(&mut *tx)
         .await?;
+    let insert_field = format!(
+        "INSERT INTO schema_fields (project_slug, schema_name, version, field_path, field_type, is_required, description) \
+         VALUES ($1, $2, $3, $4, $5, $6, {})",
+        db.opt_in(7)
+    );
     for f in &s.fields {
-        sqlx::query(
-            "INSERT INTO schema_fields (project_slug, schema_name, version, field_path, field_type, is_required, description) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        )
-        .bind(&s.project)
-        .bind(&s.schema_name)
-        .bind(s.version)
-        .bind(&f.path)
-        .bind(&f.field_type)
-        .bind(f.required)
-        .bind(&f.description)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query(&insert_field)
+            .bind(&s.project)
+            .bind(&s.schema_name)
+            .bind(s.version)
+            .bind(&f.path)
+            .bind(&f.field_type)
+            .bind(f.required)
+            .bind(opt(&f.description))
+            .execute(&mut *tx)
+            .await?;
     }
     tx.commit().await?;
     Ok(())

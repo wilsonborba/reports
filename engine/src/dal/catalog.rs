@@ -6,7 +6,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use super::sql::{flag_col, json_col, opt_col, Db};
+use super::sql::{flag_col, json_col, opt, opt_col, Db};
 use crate::core::error::ReportError;
 use crate::domain::datasets::spec::{DataTier, DatasetSpec, I18nText};
 use crate::domain::themes::ProjectTheme;
@@ -183,7 +183,7 @@ pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportErro
     let sql = format!(
         "INSERT INTO catalog_projects (slug, name, tagline, description, theme, is_active, website_url, \
          repository_url, sort_order, domain_project_id, updated_at) \
-         VALUES ($1, {}, {}, {}, {}, $6, $7, $8, $9, {}, {now}) \
+         VALUES ($1, {}, {}, {}, {}, $6, {}, {}, $9, {}, {now}) \
          ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, tagline = EXCLUDED.tagline, \
          description = EXCLUDED.description, theme = EXCLUDED.theme, is_active = EXCLUDED.is_active, \
          website_url = EXCLUDED.website_url, repository_url = EXCLUDED.repository_url, \
@@ -192,7 +192,9 @@ pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportErro
         db.json_in(3),
         db.json_in(4),
         db.json_in(5),
-        db.uuid_in(10),
+        db.opt_in(7),
+        db.opt_in(8),
+        db.opt_uuid_in(10),
         now = db.now(),
     );
     let result = sqlx::query(&sql)
@@ -202,10 +204,10 @@ pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportErro
         .bind(to_json(&p.description)?)
         .bind(to_json(&p.theme)?)
         .bind(p.is_active)
-        .bind(p.website_url.clone())
-        .bind(p.repository_url.clone())
+        .bind(opt(&p.website_url))
+        .bind(opt(&p.repository_url))
         .bind(p.sort_order)
-        .bind(p.domain_project_id.clone())
+        .bind(opt(&p.domain_project_id))
         .execute(&db.pool)
         .await;
     match result {
