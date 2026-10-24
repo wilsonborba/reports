@@ -54,10 +54,17 @@ def visibility_plan(module) -> dict:
     return plan
 
 
+def same_fields(mine: list[dict], theirs: list[dict]) -> bool:
+    """True when both lists hold the same fields. The engine returns fields ordered by
+    path, so the order of the lists does not count."""
+    by_path = {f["path"]: f for f in theirs}
+    return len(mine) == len(theirs) and all(f["path"] in by_path and subset(f, by_path[f["path"]]) for f in mine)
+
+
 def ensure_schema(engine: Engine, project: str, schema: dict) -> int:
     existing = engine.get(f"/admin/projects/{project}/schemas")
     for s in existing:
-        if s["schema_name"] == schema["schema_name"] and s["status"] == "published" and subset(schema["fields"], s["fields"]):
+        if s["schema_name"] == schema["schema_name"] and s["status"] == "published" and same_fields(schema["fields"], s["fields"]):
             return s["version"]
     draft = engine.request("POST", f"/projects/{project}/admin/schemas", schema)
     version = draft.get("version", 1)
