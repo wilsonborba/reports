@@ -151,24 +151,34 @@ class _ReportPageViewState extends State<ReportPageView> {
                     style: TextStyle(fontSize: 12.5, color: p.textMuted)),
               ],
               const SizedBox(height: 18),
-              // Card tier filter, when the report mixes tiers (the engine lists them).
-              if (view.tiers.length > 1) ...[
-                TierFilter(
-                  key: const Key('card_tier_filter'),
-                  tiers: view.tiers,
-                  selected: _tier,
-                  onChanged: (t) => setState(() => _tier = t),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (sections.length > 1) ...[
-                SectionPills(
-                  count: sections.length,
-                  selected: index,
-                  names: _names,
-                  onRename: _rename,
-                  onSelect: (i) => context.go('${AppRoutes.report(widget.project, widget.report)}?section=${i + 1}'),
-                ),
+              // Section tabs on the left and, when the report mixes tiers (the engine lists
+              // them), the data filter at the far right of the same row.
+              if (sections.length > 1 || view.tiers.length > 1) ...[
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(
+                    child: sections.length > 1
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: SectionPills(
+                              count: sections.length,
+                              selected: index,
+                              names: _names,
+                              onRename: _rename,
+                              onSelect: (i) => context.go('${AppRoutes.report(widget.project, widget.report)}?section=${i + 1}'),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  if (view.tiers.length > 1) ...[
+                    const SizedBox(width: 16),
+                    TierFilter(
+                      key: const Key('card_tier_filter'),
+                      tiers: view.tiers,
+                      selected: _tier,
+                      onChanged: (t) => setState(() => _tier = t),
+                    ),
+                  ],
+                ]),
                 const SizedBox(height: 18),
               ],
               if (sections.isEmpty)

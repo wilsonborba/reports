@@ -22,6 +22,15 @@ class ThemeRegistry {
 
   static ThemeData theme(String? project, Brightness brightness) => palette(project, brightness).toTheme(brightness);
 
+  /// Brand color of a project (marks and rails, never text on its own): the first chart
+  /// color of its own theme, or one asodya.com color per project from the Reports palette,
+  /// like the cards of asodya.com (lime, purple, orange, cyan, ...).
+  static Color brandColor(String slug, Brightness brightness) {
+    final mode = brightness == Brightness.dark ? 'dark' : 'light';
+    if (CatalogBrands.instance.project(slug)?.theme[mode] != null) return palette(slug, brightness).seriesAt(0);
+    return ReportsTheme.palette(brightness).seriesAt(CatalogBrands.instance.position(slug) % ReportPalette.slots);
+  }
+
   /// Logo or icon of a project for the mode: the `_dark` role first in dark mode.
   static AssetRef? asset(String? project, String role, Brightness brightness) {
     final assets = CatalogBrands.instance.project(project)?.assets ?? const {};

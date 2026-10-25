@@ -86,9 +86,14 @@ class _ReportListViewState extends State<ReportListView> {
                 leading: BrandMark(project: widget.project, size: 48),
                 title: name,
                 subtitle: project?.description,
-                actions: [
+                subtitleLines: 2,
+              ),
+              const SizedBox(height: 20),
+              // Toolbar (Carbon): search, the data filter and the view switch on one row.
+              Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   SizedBox(
-                    width: 220,
+                    width: 320,
+                    height: TierFilter.height,
                     child: TextField(
                       key: const Key('report_search'),
                       decoration: InputDecoration(
@@ -106,24 +111,21 @@ class _ReportListViewState extends State<ReportListView> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  TierFilter(
+                    key: const Key('report_tier_filter'),
+                    tiers: TierFilter.all,
+                    selected: _tier,
+                    onChanged: (t) => setState(() {
+                      _tier = t;
+                      _page = 1;
+                    }),
+                  ),
                   ViewModeSwitch(mode: _mode, onChanged: (m) {
                     setState(() => _mode = m);
                     CatalogViewModeStore.save(m);
                   }),
-                ],
-              ),
-              const SizedBox(height: 16),
-              TierFilter(
-                key: const Key('report_tier_filter'),
-                tiers: TierFilter.all,
-                selected: _tier,
-                onChanged: (t) => setState(() {
-                  _tier = t;
-                  _page = 1;
-                }),
-              ),
-              const SizedBox(height: 18),
+              ]),
+              const SizedBox(height: 20),
               FutureBuilder<Paged<ReportSummary>>(
                 future: _reports,
                 builder: (context, snap) {

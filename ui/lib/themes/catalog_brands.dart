@@ -10,6 +10,15 @@ class CatalogBrands extends ChangeNotifier {
 
   ProjectSummary? project(String? slug) => slug == null ? null : _projects[slug.toLowerCase()];
 
+  /// Stable position of a project for its brand color: its place among the loaded projects
+  /// in alphabetical order (independent of the load order); unknown slugs hash.
+  int position(String slug) {
+    final key = slug.toLowerCase();
+    final sorted = _projects.keys.toList()..sort();
+    final i = sorted.indexOf(key);
+    return i >= 0 ? i : key.codeUnits.fold<int>(0, (a, c) => a + c);
+  }
+
   /// Stores the projects; notifies only when something changed.
   void update(Iterable<ProjectSummary> projects) {
     var changed = false;

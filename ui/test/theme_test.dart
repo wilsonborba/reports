@@ -20,9 +20,9 @@ void main() {
       expect(dark.onAccent, const Color(0xFF0B0C10));
       expect(light.accent, const Color(0xFF7C3AED), reason: 'purple with white in the light theme');
       expect(light.onAccent, const Color(0xFFFFFFFF));
-      // The first chart color is the main brand color of the mode.
-      expect(dark.series.first, dark.accent);
-      expect(light.series.first, light.accent);
+      // Charts do not repeat the brand colors of the controls.
+      expect(light.series.take(2), isNot(contains(light.accent)));
+      expect(dark.series.take(2), isNot(contains(dark.accent)));
       expect(dark.canvas, const Color(0xFF0B0C10), reason: 'asodya.com dark background');
       expect(dark.positive, isNot(dark.negative));
     });

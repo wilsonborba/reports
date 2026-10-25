@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import '../../models/report.dart';
 import '../../themes/report_palette.dart';
+import '../catalog/catalog_widgets.dart';
 
 /// Card actions that the section gives to a card. A null callback hides the control.
 class CardControls {
@@ -177,12 +178,15 @@ class _DatasetCardState extends State<DatasetCard> {
             Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 4, c.minimized ? 8 : 4),
               child: Row(children: [
-                Expanded(
+                Flexible(
                   child: Text(d.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: p.textPrimary)),
                 ),
+                // Who can open this chart: any signed-in account or the admin (none when public).
+                if (d.visibility != 'public') ...[const SizedBox(width: 8), AccessTag(visibility: d.visibility)],
+                const Spacer(),
                 if (c.minimized)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),

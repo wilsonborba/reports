@@ -104,7 +104,8 @@ class _BarsPainter extends CustomPainter {
     _grid(canvas, size, p);
     final gap = 6.0;
     final w = (size.width - gap * (values.length - 1)) / values.length;
-    final paint = Paint()..color = p.seriesAt(0);
+    // The second brand color: the overview buttons already carry the first one.
+    final paint = Paint()..color = p.seriesAt(1);
     for (var i = 0; i < values.length; i++) {
       final local = ((t * 1.6) - i * 0.04).clamp(0.0, 1.0);
       final h = size.height * values[i] * Curves.easeOutCubic.transform(local);

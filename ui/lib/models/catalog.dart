@@ -236,6 +236,10 @@ class ReportSummary {
   /// False for a placeholder report that this viewer cannot open.
   final bool canView;
 
+  /// Visible cards for any signed-in account, and for the admin or a grant (engine counts).
+  final int signedInCards;
+  final int restrictedCards;
+
   const ReportSummary({
     required this.slug,
     required this.project,
@@ -248,6 +252,8 @@ class ReportSummary {
     this.dataTier = 'sample',
     this.visibility = 'public',
     this.canView = true,
+    this.signedInCards = 0,
+    this.restrictedCards = 0,
   });
 
   factory ReportSummary.fromJson(Map<String, dynamic> j) => ReportSummary(
@@ -262,6 +268,8 @@ class ReportSummary {
         dataTier: (j['data_tier'] ?? 'sample') as String,
         visibility: (j['visibility'] ?? 'public') as String,
         canView: (j['can_view'] as bool?) ?? true,
+        signedInCards: (j['signed_in_cards'] as num?)?.toInt() ?? 0,
+        restrictedCards: (j['restricted_cards'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -276,6 +284,8 @@ class ReportSummary {
         'data_tier': dataTier,
         'visibility': visibility,
         'can_view': canView,
+        'signed_in_cards': signedInCards,
+        'restricted_cards': restrictedCards,
       };
 }
 

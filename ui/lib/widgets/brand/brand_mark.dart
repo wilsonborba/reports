@@ -19,7 +19,8 @@ class BrandMark extends StatelessWidget {
       builder: (context, _) {
         final p = context.palette;
         final asset = ThemeRegistry.mark(project, Theme.of(context).brightness);
-        if (asset == null) return _initial(p);
+        final brand = ThemeRegistry.brandColor(project ?? '', Theme.of(context).brightness);
+        if (asset == null) return _initial(p, brand);
         return SizedBox(
           width: size,
           height: size,
@@ -30,14 +31,15 @@ class BrandMark extends StatelessWidget {
             // A plain browser image element: no decode work in the app.
             webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
             semanticLabel: ThemeRegistry.brandTitle(project),
-            errorBuilder: (_, _, _) => _initial(p),
+            errorBuilder: (_, _, _) => _initial(p, brand),
           ),
         );
       },
     );
   }
 
-  Widget _initial(ReportPalette p) {
+  /// Initial on a tint of the project brand color; the letter keeps the text color.
+  Widget _initial(ReportPalette p, Color brand) {
     final name = ThemeRegistry.brandTitle(project);
     return Container(
       key: const Key('brand_initial'),
@@ -45,13 +47,13 @@ class BrandMark extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: p.accent.withValues(alpha: 0.14),
+        color: brand.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(size * 0.25),
-        border: Border.all(color: p.accent.withValues(alpha: 0.35)),
+        border: Border.all(color: brand),
       ),
       child: Text(
         name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-        style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w700, color: p.accent),
+        style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w700, color: p.textPrimary),
       ),
     );
   }

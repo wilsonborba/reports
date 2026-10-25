@@ -203,6 +203,7 @@ pub async fn report_summaries(
         if tier.is_some_and(|t| t != data_tier) {
             continue;
         }
+        let count = |v: Visibility| datasets.iter().filter(|d| effective(&r, d) == v).count();
         out.push(ReportSummary {
             slug: r.slug.clone(),
             project: r.project.clone(),
@@ -215,6 +216,8 @@ pub async fn report_summaries(
             data_tier,
             visibility: Visibility::parse(&r.visibility),
             can_view: access == Access::Readable,
+            signed_in_cards: count(Visibility::SignedIn),
+            restricted_cards: count(Visibility::Restricted),
         });
     }
     Ok(out)

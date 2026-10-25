@@ -27,8 +27,9 @@ class DataTierBadge extends StatelessWidget {
   }
 }
 
-/// Tier filter of a list or a report: All, then the given tiers (real, hybrid, sample).
-/// The engine filters; this only picks the value it sends.
+/// Data tier filter (Carbon inline dropdown): the label "Data" on the left, then the
+/// current value and a chevron, 40 px high like the search field next to it. The engine
+/// filters; this only picks the value it sends.
 class TierFilter extends StatelessWidget {
   final List<String> tiers;
   final String? selected;
@@ -38,34 +39,82 @@ class TierFilter extends StatelessWidget {
 
   static const all = ['real', 'hybrid', 'sample'];
 
+  static const double height = 40;
+
+  String _label(BuildContext context, String? tier) => tier == null ? context.tr('tier_all') : context.tr('data_tier_$tier');
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    Widget chip(String? tier) {
-      final on = tier == selected;
-      final label = tier == null ? context.tr('tier_all') : context.tr('data_tier_$tier');
-      return ChoiceChip(
-        key: Key('tier_filter_${tier ?? 'all'}'),
-        label: Text(label),
-        selected: on,
-        showCheckmark: false,
-        onSelected: (_) => onChanged(tier),
-        labelStyle: TextStyle(fontSize: 12.5, fontWeight: on ? FontWeight.w600 : FontWeight.w400, color: on ? p.onAccent : p.textPrimary),
-        selectedColor: p.accent,
-        backgroundColor: p.surface,
-        side: BorderSide(color: on ? p.accent : p.border),
-        visualDensity: VisualDensity.compact,
-      );
-    }
-
     return Semantics(
       container: true,
       label: context.tr('tier_filter'),
-      child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        Text(context.tr('tier_filter'), style: TextStyle(fontSize: 12.5, color: p.textMuted)),
-        chip(null),
-        for (final t in tiers) chip(t),
-      ]),
+      child: PopupMenuButton<String>(
+        key: const Key('tier_filter_button'),
+        tooltip: context.tr('tier_filter'),
+        position: PopupMenuPosition.under,
+        onSelected: (v) => onChanged(v == 'all' ? null : v),
+        itemBuilder: (context) => [
+          for (final t in [null, ...tiers])
+            CheckedPopupMenuItem<String>(
+              key: Key('tier_filter_${t ?? 'all'}'),
+              value: t ?? 'all',
+              checked: t == selected,
+              child: Text(_label(context, t)),
+            ),
+        ],
+        child: Container(
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: selected == null ? p.border : p.accent),
+            borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(context.tr('tier_filter'), style: TextStyle(fontSize: 13, color: p.textMuted)),
+            const SizedBox(width: 8),
+            Text(_label(context, selected), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.textPrimary)),
+            const SizedBox(width: 6),
+            Icon(Icons.expand_more_rounded, size: 18, color: p.textMuted),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Read-only access tag (Carbon tag): "Members" for charts that any signed-in account
+/// opens, "Admin" for charts of the project admin or a grant. Public items have none.
+class AccessTag extends StatelessWidget {
+  /// Effective visibility from the engine: signed_in or restricted.
+  final String visibility;
+
+  /// Number shown before the label ("3 member charts"); null shows the label alone.
+  final int? count;
+
+  const AccessTag({super.key, required this.visibility, this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    if (visibility != 'signed_in' && visibility != 'restricted') return const SizedBox.shrink();
+    final p = context.palette;
+    final admin = visibility == 'restricted';
+    final color = admin ? p.caution : p.highlight;
+    final text = count == null
+        ? context.tr(admin ? 'access_tag_admin' : 'access_tag_members')
+        : context.tr(admin ? 'access_tag_admin_count' : 'access_tag_members_count', {'n': count!});
+    return Tooltip(
+      message: context.tr(admin ? 'access_tag_admin_hint' : 'access_tag_members_hint'),
+      child: Container(
+        key: Key('access_tag_$visibility'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(12)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(admin ? Icons.admin_panel_settings_outlined : Icons.group_outlined, size: 13, color: p.textPrimary),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: p.textPrimary)),
+        ]),
+      ),
     );
   }
 }
@@ -248,6 +297,13 @@ class ReportCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     final chips = Wrap(spacing: 6, runSpacing: 6, children: [
+      // What opens the report or some of its charts (counts from the engine).
+      if (report.visibility != 'public')
+        AccessTag(visibility: report.visibility)
+      else ...[
+        if (report.signedInCards > 0) AccessTag(visibility: 'signed_in', count: report.signedInCards),
+        if (report.restrictedCards > 0) AccessTag(visibility: 'restricted', count: report.restrictedCards),
+      ],
       if (report.period != null) _Chip(Icons.date_range_rounded, '${_date(report.period!.start)} → ${_date(report.period!.end)}'),
       _Chip(Icons.dataset_outlined, context.tr('dataset_count', {'n': report.datasetCount})),
       DataTierBadge(tier: report.dataTier),

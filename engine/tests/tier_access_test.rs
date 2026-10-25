@@ -97,3 +97,14 @@ async fn card_order_of_the_report_sets_the_card_order_of_both_views() {
     let (_, root) = t.get("/projects/cortex/reports/token-usage", &[("x-uuid", ROOT), ("x-access-level", "1")]).await;
     assert_eq!(ids(&root["datasets"]), ["latency-by-model", "tokens-by-provider", "errors-by-type"]);
 }
+
+#[tokio::test]
+async fn report_lists_count_member_and_admin_cards() {
+    let t = setup().await;
+    let (_, list) = t.get("/projects/cortex/reports", &[]).await;
+    let usage = list["items"].as_array().unwrap().iter().find(|r| r["slug"] == "token-usage").unwrap();
+    assert_eq!(usage["signed_in_cards"], 1);
+    assert_eq!(usage["restricted_cards"], 1);
+    let real = list["items"].as_array().unwrap().iter().find(|r| r["slug"] == "real-only").unwrap();
+    assert_eq!((real["signed_in_cards"].as_u64(), real["restricted_cards"].as_u64()), (Some(0), Some(0)));
+}

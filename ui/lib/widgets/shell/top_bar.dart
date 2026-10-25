@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/session_store.dart';
+import 'session_prompt.dart';
 import '../../l10n/strings.dart';
 import '../../routes.dart';
 import '../../themes/report_palette.dart';
@@ -20,9 +22,9 @@ class PublicTab {
 
 /// Top bar of every page (Carbon UI shell header): the Asodya mark on the left (opens the
 /// public site), the navigation tabs in the middle (Reports is one of them), the language and
-/// theme switches on the right. Narrow screens replace the tabs with a menu button. The
-/// header holds no session buttons: a guest gets the sign in prompt in the report area, and a
-/// signed-in user logs out from the sidebar.
+/// theme switches on the right. Narrow screens replace the tabs with a menu button. Session:
+/// on the public site a signed-in user gets Log out at the right end; in the report area the
+/// sidebar has it. A guest signs in from the overview hero or the report area prompt.
 class TopBar extends StatelessWidget implements PreferredSizeWidget {
   const TopBar({super.key});
 
@@ -84,6 +86,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
         icon: Icon(theme.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, size: 20),
         onPressed: theme.toggle,
       ),
+      if (!path.startsWith(AppRoutes.menu)) const _PublicLogOut(),
     ];
     return Container(
       height: height,
@@ -276,6 +279,27 @@ class _LanguageSwitch extends StatelessWidget {
         decoration: BoxDecoration(border: Border.all(color: p.border), borderRadius: BorderRadius.circular(ReportPalette.controlRadius)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [option('en', 'EN'), option('pt-BR', 'PT'), option('th', 'TH')]),
       ),
+    );
+  }
+}
+
+/// Log out of a signed-in user on the public site (the report area has it in the sidebar).
+/// An icon button with a tooltip: the six tabs leave no room for a label at desktop width.
+class _PublicLogOut extends StatelessWidget {
+  const _PublicLogOut();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SessionStore.instance,
+      builder: (context, _) => SessionStore.instance.hasSession
+          ? IconButton(
+              key: const Key('top_bar_log_out'),
+              tooltip: context.tr('auth_log_out'),
+              icon: const Icon(Icons.logout_rounded, size: 20),
+              onPressed: () => logOut(GoRouter.of(context)),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
