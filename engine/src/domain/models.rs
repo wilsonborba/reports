@@ -56,6 +56,19 @@ pub struct ReportSummary {
     pub can_view: bool,
 }
 
+/// Cards of a report that the caller sees, and what opens the ones it cannot read. The
+/// client shows these numbers as they are (the access rules live in the engine).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AccessSummary {
+    /// Cards in the answer (readable cards and placeholders).
+    pub total: usize,
+    pub readable: usize,
+    /// Placeholders that any session opens: a guest who signs in reads them.
+    pub needs_sign_in: usize,
+    /// Placeholders that need a project admin, the super admin or a grant.
+    pub needs_admin: usize,
+}
+
 /// Report metadata and the descriptors of its datasets.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ReportView {
@@ -67,8 +80,12 @@ pub struct ReportView {
     pub period: Option<ReportPeriod>,
     pub updated_at: String,
     pub language: String,
+    /// Tier of the whole report (all its visible cards, before a `tier` filter).
     pub data_tier: DataTier,
+    /// Tiers of the visible cards, for the card filter (before a `tier` filter).
+    pub tiers: Vec<DataTier>,
     pub visibility: Visibility,
+    pub access: AccessSummary,
     pub datasets: Vec<DatasetDescriptor>,
 }
 

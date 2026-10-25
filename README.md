@@ -75,7 +75,16 @@ curl https://api.asodya.com/apps/reports/v1/catalog
 curl https://api.asodya.com/apps/reports/v1/projects/cortex
 curl https://api.asodya.com/apps/reports/v1/projects/cortex/theme
 curl https://api.asodya.com/apps/reports/v1/projects/cortex/reports
+curl "https://api.asodya.com/apps/reports/v1/projects/cortex/reports?tier=real"
+curl "https://api.asodya.com/apps/reports/v1/projects/cortex/showcase/model-usage?tier=sample"
 ```
+
+Data tiers: `sample` (synthetic), `real`, and `hybrid` (a report whose cards mix tiers).
+`tier` on a report list keeps the reports of that tier; on a report view or showcase it
+keeps the cards of that tier, while `data_tier` and `tiers` still describe every visible
+card. Each report view and showcase also carries `access`: `total`, `readable`,
+`needs_sign_in` (placeholders that any session opens) and `needs_admin` (placeholders that
+need a project admin or a grant), counted for the caller.
 
 Session routes (the gateway checks the `sid` cookie and sends the real `x-uuid`):
 
