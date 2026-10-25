@@ -124,5 +124,5 @@ REPORTS = [
      "tags": ["catalog"], "period_field": "period", "cards": ["commits-per-month", "commits-by-project", "active-projects-per-month"]},
     {"slug": "repository-health", "title": t("Repository Health", "Saúde dos Repositórios", "สุขภาพของรีโพสิทอรี"),
      "description": t("Open issues, stars and contributors per project.", "Issues abertas, estrelas e contribuidores por projeto.", "อิชชูที่เปิดอยู่ ดาว และผู้ร่วมพัฒนาตามโปรเจกต์"),
-     "tags": ["catalog"], "period_field": "period", "cards": ["open-issues-by-project", "stars-per-month", "contributors-by-project"]},
+     "tags": ["catalog"], "period_field": "period", "cards": ["open-issues-by-project", "stars-per-month", "contributors-by-project"], "access": {"cards": {"stars-per-month": "signed_in", "contributors-by-project": "signed_in"}}},
 ]

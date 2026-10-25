@@ -67,6 +67,29 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
         let (_, show) = t.get(&format!("/projects/{slug}/showcase/{first}"), &[]).await;
         assert!(show["cards"].as_array().unwrap().iter().any(|c| c["can_view"] == true), "{slug}: {show}");
     }
+    // Every access case of the sample data: guest, signed-in user with no role, super admin.
+    let viewer = [("x-uuid", ALICE)];
+    let card = |p: &str, r: &str, c: &str| format!("/projects/{p}/reports/{r}/datasets/{c}");
+    let cases = [
+        // Login only: a gated card of a public report, and a card of a signed_in report.
+        (card("domain", "repository-health", "stars-per-month"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("cortex", "model-usage", "requests-by-task"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("certifications", "study-progress", "accuracy-by-exam"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("autodroid", "job-reliability", "failures-per-week"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        // Login plus admin: a restricted card, and a card of a restricted report.
+        (card("certifications", "exam-results", "attempts-per-day"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        (card("autodroid", "job-reliability", "failure-by-adapter"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        (card("cortex", "reliability", "errors-by-type"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        // Hidden: a restricted card that is not discoverable does not exist for them.
+        (card("fsm", "media-activity", "largest-by-app"), StatusCode::NOT_FOUND, StatusCode::NOT_FOUND),
+    ];
+    for (url, guest, signed_in) in &cases {
+        assert_eq!(t.get(url, &[]).await.0, *guest, "guest {url}");
+        assert_eq!(t.get(url, &viewer).await.0, *signed_in, "signed in {url}");
+        assert_eq!(t.get(url, &root).await.0, StatusCode::OK, "super admin {url}");
+    }
+    let (_, show) = t.get("/projects/fsm/showcase/media-activity", &[]).await;
+    assert!(show["cards"].as_array().unwrap().iter().all(|c| c["dataset_id"] != "largest-by-app"), "{show}");
     // A second run writes nothing new: same keys, same definitions.
     let before = t.docs.len();
     for r in requests.iter().filter(|r| r["path"].as_str().unwrap().contains("/ingest/")) {

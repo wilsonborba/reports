@@ -116,5 +116,5 @@ REPORTS = [
      "tags": ["storage"], "period_field": "created_at", "cards": ["bytes-by-app", "files-by-type", "uploads-per-day"]},
     {"slug": "media-activity", "title": t("Media Activity", "Atividade de Mídia", "กิจกรรมสื่อ"),
      "description": t("New media files over time.", "Novos arquivos de mídia ao longo do tempo.", "ไฟล์สื่อใหม่ตามช่วงเวลา"),
-     "tags": ["storage"], "period_field": "created_at", "cards": ["uploads-per-week", "albums-by-app", "largest-by-app"]},
+     "tags": ["storage"], "period_field": "created_at", "cards": ["uploads-per-week", "albums-by-app", "largest-by-app"], "access": {"cards": {"uploads-per-week": "signed_in", "largest-by-app": "restricted"}, "hidden": ["largest-by-app"]}},
 ]

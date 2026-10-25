@@ -120,8 +120,8 @@ CALCULATIONS = {
 REPORTS = [
     {"slug": "job-queue", "title": t("Job Queue", "Fila de Jobs", "คิวงาน"),
      "description": t("What the automation queue receives and finishes.", "O que a fila de automação recebe e conclui.", "งานที่คิวอัตโนมัติได้รับและทำเสร็จ"),
-     "tags": ["automation"], "period_field": "created_at", "cards": ["jobs-per-day", "jobs-by-type", "attempts-by-adapter"]},
+     "tags": ["automation"], "period_field": "created_at", "cards": ["jobs-per-day", "jobs-by-type", "attempts-by-adapter"], "access": {"cards": {"attempts-by-adapter": "signed_in"}}},
     {"slug": "job-reliability", "title": t("Job Reliability", "Confiabilidade dos Jobs", "ความน่าเชื่อถือของงาน"),
      "description": t("Where and why jobs fail.", "Onde e por que os jobs falham.", "งานล้มเหลวที่ไหนและเพราะอะไร"),
-     "tags": ["automation", "quality"], "period_field": "created_at", "cards": ["failure-by-adapter", "failures-per-week", "errors-by-message"]},
+     "tags": ["automation", "quality"], "period_field": "created_at", "cards": ["failure-by-adapter", "failures-per-week", "errors-by-message"], "access": {"report": "signed_in", "cards": {"failure-by-adapter": "restricted"}}},
 ]

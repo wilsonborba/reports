@@ -2,8 +2,18 @@
 
 Every write carries `x-reports-fixture: sample-v1-<project>`, so the engine records the
 ownership and `delete_fake_data.sh` can remove exactly this data later. A repeated run
-reuses identical published schema and calculation versions, keeps the same visibility
-(fixed seed) and writes no duplicate records (stable idempotency keys).
+reuses identical published schema and calculation versions, sets the visibility from the
+`access` entry of each report and writes no duplicate records (stable idempotency keys).
+
+Access cases of the sample data (a dataset uses the stricter of its report and its own value):
+- open: every card public (domain/repository-activity, fsm/storage-usage).
+- login only: the gated cards are `signed_in`, any session opens them (domain/repository-health,
+  cortex/model-usage, autodroid/job-queue) or the whole report is `signed_in`
+  (certifications/study-progress).
+- login plus admin: `restricted` cards need a project admin or a grant
+  (certifications/exam-results, autodroid/job-reliability) or the whole report does
+  (cortex/reliability).
+- hidden: a restricted card that is not discoverable (fsm/media-activity largest-by-app).
 
 Usage: scripts/populate_fake_data.sh [--project <slug>] [--dry-run]
 """
@@ -18,7 +28,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import random
 
 from client import Engine, EngineError
-from projects import autodroid, certifications, common, cortex, domain, fsm
+from projects import autodroid, certifications, cortex, domain, fsm
 
 MODULES = {m.PROJECT: m for m in (domain, certifications, cortex, autodroid, fsm)}
 BATCH = 1000
@@ -40,16 +50,21 @@ def subset(mine, theirs) -> bool:
 
 
 def visibility_plan(module) -> dict:
-    """Fixed-seed visibility of every report and card of one project."""
-    rng = random.Random(f"reports-sample-v1-{module.PROJECT}")
+    """Visibility of every report and card of one project, from the `access` entry of each
+    report (missing values are public). Gated items are discoverable placeholders unless
+    the entry lists them under `hidden`."""
+    order = ["public", "signed_in", "restricted"]
     plan = {}
-    for ri, report in enumerate(module.REPORTS):
-        r_vis = "public" if ri == 0 else common.weighted(rng, {"public": 6, "signed_in": 3, "restricted": 1})
+    for report in module.REPORTS:
+        access = report.get("access", {})
+        r_vis = access.get("report", "public")
+        hidden = set(access.get("hidden", []))
         cards = {}
-        for ci, card in enumerate(report["cards"]):
-            # The first card of the first report stays public, so every project has a guest chart.
-            vis = "public" if ri == 0 and ci == 0 else common.weighted(rng, {"public": 5, "signed_in": 3, "restricted": 2})
-            cards[card] = {"visibility": vis, "discoverable": vis != "public" and rng.random() < 0.7}
+        for card in report["cards"]:
+            vis = access.get("cards", {}).get(card, "public")
+            # The card is gated by the stricter of the report and its own value.
+            gated = max(order.index(vis), order.index(r_vis)) > 0
+            cards[card] = {"visibility": vis, "discoverable": gated and card not in hidden}
         plan[report["slug"]] = {"visibility": r_vis, "discoverable": r_vis != "public", "cards": cards}
     return plan
 

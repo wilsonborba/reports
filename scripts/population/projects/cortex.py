@@ -135,8 +135,8 @@ CALCULATIONS = {
 REPORTS = [
     {"slug": "model-usage", "title": t("Model Usage", "Uso de Modelos", "การใช้โมเดล"),
      "description": t("How Cortex spends tokens across providers and tasks.", "Como o Cortex usa tokens entre provedores e tarefas.", "Cortex ใช้โทเค็นอย่างไรในแต่ละผู้ให้บริการและงาน"),
-     "tags": ["llm", "tokens"], "period_field": "started_at", "cards": ["tokens-per-day", "tokens-by-provider", "requests-by-task"]},
+     "tags": ["llm", "tokens"], "period_field": "started_at", "cards": ["tokens-per-day", "tokens-by-provider", "requests-by-task"], "access": {"cards": {"tokens-by-provider": "signed_in", "requests-by-task": "signed_in"}}},
     {"slug": "reliability", "title": t("Reliability", "Confiabilidade", "ความน่าเชื่อถือ"),
      "description": t("Success rate, latency and errors of the orchestration.", "Taxa de sucesso, latência e erros da orquestração.", "อัตราความสำเร็จ เวลาแฝง และข้อผิดพลาดของระบบ"),
-     "tags": ["llm", "quality"], "period_field": "started_at", "cards": ["success-rate-per-day", "latency-by-model", "errors-by-type"]},
+     "tags": ["llm", "quality"], "period_field": "started_at", "cards": ["success-rate-per-day", "latency-by-model", "errors-by-type"], "access": {"report": "restricted"}},
 ]
