@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/session_store.dart';
-import '../../widgets/shell/session_prompt.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
 import '../../routes.dart';
@@ -119,6 +118,7 @@ class OverviewView extends StatelessWidget {
               for (var i = 0; i < scienceTopics.length; i++)
                 PublicCard(
                   key: Key('home_topic_${scienceTopics[i].$1}'),
+                  top: Container(height: 3, width: 48, color: p.seriesAt(i + 1)),
                   label: '0${i + 1}',
                   title: context.tr(scienceTopics[i].$2),
                   text: context.tr('${scienceTopics[i].$2}_short'),
@@ -207,7 +207,8 @@ List<Widget> nextStepBand(BuildContext context) => [
       ),
     ];
 
-/// Sign in (guest) or log out (signed in), as the ghost button next to the hero action.
+/// Sign in of a guest, as the ghost button next to the hero action. A signed-in user logs
+/// out from the top bar.
 class _SessionAction extends StatelessWidget {
   const _SessionAction();
 
@@ -217,22 +218,14 @@ class _SessionAction extends StatelessWidget {
       listenable: SessionStore.instance,
       builder: (context, _) {
         final session = SessionStore.instance;
-        if (!session.isLoaded) return const SizedBox.shrink();
-        return session.hasSession
-            ? PublicButton(
-                key: const Key('home_log_out'),
-                label: context.tr('auth_log_out'),
-                kind: ButtonKind.ghost,
-                icon: Icons.logout_rounded,
-                onPressed: () => logOut(GoRouter.of(context)),
-              )
-            : PublicButton(
-                key: const Key('home_sign_in'),
-                label: context.tr('sign_in'),
-                kind: ButtonKind.ghost,
-                icon: Icons.login_rounded,
-                onPressed: () => AuthService.instance.signIn(returnTo: AppRoutes.menu),
-              );
+        if (!session.isLoaded || session.hasSession) return const SizedBox.shrink();
+        return PublicButton(
+          key: const Key('home_sign_in'),
+          label: context.tr('sign_in'),
+          kind: ButtonKind.ghost,
+          icon: Icons.login_rounded,
+          onPressed: () => AuthService.instance.signIn(returnTo: AppRoutes.menu),
+        );
       },
     );
   }

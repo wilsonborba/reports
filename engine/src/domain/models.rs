@@ -54,6 +54,10 @@ pub struct ReportSummary {
     pub visibility: Visibility,
     /// False for a discoverable report that the caller cannot open (placeholder only).
     pub can_view: bool,
+    /// Visible cards whose effective visibility is `signed_in` (any session reads them).
+    pub signed_in_cards: usize,
+    /// Visible cards whose effective visibility is `restricted` (admin or grant).
+    pub restricted_cards: usize,
 }
 
 /// Cards of a report that the caller sees, and what opens the ones it cannot read. The

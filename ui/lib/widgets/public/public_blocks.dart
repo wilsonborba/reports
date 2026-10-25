@@ -16,7 +16,7 @@ class Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.palette.accent, letterSpacing: 0.16),
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.palette.highlight, letterSpacing: 0.16),
       );
 }
 
@@ -380,14 +380,15 @@ class StatBand extends StatelessWidget {
     return LayoutBuilder(builder: (context, c) {
       final w = (c.maxWidth - (cols - 1) * 16) / cols;
       return Wrap(spacing: 16, runSpacing: 24, children: [
-        for (final (value, label) in items)
+        for (final (i, (value, label)) in items.indexed)
           SizedBox(
             width: w,
             child: Container(
               padding: const EdgeInsets.only(top: 16),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: p.border))),
+              // One asodya.com color per statistic, on the rail; the number keeps the text color.
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: p.seriesAt(i + 1), width: 3))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(value, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w300, color: p.highlight, height: 1.1)),
+                Text(value, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w300, color: p.textPrimary, height: 1.1)),
                 const SizedBox(height: 8),
                 Text(label, style: TextStyle(fontSize: 14, color: p.textMuted, height: 1.45)),
               ]),

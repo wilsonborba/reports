@@ -150,5 +150,5 @@ class _LinkPainter extends CustomPainter {
   bool shouldRepaint(_LinkPainter old) => old.t != t || old.row != row || old.palette != palette || old.dots != dots;
 }
 
-/// Brand color of a step: accent, highlight, info, caution, positive, in turn.
-Color _brand(ReportPalette p, int i) => [p.accent, p.highlight, p.info, p.caution, p.positive][i % 5];
+/// Brand color of a step: the asodya.com colors after the main one, in turn.
+Color _brand(ReportPalette p, int i) => p.seriesAt(i % (ReportPalette.slots - 1) + 1);

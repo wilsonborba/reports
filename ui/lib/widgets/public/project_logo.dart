@@ -34,7 +34,5 @@ class ProjectLogo extends StatelessWidget {
   }
 }
 
-/// Mark color of a project: the first chart series color of its catalog theme (it keeps
-/// its contrast as a line, unlike a light accent). Never used for text.
-Color projectAccent(BuildContext context, String slug) =>
-    ThemeRegistry.palette(slug, Theme.of(context).brightness).seriesAt(0);
+/// Mark color of a project (rails and marks, never text): see [ThemeRegistry.brandColor].
+Color projectAccent(BuildContext context, String slug) => ThemeRegistry.brandColor(slug, Theme.of(context).brightness);

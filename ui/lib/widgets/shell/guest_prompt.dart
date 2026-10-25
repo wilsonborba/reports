@@ -62,7 +62,8 @@ class _GuestPromptState extends State<GuestPrompt> {
           color: p.surface,
           // Square corners: the accent stripe on the left and the outline differ in color.
           border: Border(left: BorderSide(color: p.accent, width: 4), top: BorderSide(color: p.border), right: BorderSide(color: p.border), bottom: BorderSide(color: p.border)),
-          boxShadow: [BoxShadow(color: p.accent.withValues(alpha: 0.18), blurRadius: 24, offset: const Offset(0, 8))],
+          // Neutral, light shadow only to lift it off the cards (no colored glow).
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.insights_rounded, size: 22, color: p.accent)),

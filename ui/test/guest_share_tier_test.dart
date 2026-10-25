@@ -91,6 +91,12 @@ void main() {
     testWidgets('the report list sends the tier to the engine', (tester) async {
       api.install(withSession: false);
       await _open(tester, '/v1/menu/cortex');
+      // The data filter sits in the toolbar next to the search (Carbon inline dropdown).
+      expect(find.byKey(const Key('report_search')), findsOneWidget);
+      expect(tester.getCenter(find.byKey(const Key('tier_filter_button'))).dy,
+          closeTo(tester.getCenter(find.byKey(const Key('report_search'))).dy, 2));
+      await tester.tap(find.byKey(const Key('tier_filter_button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('tier_filter_real')));
       await tester.pumpAndSettle();
       final last = api.requests.lastWhere((r) => r.url.path.endsWith('/projects/cortex/reports'));
@@ -102,6 +108,8 @@ void main() {
       _gatedReport(api).install(withSession: false);
       await _open(tester, '/v1/menu/cortex/report_1');
       expect(find.byKey(const Key('card_tier_filter')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('tier_filter_button')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('tier_filter_hybrid')), findsNothing, reason: 'only the tiers of this report');
       await tester.tap(find.byKey(const Key('tier_filter_real')));
       await tester.pumpAndSettle();
@@ -154,6 +162,56 @@ void main() {
       final url = tester.widget<SelectableText>(find.byKey(const Key('share_url'))).data!;
       expect(Uri.parse(url).queryParameters, {'view': 'table', 'f.kind': 'b'});
       expect(_location(tester), '/v1/menu/cortex/report_1/d1?view=table&f.kind=b');
+    });
+  });
+
+  group('access tags and layout', () {
+    testWidgets('report cards say which charts need members or the admin (engine counts)', (tester) async {
+      api.install(withSession: false);
+      final reports = api.routes['/projects/cortex/reports']!;
+      api.routes['/projects/cortex/reports'] = (q) {
+        final j = Map<String, dynamic>.from(reports(q) as Map);
+        final items = [for (final r in j['items'] as List) Map<String, dynamic>.from(r as Map)];
+        items[0] = {...items[0], 'signed_in_cards': 3, 'restricted_cards': 1};
+        if (items.length > 1) items[1] = {...items[1], 'visibility': 'signed_in', 'can_view': false};
+        return {...j, 'items': items};
+      };
+      await _open(tester, '/v1/menu/cortex');
+      expect(find.text('3 member charts'), findsOneWidget);
+      expect(find.text('1 admin charts'), findsOneWidget);
+      expect(find.text('Members'), findsOneWidget, reason: 'a members-only report');
+    });
+
+    testWidgets('gated and members charts carry their tag; public charts none', (tester) async {
+      _gatedReport(api).install(withSession: false);
+      await _open(tester, '/v1/menu/cortex/report_1');
+      expect(find.byKey(const Key('access_tag_signed_in')), findsOneWidget);
+      expect(find.byKey(const Key('access_tag_restricted')), findsOneWidget);
+      // The data filter shares the row of the section tabs, at the right.
+      final filter = tester.getRect(find.byKey(const Key('card_tier_filter')));
+      expect(filter.right, greaterThan(1200));
+    });
+
+    testWidgets('a long project description shows two lines and Show more', (tester) async {
+      api.install(withSession: false);
+      final detail = api.routes['/projects/cortex']!;
+      api.routes['/projects/cortex'] = (q) => {...Map<String, dynamic>.from(detail(q) as Map), 'description': List.filled(40, 'Long description of the project.').join(' ')};
+      await _open(tester, '/v1/menu/cortex');
+      expect(tester.widget<Text>(find.byKey(const Key('clamped_text'))).maxLines, 2);
+      await tester.tap(find.byKey(const Key('clamped_toggle')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.byKey(const Key('clamped_text'))).maxLines, isNull);
+      expect(find.text('Show less'), findsOneWidget);
+    });
+
+    testWidgets('a signed-in user logs out from the top bar on the public site, the sidebar in the reports', (tester) async {
+      api.install();
+      await _open(tester, '/v1/home');
+      expect(find.byKey(const Key('top_bar_log_out')), findsOneWidget);
+      expect(find.byKey(const Key('home_sign_in')), findsNothing, reason: 'the hero offers sign in to guests only');
+      await tester.tap(find.byKey(const Key('nav_tab_reports')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('top_bar_log_out')), findsNothing);
     });
   });
 }

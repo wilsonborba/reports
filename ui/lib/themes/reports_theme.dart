@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'report_palette.dart';
 
-/// Reports fallback theme in the asodya.com colors (domain repository, `my_theme.dart` and the
-/// landing): neon lime with black in the dark theme, neon purple with white in the light
-/// theme, and the other asodya.com neons (orange, cyan, pink, yellow, violet, teal) for
-/// charts and states. No blue. Chart orders pass the dataviz checks (colorblind separation
-/// and normal vision); the dark neons are brighter than the usual band on purpose (brand).
+/// Reports fallback theme in the asodya.com colors (domain repository): neon lime with black
+/// in the dark theme, purple with white in the light theme, on the controls only (buttons,
+/// selected tab, links). Charts use soft, varied colors with no blue, so a dashboard does
+/// not repeat the brand colors everywhere; both chart orders pass every dataviz check
+/// (lightness band, colorblind and normal-vision separation).
 class ReportsTheme {
   static const neonPurple = Color(0xFF8C52FF);
   static const neonLime = Color(0xFF6EFF00);
@@ -22,13 +22,14 @@ class ReportsTheme {
           accent: neonLime,
           onAccent: Color(0xFF0B0C10),
           highlight: Color(0xFFA47BFF),
-          positive: Color(0xFF00E676),
-          warning: Color(0xFFFFD60A),
-          negative: Color(0xFFFF1744),
-          info: neonCyan,
-          caution: Color(0xFFFF9100),
-          // Lime, purple, orange, cyan, pink, yellow, violet, teal.
-          series: [neonLime, neonPurple, Color(0xFFFF9100), neonCyan, Color(0xFFFF4FA3), Color(0xFFFFD60A), Color(0xFFA201FF), Color(0xFF1DE9B6)],
+          positive: Color(0xFF3FB950),
+          warning: Color(0xFFD4A72C),
+          negative: Color(0xFFF85149),
+          info: Color(0xFF2AA9C2),
+          caution: Color(0xFFDB8B2E),
+          // Soft and varied chart colors (no blue; the brand lime and purple stay on the
+          // controls): orange, cyan, coral, lavender, green, pink, amber, teal.
+          series: [Color(0xFFD95926), Color(0xFF0AA5B8), Color(0xFFE66767), Color(0xFF9085E9), Color(0xFF3F9E1E), Color(0xFFD55181), Color(0xFFC98500), Color(0xFF199E70)],
           other: Color(0xFF6F6F6F),
         )
       : const ReportPalette(
@@ -46,8 +47,9 @@ class ReportsTheme {
           negative: Color(0xFFDC2626),
           info: Color(0xFF0891B2),
           caution: Color(0xFFEA580C),
-          // Purple, green, cyan, orange, teal, violet, pink, amber.
-          series: [Color(0xFF7C3AED), Color(0xFF16A34A), Color(0xFF0891B2), Color(0xFFEA580C), Color(0xFF0D9488), Color(0xFFA201FF), Color(0xFFDB2777), Color(0xFFCA8A04)],
+          // Soft and varied chart colors (no blue; the brand purple stays on the controls):
+          // orange, teal, green, pink, amber, red, violet, sea green.
+          series: [Color(0xFFEB6834), Color(0xFF0F9FA8), Color(0xFF008300), Color(0xFFE87BA4), Color(0xFFEDA100), Color(0xFFE34948), Color(0xFF6250D6), Color(0xFF1BAF7A)],
           other: Color(0xFFA8A8A8),
         );
 }
