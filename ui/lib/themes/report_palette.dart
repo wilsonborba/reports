@@ -25,7 +25,7 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
   /// Gray for the folded "Other" category.
   final Color other;
 
-  /// Second brand color for highlights (glow, statistic numbers); the accent when a theme
+  /// Second brand color for highlights (statistic numbers, flow steps); the accent when a theme
   /// has none (optional `highlight` token).
   final Color highlight;
 

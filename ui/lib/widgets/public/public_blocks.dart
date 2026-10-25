@@ -53,7 +53,6 @@ class PublicHero extends StatelessWidget {
     ]);
     return PublicSection(
       vertical: phone ? 40 : 88,
-      glow: true,
       child: wide && visual != null
           ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               Expanded(flex: 6, child: Reveal(child: texts)),
