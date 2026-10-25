@@ -2,7 +2,7 @@
 
 All notable changes to this project are listed here. The list comes from the commit history.
 
-## [Unreleased]
+## [3.0.0] - 2026-10-25
 
 ### Features
 
@@ -13,6 +13,22 @@ All notable changes to this project are listed here. The list comes from the com
 - *(catalog)* Add cached Domain project details and keep engine start minimal
 - *(fixtures)* Own sample data by manifest and add scripts for five projects
 - *(ui)* Asodya login, real engine routes, Architecture tab and full pt-BR
+- *(engine)* Tier filter and caller access counts
+- *(engine)* Card order of a report
+- *(fixtures)* 4 reports of 4 sections with 4 charts per project
+- *(ui)* Navigation, guest prompt, tier filters, chart share and brand colors
+- Access tags, toolbar filter, soft chart colors
+
+### Bug fixes
+
+- *(dal)* Bind optional values as plain values for PostgreSQL
+- *(population)* Compare schema fields by path so a rerun reuses the published version
+- *(export)* Leave out sections without a readable card
+- *(fixtures)* Fixed access cases in the sample data
+- *(ui)* Remove the gradient behind the hero bands
+- *(ui)* Asodya.com palette, lime with black and purple with white
+- *(ui)* Opening another report from the sidebar draws its cards
+- *(ui)* Calmer dashboard accents, full-width chart titles
 
 ### Performance
 
@@ -21,6 +37,7 @@ All notable changes to this project are listed here. The list comes from the com
 ### Documentation
 
 - Rewrite README for the Reports engine
+- Generate the CHANGELOG from the commit history with git-cliff
 
 ### Tests
 
@@ -35,6 +52,11 @@ All notable changes to this project are listed here. The list comes from the com
 - *(scripts)* Add explicit migrate.sh and a service-only installer
 - Remove old project scripts and untrack local assistant docs
 - Ignore local assistant docs in engine/alignment
+- Remove the Scalar API docs
+
+### Other
+
+- Promote feature/main to development for v3.0.0
 
 ## [2.0.0] - 2026-10-24
 
