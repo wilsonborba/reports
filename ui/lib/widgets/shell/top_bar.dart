@@ -262,12 +262,13 @@ class _LanguageSwitch extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: selected ? p.accent : Colors.transparent,
+            // Inverse for the selected language (Carbon content switcher), not the brand color.
+            color: selected ? p.textPrimary : Colors.transparent,
             borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
           ),
           child: Text(label,
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: selected ? p.onAccent : p.textMuted)),
+                  fontSize: 12, fontWeight: FontWeight.w600, color: selected ? p.canvas : p.textMuted)),
         ),
       );
     }
