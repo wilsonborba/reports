@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import random
 
-from .common import at, days, field, out, t, weighted
+from .builder import build, chart, dim, measure
+from .common import at, days, field, t, weighted
 
 PROJECT = "fsm"
 
@@ -49,72 +50,108 @@ def records(rng: random.Random) -> list[dict]:
     return out_
 
 
-APP = out("app", t("Application", "Aplicação", "แอปพลิเคชัน"), "string", role="dimension")
-APP_FILTER = {"field": "app", "label": t("Application", "Aplicação", "แอปพลิเคชัน"), "type": "category"}
+SRC = "media_item"
+APP_FILTER = {"field": "app", "label": t("App", "App", "แอป"), "type": "category"}
+F = [APP_FILTER]
 
-CALCULATIONS = {
-    "bytes-by-app": {
-        "title": t("Storage by Application", "Armazenamento por Aplicação", "พื้นที่จัดเก็บตามแอปพลิเคชัน"),
-        "description": t("Stored bytes per application.", "Bytes armazenados por aplicação.", "จำนวนไบต์ที่จัดเก็บของแต่ละแอปพลิเคชัน"),
-        "source": "media_item", "warm": True,
-        "stages": [{"group_by": ["app"], "measures": [{"name": "bytes", "agg": "sum", "field": "size_bytes"}, {"name": "files", "agg": "count"}],
-                    "derived": [{"name": "megabytes", "expr": "bytes / 1048576"}]}],
-        "sort": [{"field": "bytes", "desc": True}],
-        "fields": [APP, out("megabytes", t("Size", "Tamanho", "ขนาด"), "float", unit="MB", decimals=1), out("files", t("Files", "Arquivos", "ไฟล์"), "integer")],
-    },
-    "files-by-type": {
-        "title": t("Files by Type", "Arquivos por Tipo", "ไฟล์ตามประเภท"),
-        "description": t("Stored files per content type.", "Arquivos armazenados por tipo de conteúdo.", "ไฟล์ที่จัดเก็บตามประเภทเนื้อหา"),
-        "source": "media_item", "filters": [APP_FILTER],
-        "stages": [{"group_by": ["content_type"], "measures": [{"name": "files", "agg": "count"}]}],
-        "sort": [{"field": "files", "desc": True}],
-        "fields": [out("content_type", t("Content type", "Tipo de conteúdo", "ประเภทเนื้อหา"), "string", role="dimension"),
-                   out("files", t("Files", "Arquivos", "ไฟล์"), "integer")],
-    },
-    "uploads-per-day": {
-        "title": t("Uploads per Day", "Envios por Dia", "การอัปโหลดต่อวัน"),
-        "description": t("New files and their size per day.", "Novos arquivos e seu tamanho por dia.", "ไฟล์ใหม่และขนาดต่อวัน"),
-        "source": "media_item", "filters": [APP_FILTER],
-        "buckets": [{"field": "created_at", "unit": "day", "name": "day"}],
-        "stages": [{"group_by": ["day"], "measures": [{"name": "files", "agg": "count"}, {"name": "bytes", "agg": "sum", "field": "size_bytes"}],
-                    "derived": [{"name": "megabytes", "expr": "bytes / 1048576"}]}],
-        "sort": [{"field": "day"}],
-        "fields": [out("day", t("Day", "Dia", "วัน"), "date", role="dimension"), out("files", t("Files", "Arquivos", "ไฟล์"), "integer"),
-                   out("megabytes", t("Size", "Tamanho", "ขนาด"), "float", unit="MB", decimals=1)],
-    },
-    "uploads-per-week": {
-        "title": t("Uploads per Week", "Envios por Semana", "การอัปโหลดต่อสัปดาห์"),
-        "description": t("New files per ISO week.", "Novos arquivos por semana ISO.", "ไฟล์ใหม่ต่อสัปดาห์"),
-        "source": "media_item", "filters": [APP_FILTER],
-        "buckets": [{"field": "created_at", "unit": "week", "name": "week"}],
-        "stages": [{"group_by": ["week"], "measures": [{"name": "files", "agg": "count"}]}],
-        "sort": [{"field": "week"}],
-        "fields": [out("week", t("Week", "Semana", "สัปดาห์"), "date", role="dimension"), out("files", t("Files", "Arquivos", "ไฟล์"), "integer")],
-    },
-    "albums-by-app": {
-        "title": t("Albums by Application", "Álbuns por Aplicação", "อัลบั้มตามแอปพลิเคชัน"),
-        "description": t("Distinct albums per application.", "Álbuns distintos por aplicação.", "จำนวนอัลบั้มที่ไม่ซ้ำของแต่ละแอปพลิเคชัน"),
-        "source": "media_item",
-        "stages": [{"group_by": ["app"], "measures": [{"name": "albums", "agg": "count_distinct", "field": "album"}]}],
-        "sort": [{"field": "app"}],
-        "fields": [APP, out("albums", t("Albums", "Álbuns", "อัลบั้ม"), "integer")],
-    },
-    "largest-by-app": {
-        "title": t("Largest File", "Maior Arquivo", "ไฟล์ที่ใหญ่ที่สุด"),
-        "description": t("Largest stored file per application.", "Maior arquivo armazenado por aplicação.", "ไฟล์ที่ใหญ่ที่สุดของแต่ละแอปพลิเคชัน"),
-        "source": "media_item",
-        "stages": [{"group_by": ["app"], "measures": [{"name": "largest", "agg": "max", "field": "size_bytes"}],
-                    "derived": [{"name": "megabytes", "expr": "largest / 1048576"}]}],
-        "sort": [{"field": "largest", "desc": True}],
-        "fields": [APP, out("megabytes", t("Size", "Tamanho", "ขนาด"), "float", unit="MB", decimals=1)],
-    },
-}
 
-REPORTS = [
+def kind(prefix: str) -> list:
+    return [{"field": "content_type", "op": "starts_with", "value": prefix}]
+
+
+DAY = dim("day", t("Day", "Dia", "วัน"), field="created_at", unit="day", per=t("Day", "Dia", "วัน"))
+WEEK = dim("week", t("Week", "Semana", "สัปดาห์"), field="created_at", unit="week", per=t("Week", "Semana", "สัปดาห์"))
+APP = dim("app", t("App", "App", "แอป"))
+ALBUM = dim("album", t("Album", "Álbum", "อัลบั้ม"))
+TYPE = dim("content_type", t("File type", "Tipo de arquivo", "ประเภทไฟล์"))
+
+FILES = measure("files", t("Files", "Arquivos", "ไฟล์"), "count", about=t("Stored files", "Arquivos armazenados", "ไฟล์ที่จัดเก็บ"))
+BYTES = measure("bytes", t("Storage", "Armazenamento", "พื้นที่จัดเก็บ"), "sum", "size_bytes", unit="bytes",
+                about=t("Bytes of the stored files", "Bytes dos arquivos armazenados", "ขนาดไบต์ของไฟล์ที่จัดเก็บ"))
+SHARE = measure("share", t("Share", "Participação", "สัดส่วน"), expr="bytes / sum_bytes * 100", type_="percent", decimals=1)
+FILE_SHARE = measure("file_share", t("Share", "Participação", "สัดส่วน"), expr="files / sum_files * 100", type_="percent", decimals=1)
+MEAN_SIZE = measure("mean_size", t("Mean file size", "Tamanho médio", "ขนาดไฟล์เฉลี่ย"), "avg", "size_bytes", type_="float", unit="bytes", decimals=0)
+LARGEST = measure("largest", t("Largest file", "Maior arquivo", "ไฟล์ใหญ่ที่สุด"), "max", "size_bytes", unit="bytes")
+SMALLEST = measure("smallest", t("Smallest file", "Menor arquivo", "ไฟล์เล็กที่สุด"), "min", "size_bytes", unit="bytes")
+IMAGES = measure("images", t("Images", "Imagens", "รูปภาพ"), "count", where=kind("image/"), about=t("Stored images", "Imagens armazenadas", "รูปภาพที่จัดเก็บ"))
+IMAGE_BYTES = measure("image_bytes", t("Image storage", "Armazenamento de imagens", "พื้นที่ของรูปภาพ"), "sum", "size_bytes", unit="bytes", where=kind("image/"))
+PDFS = measure("pdfs", t("PDF documents", "Documentos PDF", "เอกสาร PDF"), "count", where=kind("application/pdf"))
+PDF_BYTES = measure("pdf_bytes", t("PDF storage", "Armazenamento de PDF", "พื้นที่ของ PDF"), "sum", "size_bytes", unit="bytes", where=kind("application/pdf"))
+VIDEOS = measure("videos", t("Videos", "Vídeos", "วิดีโอ"), "count", where=kind("video/"), about=t("Stored videos", "Vídeos armazenados", "วิดีโอที่จัดเก็บ"))
+VIDEO_BYTES = measure("video_bytes", t("Video storage", "Armazenamento de vídeos", "พื้นที่ของวิดีโอ"), "sum", "size_bytes", unit="bytes", where=kind("video/"))
+_ALL = measure("all_files", t("Files", "Arquivos", "ไฟล์"), "count")
+_IMG = measure("image_files", t("Images", "Imagens", "รูปภาพ"), "count", where=kind("image/"))
+_PDF = measure("pdf_files", t("PDF documents", "Documentos PDF", "เอกสาร PDF"), "count", where=kind("application/pdf"))
+_VID = measure("video_files", t("Videos", "Vídeos", "วิดีโอ"), "count", where=kind("video/"))
+IMAGE_SHARE = measure("image_share", t("Image share", "Parcela de imagens", "สัดส่วนรูปภาพ"), expr="image_files / all_files * 100",
+                      type_="percent", decimals=1, needs=(_ALL, _IMG), about=t("Share of files that are images", "Parcela dos arquivos que são imagens", "สัดส่วนไฟล์ที่เป็นรูปภาพ"))
+PDF_SHARE = measure("pdf_share", t("PDF share", "Parcela de PDF", "สัดส่วน PDF"), expr="pdf_files / all_files * 100",
+                    type_="percent", decimals=1, needs=(_ALL, _PDF), about=t("Share of files that are PDF", "Parcela dos arquivos em PDF", "สัดส่วนไฟล์ที่เป็น PDF"))
+VIDEO_SHARE = measure("video_share", t("Video share", "Parcela de vídeos", "สัดส่วนวิดีโอ"), expr="video_files / all_files * 100",
+                      type_="percent", decimals=1, needs=(_ALL, _VID), about=t("Share of files that are videos", "Parcela dos arquivos que são vídeos", "สัดส่วนไฟล์ที่เป็นวิดีโอ"))
+APPS_ = measure("apps", t("Apps in use", "Apps em uso", "แอปที่ใช้"), "count_distinct", "app", about=t("Distinct apps", "Apps distintos", "แอปที่ไม่ซ้ำ"))
+ALBUMS = measure("albums", t("Albums in use", "Álbuns em uso", "อัลบั้มที่ใช้"), "count_distinct", "album", about=t("Distinct albums", "Álbuns distintos", "อัลบั้มที่ไม่ซ้ำ"))
+TYPES_IN_USE = measure("types", t("File types in use", "Tipos de arquivo em uso", "ประเภทไฟล์ที่ใช้"), "count_distinct", "content_type",
+                about=t("Distinct file types", "Tipos de arquivo distintos", "ประเภทไฟล์ที่ไม่ซ้ำ"))
+
+
+def c(measures, dims=(), **kw):
+    return chart(SRC, measures, dims, filters=kw.pop("filters", F), **kw)
+
+
+CALCULATIONS, REPORTS = build([
     {"slug": "storage-usage", "title": t("Storage Usage", "Uso de Armazenamento", "การใช้พื้นที่จัดเก็บ"),
-     "description": t("How much each application stores in FSM.", "Quanto cada aplicação armazena no FSM.", "แต่ละแอปพลิเคชันจัดเก็บข้อมูลใน FSM เท่าใด"),
-     "tags": ["storage"], "period_field": "created_at", "cards": ["bytes-by-app", "files-by-type", "uploads-per-day"]},
+     "description": t("Bytes and files that each app keeps in FSM.", "Bytes e arquivos que cada app guarda no FSM.", "ขนาดและจำนวนไฟล์ที่แต่ละแอปเก็บใน FSM"),
+     "tags": ["storage"], "period_field": "created_at",
+     "sections": [
+         [("total-storage", c([BYTES], warm=True)), ("storage-per-day", c([BYTES], [DAY], warm=True)),
+          ("storage-by-app", c([BYTES, SHARE], [APP])), ("storage-by-type", c([BYTES], [TYPE]))],
+         [("total-files", c([FILES])), ("files-per-day", c([FILES], [DAY])),
+          ("files-by-app", c([FILES], [APP])), ("files-by-type", c([FILES], [TYPE]))],
+         [("mean-file-size", c([MEAN_SIZE])), ("mean-size-by-app", c([MEAN_SIZE], [APP])),
+          ("mean-size-by-type", c([MEAN_SIZE], [TYPE])), ("mean-size-per-day", c([MEAN_SIZE], [DAY]))],
+         [("storage-per-week", c([BYTES], [WEEK])), ("files-per-week", c([FILES], [WEEK])),
+          ("storage-per-week-by-app", c([BYTES], [WEEK, APP])), ("storage-summary-by-app", c([FILES, BYTES, MEAN_SIZE, LARGEST], [APP]))],
+     ]},
     {"slug": "media-activity", "title": t("Media Activity", "Atividade de Mídia", "กิจกรรมสื่อ"),
-     "description": t("New media files over time.", "Novos arquivos de mídia ao longo do tempo.", "ไฟล์สื่อใหม่ตามช่วงเวลา"),
-     "tags": ["storage"], "period_field": "created_at", "cards": ["uploads-per-week", "albums-by-app", "largest-by-app"], "access": {"cards": {"uploads-per-week": "signed_in", "largest-by-app": "restricted"}, "hidden": ["largest-by-app"]}},
-]
+     "description": t("Albums, images, documents and videos that the apps store.", "Álbuns, imagens, documentos e vídeos que os apps guardam.", "อัลบั้ม รูปภาพ เอกสาร และวิดีโอที่แอปจัดเก็บ"),
+     "tags": ["storage", "media"], "period_field": "created_at",
+     "access": {"cards": {"images-per-day": "signed_in", "pdf-per-day": "signed_in", "largest-by-app": "restricted"}, "hidden": ["largest-by-app"]},
+     "sections": [
+         [("albums-in-use", c([ALBUMS])), ("files-by-album", c([FILES], [ALBUM])),
+          ("storage-by-album", c([BYTES], [ALBUM])), ("files-per-day-by-album", c([FILES], [DAY, ALBUM]))],
+         [("images", c([IMAGES])), ("images-per-day", c([IMAGES], [DAY])),
+          ("images-by-app", c([IMAGES], [APP])), ("image-storage-by-app", c([IMAGE_BYTES], [APP]))],
+         [("pdf-documents", c([PDFS])), ("pdf-per-day", c([PDFS], [DAY])),
+          ("pdf-by-app", c([PDFS], [APP])), ("pdf-storage-by-app", c([PDF_BYTES], [APP]))],
+         [("videos", c([VIDEOS])), ("videos-per-week", c([VIDEOS], [WEEK])),
+          ("video-storage-by-app", c([VIDEO_BYTES], [APP])), ("largest-by-app", c([LARGEST], [APP]))],
+     ]},
+    {"slug": "file-types", "title": t("File Types", "Tipos de Arquivo", "ประเภทไฟล์"),
+     "description": t("Sizes and volume of each stored file type.", "Tamanhos e volume de cada tipo de arquivo armazenado.", "ขนาดและปริมาณของไฟล์แต่ละประเภทที่จัดเก็บ"),
+     "tags": ["storage", "types"], "period_field": "created_at", "access": {"report": "signed_in"},
+     "sections": [
+         [("file-types-in-use", c([TYPES_IN_USE])), ("files-per-day-by-type", c([FILES], [DAY, TYPE])),
+          ("storage-per-day-by-type", c([BYTES], [DAY, TYPE])), ("type-summary", c([FILES, BYTES, MEAN_SIZE, LARGEST], [TYPE]))],
+         [("largest-file", c([LARGEST])), ("largest-by-type", c([LARGEST], [TYPE])),
+          ("largest-per-day", c([LARGEST], [DAY])), ("largest-by-album", c([LARGEST], [ALBUM]))],
+         [("smallest-file", c([SMALLEST])), ("smallest-by-type", c([SMALLEST], [TYPE])),
+          ("smallest-by-app", c([SMALLEST], [APP])), ("smallest-per-week", c([SMALLEST], [WEEK]))],
+         [("type-share-of-storage", c([BYTES, SHARE], [TYPE])), ("files-by-app-and-type", c([FILES, BYTES], [APP, TYPE])),
+          ("storage-per-week-by-type", c([BYTES], [WEEK, TYPE])), ("files-per-week-by-type", c([FILES], [WEEK, TYPE]))],
+     ]},
+    {"slug": "apps", "title": t("Apps", "Apps", "แอป"),
+     "description": t("How each Asodya app uses FSM: albums, file mix and growth.", "Como cada app Asodya usa o FSM: álbuns, tipos de arquivo e crescimento.", "แต่ละแอป Asodya ใช้ FSM อย่างไร: อัลบั้ม ประเภทไฟล์ และการเติบโต"),
+     "tags": ["storage", "apps"], "period_field": "created_at",
+     "access": {"cards": {"apps-summary": "restricted"}},
+     "sections": [
+         [("apps-in-use", c([APPS_])), ("files-per-week-by-app", c([FILES], [WEEK, APP])),
+          ("file-share-by-app", c([FILES, FILE_SHARE], [APP])), ("mean-size-per-week", c([MEAN_SIZE], [WEEK]))],
+         [("files-by-app-and-album", c([FILES, BYTES], [APP, ALBUM])), ("files-per-day-by-app", c([FILES], [DAY, APP])),
+          ("storage-per-day-by-app", c([BYTES], [DAY, APP])), ("storage-by-app-and-type", c([BYTES], [APP, TYPE]))],
+         [("image-share", c([IMAGE_SHARE])), ("image-share-by-app", c([IMAGE_SHARE], [APP])),
+          ("pdf-share-by-app", c([PDF_SHARE], [APP])), ("video-share-by-app", c([VIDEO_SHARE], [APP]))],
+         [("largest-per-week", c([LARGEST], [WEEK])), ("files-per-week-by-album", c([FILES], [WEEK, ALBUM])),
+          ("albums-by-app", c([ALBUMS], [APP])), ("apps-summary", c([FILES, BYTES, IMAGES, PDFS], [APP]))],
+     ]},
+])

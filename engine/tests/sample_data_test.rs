@@ -51,7 +51,8 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
             cards.push(path.replace("/admin/reports/", "/reports/"));
         }
     }
-    assert_eq!(cards.len(), 30);
+    // 5 projects, 4 reports each, 4 sections of 4 cards.
+    assert_eq!(cards.len(), 5 * 4 * 16);
     // Every card calculates for the super admin and returns rows.
     let root = [("x-uuid", ROOT), ("x-access-level", "1")];
     for c in &cards {
@@ -73,15 +74,16 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
     let cases = [
         // Login only: a gated card of a public report, and a card of a signed_in report.
         (card("domain", "repository-health", "stars-per-month"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("cortex", "model-usage", "requests-by-task"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("certifications", "study-progress", "accuracy-by-exam"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("autodroid", "job-reliability", "failures-per-week"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("cortex", "model-usage", "tokens-by-model"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("certifications", "study-progress", "accuracy"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (card("autodroid", "job-reliability", "failures-per-day"), StatusCode::UNAUTHORIZED, StatusCode::OK),
         // Login plus admin: a restricted card, and a card of a restricted report.
-        (card("certifications", "exam-results", "attempts-per-day"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
-        (card("autodroid", "job-reliability", "failure-by-adapter"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        (card("certifications", "exam-results", "results-by-exam-and-language"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        (card("autodroid", "job-reliability", "errors-by-adapter-and-message"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
         (card("cortex", "reliability", "errors-by-type"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
         // Hidden: a restricted card that is not discoverable does not exist for them.
         (card("fsm", "media-activity", "largest-by-app"), StatusCode::NOT_FOUND, StatusCode::NOT_FOUND),
+        (card("autodroid", "adapters", "adapter-summary"), StatusCode::NOT_FOUND, StatusCode::NOT_FOUND),
     ];
     for (url, guest, signed_in) in &cases {
         assert_eq!(t.get(url, &[]).await.0, *guest, "guest {url}");
