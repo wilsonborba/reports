@@ -605,7 +605,6 @@ class Strings {
     'pub_contact_projects_intro': {'en': 'Each project has its website or its repository.', 'th': 'แต่ละโปรเจกต์มีเว็บไซต์หรือรีโพสิทอรีของตัวเอง'},
     'pub_contact_none': {'en': 'Contact details are not available yet.', 'th': 'ยังไม่มีข้อมูลติดต่อ'},
     'pub_nav_api': {'en': 'API', 'th': 'API'},
-    'pub_api_docs': {'en': 'Open the API docs', 'th': 'เปิดเอกสาร API'},
     'pub_api_openapi': {'en': 'OpenAPI file', 'th': 'ไฟล์ OpenAPI'},
     'pub_home_api_title': {'en': 'Build on the same data', 'th': 'สร้างงานบนข้อมูลชุดเดียวกัน'},
     'pub_home_api_text': {

@@ -48,8 +48,7 @@ Future<void> openPublicLink(String url) async {
   await launchUrl(uri, webOnlyWindowName: external ? '_blank' : '_self');
 }
 
-/// Interactive API docs (Scalar) and the OpenAPI file of the engine; both stay public.
-const String apiDocsPath = '/scalar';
+/// OpenAPI file of the engine (public).
 const String openApiPath = '/openapi.json';
 
 /// Absolute URL of an engine path (API docs, OpenAPI file): same origin as the app.

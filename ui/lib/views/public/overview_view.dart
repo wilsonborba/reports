@@ -160,7 +160,6 @@ class OverviewView extends StatelessWidget {
               const SizedBox(height: 20),
               Wrap(spacing: 24, runSpacing: 8, children: [
                 ArrowLink(key: const Key('home_architecture_more'), label: context.tr('pub_read_more'), onTap: () => context.go(AppRoutes.homeArchitecture)),
-                ArrowLink(label: context.tr('pub_api_docs'), icon: Icons.open_in_new_rounded, onTap: () => openPublicLink(engineUrl(apiDocsPath))),
               ]),
             ]),
             visual: const CodePanel(title: 'request.sh', code: datasetRequestShell, language: CodeLanguage.shell),

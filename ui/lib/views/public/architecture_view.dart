@@ -146,7 +146,6 @@ class ArchitectureView extends StatelessWidget {
           paragraphs: [t('arch_s9_p1'), t('arch_s9_p2'), t('arch_s9_p3')],
           background: p.surface,
           extra: Wrap(spacing: 24, runSpacing: 8, children: [
-            ArrowLink(key: const Key('arch_api_docs'), label: t('pub_api_docs'), icon: Icons.open_in_new_rounded, onTap: () => openPublicLink(engineUrl(apiDocsPath))),
             ArrowLink(label: t('pub_api_openapi'), icon: Icons.open_in_new_rounded, onTap: () => openPublicLink(engineUrl(openApiPath))),
           ]),
           visual: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

@@ -8,7 +8,6 @@ use axum::{Json, Router};
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use utoipa::{OpenApi, ToSchema};
-use utoipa_scalar::{Scalar, Servable};
 
 use super::{admin, docs::ApiDoc, public, viewer};
 use crate::core::config::Settings;
@@ -147,10 +146,8 @@ fn admin_routes(with_reads: bool) -> Router<Arc<AppState>> {
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .merge(Scalar::with_url("/scalar", ApiDoc::openapi()))
         .route("/openapi.json", get(|| async { Json(ApiDoc::openapi()) }))
-        .route("/docs", get(|| async { axum::response::Redirect::permanent("/scalar") }))
-        .route("/", get(|| async { Json(serde_json::json!({"service": "reports", "docs": "/scalar"})) }))
+        .route("/", get(|| async { Json(serde_json::json!({"service": "reports", "openapi": "/openapi.json"})) }))
         .route("/health", get(health))
         .route("/ready", get(ready))
         // Guest routes (gateway public rule).
@@ -211,7 +208,7 @@ pub async fn run_server(settings: Settings) -> anyhow::Result<()> {
     let state = AppState::new(stores, &settings);
     tracing::info!("service keys: {}", state.keys.names().join(", "));
     let addr: SocketAddr = format!("{}:{}", settings.server_host, settings.server_port).parse()?;
-    tracing::info!("Reports engine listening on http://{addr} (docs at /scalar)");
+    tracing::info!("Reports engine listening on http://{addr} (OpenAPI at /openapi.json)");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router(state)).await?;
     Ok(())
