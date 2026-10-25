@@ -5,17 +5,20 @@ ownership and `delete_fake_data.sh` can remove exactly this data later. A repeat
 reuses identical published schema and calculation versions, sets the visibility from the
 `access` entry of each report and writes no duplicate records (stable idempotency keys).
 
-Access cases of the sample data (a dataset uses the stricter of its report and its own value):
-- open: every card public (domain/repository-activity, fsm/storage-usage).
-- login only: the gated cards are `signed_in`, any session opens them (domain/repository-health,
-  cortex/model-usage, autodroid/job-queue) or the whole report is `signed_in`
-  (certifications/study-progress).
-- login plus admin: `restricted` cards need a project admin or a grant
-  (certifications/exam-results, autodroid/job-reliability) or the whole report does
-  (cortex/reliability).
-- hidden: a restricted card that is not discoverable (fsm/media-activity largest-by-app).
+Every project has 4 reports of 4 sections with 4 charts each (scripts/population/projects/
+builder.py). The cards keep their section order through the report `card_order`.
 
-Usage: scripts/populate_fake_data.sh [--project <slug>] [--dry-run]
+Access cases of the sample data (a dataset uses the stricter of its report and its own value):
+- open: every card public (domain/repository-activity, certifications/exam-catalog,
+  cortex/routing, autodroid/retries, fsm/storage-usage).
+- login only: gated cards are `signed_in`, any session opens them (domain/repository-health,
+  cortex/model-usage, autodroid/job-queue), or the whole report is `signed_in`
+  (domain/portfolio, certifications/study-progress, fsm/file-types).
+- login plus admin: `restricted` cards need a project admin or a grant
+  (certifications/exam-results, cortex/retrieval, autodroid/job-reliability, domain/delivery,
+  fsm/apps) or the whole report does (cortex/reliability, certifications/question-volume).
+- hidden: a restricted card that is not discoverable (fsm/media-activity largest-by-app,
+  autodroid/adapters adapter-summary).
 """
 
 from __future__ import annotations
@@ -114,7 +117,7 @@ def populate(module, dry_run: bool) -> dict:
         p = plan[report["slug"]]
         engine.request("PUT", f"/projects/{project}/admin/reports/{report['slug']}", {
             "title": report["title"], "description": report["description"],
-            "metadata": {"tags": report["tags"] + ["sample"], "sort_order": order,
+            "metadata": {"tags": report["tags"] + ["sample"], "sort_order": order, "card_order": report["cards"],
                          "period_source": {"collection": module.SCHEMA["schema_name"], "field": report["period_field"]}},
             "visibility": p["visibility"], "discoverable": p["discoverable"],
         })

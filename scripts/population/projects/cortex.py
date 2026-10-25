@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import random
 
-from .common import at, days, field, out, t, weighted
+from .builder import build, chart, dim, measure
+from .common import at, days, field, t, weighted
 
 PROJECT = "cortex"
 
@@ -58,85 +59,119 @@ def records(rng: random.Random) -> list[dict]:
     return out_
 
 
+SRC = "telemetry_event"
 PROVIDER_FILTER = {"field": "provider", "label": t("Provider", "Provedor", "ผู้ให้บริการ"), "type": "category"}
-DAY = out("day", t("Day", "Dia", "วัน"), "date", role="dimension")
+F = [PROVIDER_FILTER]
+OK = [{"field": "success", "op": "eq", "value": True}]
+FAILED = [{"field": "success", "op": "eq", "value": False}]
+RETRIEVAL = [{"field": "retrieval_source", "op": "in", "value": ["hippocampus", "web"]}]
 
-CALCULATIONS = {
-    "tokens-per-day": {
-        "title": t("Tokens per Day", "Tokens por Dia", "โทเค็นต่อวัน"),
-        "description": t("Input and output tokens of every execution, per day.", "Tokens de entrada e saída de cada execução, por dia.", "โทเค็นขาเข้าและขาออกของทุกการทำงาน ต่อวัน"),
-        "source": "telemetry_event", "filters": [PROVIDER_FILTER], "warm": True,
-        "buckets": [{"field": "started_at", "unit": "day", "name": "day"}],
-        "stages": [{"group_by": ["day"], "measures": [
-            {"name": "input_tokens", "agg": "sum", "field": "input_tokens"},
-            {"name": "output_tokens", "agg": "sum", "field": "output_tokens"}]}],
-        "sort": [{"field": "day"}],
-        "fields": [DAY, out("input_tokens", t("Input", "Entrada", "ขาเข้า"), "integer", unit="tokens"),
-                   out("output_tokens", t("Output", "Saída", "ขาออก"), "integer", unit="tokens")],
-    },
-    "tokens-by-provider": {
-        "title": t("Tokens by Provider", "Tokens por Provedor", "โทเค็นตามผู้ให้บริการ"),
-        "description": t("Share of all tokens per model provider.", "Participação de cada provedor no total de tokens.", "สัดส่วนโทเค็นทั้งหมดของแต่ละผู้ให้บริการ"),
-        "source": "telemetry_event",
-        "stages": [{"group_by": ["provider"], "measures": [{"name": "tokens", "agg": "sum", "field": "total_tokens"}],
-                    "derived": [{"name": "share", "expr": "tokens / sum_tokens * 100"}]}],
-        "sort": [{"field": "tokens", "desc": True}],
-        "fields": [out("provider", t("Provider", "Provedor", "ผู้ให้บริการ"), "string", role="dimension"),
-                   out("tokens", t("Tokens", "Tokens", "โทเค็น"), "integer"), out("share", t("Share", "Participação", "สัดส่วน"), "percent", decimals=1)],
-    },
-    "requests-by-task": {
-        "title": t("Requests by Task", "Requisições por Tarefa", "คำขอตามประเภทงาน"),
-        "description": t("Executions and mean tokens per task type.", "Execuções e média de tokens por tipo de tarefa.", "จำนวนการทำงานและโทเค็นเฉลี่ยตามประเภทงาน"),
-        "source": "telemetry_event", "filters": [PROVIDER_FILTER],
-        "stages": [{"group_by": ["task_type"], "measures": [
-            {"name": "requests", "agg": "count"}, {"name": "mean_tokens", "agg": "avg", "field": "total_tokens"}]}],
-        "sort": [{"field": "requests", "desc": True}],
-        "fields": [out("task_type", t("Task", "Tarefa", "งาน"), "string", role="dimension"),
-                   out("requests", t("Requests", "Requisições", "คำขอ"), "integer"),
-                   out("mean_tokens", t("Mean tokens", "Média de tokens", "โทเค็นเฉลี่ย"), "float", decimals=0)],
-    },
-    "success-rate-per-day": {
-        "title": t("Success Rate", "Taxa de Sucesso", "อัตราความสำเร็จ"),
-        "description": t("Successful executions per day, with a 7-day moving mean.", "Execuções com sucesso por dia, com média móvel de 7 dias.", "การทำงานที่สำเร็จต่อวัน พร้อมค่าเฉลี่ยเคลื่อนที่ 7 วัน"),
-        "source": "telemetry_event", "filters": [PROVIDER_FILTER],
-        "buckets": [{"field": "started_at", "unit": "day", "name": "day"}],
-        "stages": [{"group_by": ["day"], "measures": [
-            {"name": "requests", "agg": "count"},
-            {"name": "ok", "agg": "count", "where": [{"field": "success", "op": "eq", "value": True}]}],
-            "derived": [{"name": "success_rate", "expr": "ok / requests * 100"}],
-            "windows": [{"name": "rate_7d", "agg": "avg", "field": "success_rate", "size": 7, "order_by": "day"}]}],
-        "sort": [{"field": "day"}],
-        "fields": [DAY, out("success_rate", t("Success rate", "Taxa de sucesso", "อัตราความสำเร็จ"), "percent", decimals=1),
-                   out("rate_7d", t("7-day mean", "Média de 7 dias", "เฉลี่ย 7 วัน"), "percent", decimals=1)],
-    },
-    "latency-by-model": {
-        "title": t("Latency by Model", "Latência por Modelo", "เวลาแฝงตามโมเดล"),
-        "description": t("Mean and highest response time per model.", "Tempo de resposta médio e máximo por modelo.", "เวลาตอบสนองเฉลี่ยและสูงสุดของแต่ละโมเดล"),
-        "source": "telemetry_event", "filters": [PROVIDER_FILTER],
-        "stages": [{"group_by": ["model"], "measures": [
-            {"name": "mean_ms", "agg": "avg", "field": "latency_ms"}, {"name": "max_ms", "agg": "max", "field": "latency_ms"}]}],
-        "sort": [{"field": "mean_ms", "desc": True}],
-        "fields": [out("model", t("Model", "Modelo", "โมเดล"), "string", role="dimension"),
-                   out("mean_ms", t("Mean", "Média", "เฉลี่ย"), "float", unit="ms", decimals=0),
-                   out("max_ms", t("Highest", "Máximo", "สูงสุด"), "integer", unit="ms")],
-    },
-    "errors-by-type": {
-        "title": t("Errors by Type", "Erros por Tipo", "ข้อผิดพลาดตามประเภท"),
-        "description": t("Failed executions per error type.", "Execuções com falha por tipo de erro.", "การทำงานที่ล้มเหลวตามประเภทข้อผิดพลาด"),
-        "source": "telemetry_event",
-        "where": [{"field": "success", "op": "eq", "value": False}],
-        "stages": [{"group_by": ["error_type"], "measures": [{"name": "errors", "agg": "count"}]}],
-        "sort": [{"field": "errors", "desc": True}],
-        "fields": [out("error_type", t("Error", "Erro", "ข้อผิดพลาด"), "string", role="dimension"),
-                   out("errors", t("Errors", "Erros", "จำนวน"), "integer")],
-    },
-}
+DAY = dim("day", t("Day", "Dia", "วัน"), field="started_at", unit="day", per=t("Day", "Dia", "วัน"))
+WEEK = dim("week", t("Week", "Semana", "สัปดาห์"), field="started_at", unit="week", per=t("Week", "Semana", "สัปดาห์"))
+PROVIDER = dim("provider", t("Provider", "Provedor", "ผู้ให้บริการ"))
+MODEL = dim("model", t("Model", "Modelo", "โมเดล"))
+TASK = dim("task_type", t("Task", "Tarefa", "งาน"))
+ROLE = dim("role", t("Role", "Papel", "บทบาท"))
+STRATEGY = dim("strategy_id", t("Strategy", "Estratégia", "กลยุทธ์"))
+ERROR = dim("error_type", t("Error", "Erro", "ข้อผิดพลาด"))
+SOURCE = dim("retrieval_source", t("Retrieval source", "Fonte de recuperação", "แหล่งข้อมูลที่ดึง"))
 
-REPORTS = [
+REQUESTS = measure("requests", t("Requests", "Requisições", "คำขอ"), "count",
+                   about=t("Executions", "Execuções", "จำนวนการทำงาน"))
+TOKENS = measure("tokens", t("Tokens", "Tokens", "โทเค็น"), "sum", "total_tokens",
+                 about=t("Input plus output tokens", "Tokens de entrada mais saída", "โทเค็นขาเข้ารวมขาออก"))
+INPUT = measure("input_tokens", t("Input tokens", "Tokens de entrada", "โทเค็นขาเข้า"), "sum", "input_tokens", unit="tokens")
+OUTPUT = measure("output_tokens", t("Output tokens", "Tokens de saída", "โทเค็นขาออก"), "sum", "output_tokens", unit="tokens")
+MEAN_TOKENS = measure("mean_tokens", t("Mean tokens", "Média de tokens", "โทเค็นเฉลี่ย"), "avg", "total_tokens", type_="float", decimals=0,
+                      about=t("Mean tokens per execution", "Média de tokens por execução", "โทเค็นเฉลี่ยต่อการทำงาน"))
+SHARE = measure("share", t("Share", "Participação", "สัดส่วน"), expr="tokens / sum_tokens * 100", type_="percent", decimals=1)
+MEAN_MS = measure("mean_ms", t("Mean latency", "Latência média", "เวลาแฝงเฉลี่ย"), "avg", "latency_ms", type_="float", unit="ms", decimals=0,
+                  about=t("Mean response time", "Tempo médio de resposta", "เวลาตอบสนองเฉลี่ย"))
+MAX_MS = measure("max_ms", t("Highest latency", "Latência máxima", "เวลาแฝงสูงสุด"), "max", "latency_ms", unit="ms")
+MIN_MS = measure("min_ms", t("Lowest latency", "Latência mínima", "เวลาแฝงต่ำสุด"), "min", "latency_ms", unit="ms")
+_ALL = measure("all_requests", t("Requests", "Requisições", "คำขอ"), "count")
+_OK = measure("ok", t("Successful", "Com sucesso", "สำเร็จ"), "count", where=OK)
+SUCCESS = measure("success_rate", t("Success rate", "Taxa de sucesso", "อัตราความสำเร็จ"), expr="ok / all_requests * 100",
+                  type_="percent", decimals=1, needs=(_ALL, _OK),
+                  about=t("Share of successful executions", "Parcela de execuções com sucesso", "สัดส่วนการทำงานที่สำเร็จ"))
+RATE_7D = measure("rate_7d", t("7-day mean", "Média de 7 dias", "เฉลี่ย 7 วัน"), type_="percent", decimals=1,
+                  window={"agg": "avg", "field": "success_rate", "size": 7})
+FAILURES = measure("failures", t("Failures", "Falhas", "ความล้มเหลว"), "count", where=FAILED,
+                   about=t("Failed executions", "Execuções com falha", "การทำงานที่ล้มเหลว"))
+FALLBACKS = measure("fallbacks", t("Fallbacks", "Fallbacks", "การสำรอง"), "count", where=[{"field": "role", "op": "eq", "value": "fallback"}],
+                    about=t("Executions of a fallback model", "Execuções de um modelo de fallback", "การทำงานด้วยโมเดลสำรอง"))
+EXECUTIONS = measure("executions", t("Executions", "Execuções", "การทำงาน"), "count_distinct", "execution_id",
+                     about=t("Distinct executions", "Execuções distintas", "การทำงานที่ไม่ซ้ำ"))
+MODELS_IN_USE = measure("models", t("Models in use", "Modelos em uso", "โมเดลที่ใช้"), "count_distinct", "model",
+                 about=t("Distinct models", "Modelos distintos", "โมเดลที่ไม่ซ้ำ"))
+PROVIDERS = measure("providers", t("Providers in use", "Provedores em uso", "ผู้ให้บริการที่ใช้"), "count_distinct", "provider",
+                    about=t("Distinct providers", "Provedores distintos", "ผู้ให้บริการที่ไม่ซ้ำ"))
+STRATEGIES = measure("strategies", t("Strategies in use", "Estratégias em uso", "กลยุทธ์ที่ใช้"), "count_distinct", "strategy_id",
+                     about=t("Distinct routing strategies", "Estratégias de roteamento distintas", "กลยุทธ์การกำหนดเส้นทางที่ไม่ซ้ำ"))
+_HIPPO = measure("hippocampus", t("Hippocampus", "Hippocampus", "Hippocampus"), "count",
+                 where=[{"field": "retrieval_source", "op": "eq", "value": "hippocampus"}])
+HIPPO_SHARE = measure("hippocampus_share", t("Hippocampus share", "Parcela do Hippocampus", "สัดส่วน Hippocampus"),
+                      expr="hippocampus / all_requests * 100", type_="percent", decimals=1, needs=(_ALL, _HIPPO),
+                      about=t("Share of retrievals from Hippocampus", "Parcela das recuperações vindas do Hippocampus", "สัดส่วนการดึงข้อมูลจาก Hippocampus"))
+
+
+def c(measures, dims=(), **kw):
+    return chart(SRC, measures, dims, filters=kw.pop("filters", F), **kw)
+
+
+CALCULATIONS, REPORTS = build([
     {"slug": "model-usage", "title": t("Model Usage", "Uso de Modelos", "การใช้โมเดล"),
-     "description": t("How Cortex spends tokens across providers and tasks.", "Como o Cortex usa tokens entre provedores e tarefas.", "Cortex ใช้โทเค็นอย่างไรในแต่ละผู้ให้บริการและงาน"),
-     "tags": ["llm", "tokens"], "period_field": "started_at", "cards": ["tokens-per-day", "tokens-by-provider", "requests-by-task"], "access": {"cards": {"tokens-by-provider": "signed_in", "requests-by-task": "signed_in"}}},
+     "description": t("How Cortex spends tokens across providers, models and tasks.", "Como o Cortex usa tokens entre provedores, modelos e tarefas.", "Cortex ใช้โทเค็นอย่างไรในแต่ละผู้ให้บริการ โมเดล และงาน"),
+     "tags": ["llm", "tokens"], "period_field": "started_at",
+     "access": {"cards": {"tokens-by-model": "signed_in", "requests-per-day-by-provider": "signed_in", "tokens-by-provider-and-model": "signed_in"}},
+     "sections": [
+         [("total-tokens", c([TOKENS], warm=True)), ("tokens-per-day", c([INPUT, OUTPUT], [DAY], warm=True)),
+          ("tokens-by-provider", c([TOKENS, SHARE], [PROVIDER])), ("tokens-by-model", c([TOKENS], [MODEL]))],
+         [("total-requests", c([REQUESTS])), ("requests-per-day", c([REQUESTS], [DAY])),
+          ("requests-by-task", c([REQUESTS, MEAN_TOKENS], [TASK])), ("requests-per-day-by-provider", c([REQUESTS], [DAY, PROVIDER]))],
+         [("mean-tokens", c([MEAN_TOKENS])), ("mean-tokens-per-day", c([MEAN_TOKENS], [DAY])),
+          ("tokens-by-task", c([INPUT, OUTPUT], [TASK])), ("tokens-by-provider-and-model", c([TOKENS, REQUESTS], [PROVIDER, MODEL]))],
+         [("tokens-per-week", c([TOKENS], [WEEK])), ("requests-per-week", c([REQUESTS], [WEEK])),
+          ("tokens-per-week-by-task", c([TOKENS], [WEEK, TASK])), ("weekly-summary", c([REQUESTS, TOKENS, MEAN_TOKENS, MEAN_MS], [WEEK]))],
+     ]},
     {"slug": "reliability", "title": t("Reliability", "Confiabilidade", "ความน่าเชื่อถือ"),
-     "description": t("Success rate, latency and errors of the orchestration.", "Taxa de sucesso, latência e erros da orquestração.", "อัตราความสำเร็จ เวลาแฝง และข้อผิดพลาดของระบบ"),
-     "tags": ["llm", "quality"], "period_field": "started_at", "cards": ["success-rate-per-day", "latency-by-model", "errors-by-type"], "access": {"report": "restricted"}},
-]
+     "description": t("Success rate, latency, errors and fallbacks of the orchestration.", "Taxa de sucesso, latência, erros e fallbacks da orquestração.", "อัตราความสำเร็จ เวลาแฝง ข้อผิดพลาด และการสำรองของระบบ"),
+     "tags": ["llm", "quality"], "period_field": "started_at", "access": {"report": "restricted"},
+     "sections": [
+         [("success-rate", c([SUCCESS])), ("success-rate-per-day", c([SUCCESS, RATE_7D], [DAY])),
+          ("failures-by-provider", c([FAILURES], [PROVIDER])), ("success-rate-by-model", c([SUCCESS], [MODEL]))],
+         [("mean-latency", c([MEAN_MS])), ("latency-per-day", c([MEAN_MS], [DAY])),
+          ("latency-by-model", c([MEAN_MS, MAX_MS], [MODEL])), ("latency-by-task", c([MEAN_MS, MIN_MS, MAX_MS], [TASK]))],
+         [("total-failures", c([FAILURES])), ("failures-per-day", c([FAILURES], [DAY])),
+          ("errors-by-type", c([FAILURES], [ERROR], where=FAILED)), ("failures-per-day-by-error", c([FAILURES], [DAY, ERROR], where=FAILED))],
+         [("total-fallbacks", c([FALLBACKS])), ("fallbacks-per-day", c([FALLBACKS], [DAY])),
+          ("fallbacks-by-provider", c([FALLBACKS], [PROVIDER])), ("errors-by-provider-and-type", c([FAILURES], [PROVIDER, ERROR], where=FAILED))],
+     ]},
+    {"slug": "routing", "title": t("Routing", "Roteamento", "การกำหนดเส้นทาง"),
+     "description": t("Strategies, roles and tasks that route each request to a model.", "Estratégias, papéis e tarefas que levam cada requisição a um modelo.", "กลยุทธ์ บทบาท และงานที่ส่งคำขอแต่ละรายการไปยังโมเดล"),
+     "tags": ["llm", "routing"], "period_field": "started_at",
+     "sections": [
+         [("strategies-in-use", c([STRATEGIES])), ("requests-by-strategy", c([REQUESTS], [STRATEGY])),
+          ("tokens-by-strategy", c([TOKENS], [STRATEGY])), ("latency-by-strategy", c([MEAN_MS], [STRATEGY]))],
+         [("requests-by-role", c([REQUESTS], [ROLE])), ("tokens-by-role", c([TOKENS, MEAN_TOKENS], [ROLE])),
+          ("latency-by-role", c([MEAN_MS, MAX_MS], [ROLE])), ("requests-per-day-by-role", c([REQUESTS], [DAY, ROLE]))],
+         [("requests-by-task-and-provider", c([REQUESTS, TOKENS], [TASK, PROVIDER])), ("tokens-per-day-by-task", c([TOKENS], [DAY, TASK])),
+          ("latency-of-tasks", c([MEAN_MS], [TASK])), ("success-rate-by-task", c([SUCCESS], [TASK]))],
+         [("distinct-executions", c([EXECUTIONS])), ("executions-per-day", c([EXECUTIONS], [DAY])),
+          ("models-per-day", c([MODELS_IN_USE], [DAY])), ("providers-in-use", c([PROVIDERS]))],
+     ]},
+    {"slug": "retrieval", "title": t("Memory Retrieval", "Recuperação de Memória", "การดึงหน่วยความจำ"),
+     "description": t("Requests that read Hippocampus memories or the web before answering.", "Requisições que leem memórias do Hippocampus ou a web antes de responder.", "คำขอที่อ่านหน่วยความจำ Hippocampus หรือเว็บก่อนตอบ"),
+     "tags": ["llm", "memory"], "period_field": "started_at",
+     "access": {"report": "signed_in", "cards": {"retrieval-by-task-and-source": "restricted"}},
+     "sections": [
+         [("retrieval-requests", c([REQUESTS], where=RETRIEVAL)), ("requests-by-source", c([REQUESTS], [SOURCE], where=RETRIEVAL)),
+          ("tokens-by-source", c([TOKENS, MEAN_TOKENS], [SOURCE], where=RETRIEVAL)), ("latency-by-source", c([MEAN_MS, MAX_MS], [SOURCE], where=RETRIEVAL))],
+         [("hippocampus-share", c([HIPPO_SHARE], where=RETRIEVAL)), ("retrieval-per-day", c([REQUESTS], [DAY], where=RETRIEVAL)),
+          ("retrieval-per-day-by-source", c([REQUESTS], [DAY, SOURCE], where=RETRIEVAL)), ("hippocampus-share-per-day", c([HIPPO_SHARE], [DAY], where=RETRIEVAL))],
+         [("retrieval-tokens-per-day", c([TOKENS], [DAY], where=RETRIEVAL)), ("retrieval-by-task-and-source", c([REQUESTS], [TASK, SOURCE], where=RETRIEVAL)),
+          ("retrieval-by-model", c([REQUESTS], [MODEL], where=RETRIEVAL)), ("retrieval-success-by-source", c([SUCCESS], [SOURCE], where=RETRIEVAL))],
+         [("retrieval-per-week", c([REQUESTS], [WEEK], where=RETRIEVAL)), ("retrieval-tokens-per-week", c([TOKENS], [WEEK], where=RETRIEVAL)),
+          ("retrieval-latency-per-week", c([MEAN_MS], [WEEK], where=RETRIEVAL)), ("retrieval-mean-latency", c([MEAN_MS], where=RETRIEVAL))],
+     ]},
+])
