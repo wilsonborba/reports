@@ -206,7 +206,7 @@ class _ScatterPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _grid(canvas, size, p);
     final pts = ScatterFit.points;
-    final dot = Paint()..color = p.seriesAt(0).withValues(alpha: 0.75);
+    final dot = Paint()..color = p.seriesAt(2).withValues(alpha: 0.75);
     for (var i = 0; i < pts.length; i++) {
       final local = ((t / 0.6) - i / pts.length * 0.6).clamp(0.0, 1.0);
       if (local <= 0) continue;
@@ -273,7 +273,7 @@ class _BellPainter extends CustomPainter {
     fill
       ..lineTo(at(1).dx, size.height)
       ..close();
-    canvas.drawPath(fill, Paint()..color = p.seriesAt(0).withValues(alpha: 0.25 * reveal));
+    canvas.drawPath(fill, Paint()..color = p.seriesAt(3).withValues(alpha: 0.25 * reveal));
     final curve = Path();
     final end = -3.5 + 7 * reveal;
     for (var z = -3.5; z <= end; z += 0.05) {
@@ -283,7 +283,7 @@ class _BellPainter extends CustomPainter {
     canvas.drawPath(
       curve,
       Paint()
-        ..color = p.seriesAt(0)
+        ..color = p.seriesAt(3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5,
     );
@@ -367,14 +367,14 @@ class _NetPainter extends CustomPainter {
           o,
           9,
           Paint()
-            ..color = p.seriesAt(l == layers.length - 1 ? 1 : 0)
+            ..color = p.seriesAt(l)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2,
         );
         // A fixed pattern of active nodes, the same on every run.
         final active = (i * 7 + l * 3) % 3 != 0 || l == 0;
         if (lit > 0 && active) {
-          canvas.drawCircle(o, 6 * lit, Paint()..color = p.seriesAt(l == layers.length - 1 ? 1 : 0));
+          canvas.drawCircle(o, 6 * lit, Paint()..color = p.seriesAt(l));
         }
       }
     }

@@ -104,11 +104,13 @@ class ProjectTile extends StatelessWidget {
                   items: s.chartsByReport,
                   format: (v) => '$v',
                   moreLabel: context.tr('more_reports', {'n': '${s.chartsByReport.length - 4}'}),
+                  slot: 2,
                 ),
               ),
               MiniChartFrame(
                 title: context.tr('rows_per_day'),
                 child: Sparkline(
+                  slot: 3,
                   days: s.rowsByDay,
                   tooltip: s.rowsByDay.isEmpty
                       ? ''
