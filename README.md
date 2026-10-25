@@ -97,6 +97,11 @@ curl -X POST -H "x-reports-service-key: $REPORTS_SERVICE_API_KEY" -H "Content-Ty
 ## Access rules
 
 - Visibility: `public`, `signed_in`, `restricted`. A dataset uses the stricter of its report and its own value.
+- `signed_in` opens for any session, with no role. `restricted` needs a project admin, the super admin or a grant.
+- The sample data has every case (the `access` entry of each report in `scripts/population/projects/`):
+  login only in `domain/repository-health`, `cortex/model-usage`, `autodroid/job-queue` and
+  `certifications/study-progress`; login plus admin in `certifications/exam-results`,
+  `autodroid/job-reliability` and `cortex/reliability`; a hidden card in `fsm/media-activity`.
 - Guests get 401 for gated data (login may help). Signed-in callers get 403 (access limited).
 - Super admin: `x-access-level: 1` together with `x-uuid` from the gateway session.
 - Project admin: a `user_project_roles` row for the user UUID. The `x-project-admin` header is ignored.

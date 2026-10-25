@@ -123,8 +123,8 @@ CALCULATIONS = {
 REPORTS = [
     {"slug": "exam-results", "title": t("Exam Results", "Resultados das Provas", "ผลการสอบ"),
      "description": t("Pass rates and scores of the exam simulations.", "Taxas de aprovação e notas dos simulados.", "อัตราการสอบผ่านและคะแนนของข้อสอบจำลอง"),
-     "tags": ["learning"], "period_field": "created_at", "cards": ["pass-rate-by-exam", "score-by-language", "attempts-per-day"]},
+     "tags": ["learning"], "period_field": "created_at", "cards": ["pass-rate-by-exam", "score-by-language", "attempts-per-day"], "access": {"cards": {"score-by-language": "signed_in", "attempts-per-day": "restricted"}}},
     {"slug": "study-progress", "title": t("Study Progress", "Progresso dos Estudos", "ความก้าวหน้าในการเรียน"),
      "description": t("Accuracy, certificates and weekly scores.", "Acurácia, certificados e notas semanais.", "ความแม่นยำ ใบรับรอง และคะแนนรายสัปดาห์"),
-     "tags": ["learning"], "period_field": "created_at", "cards": ["accuracy-by-exam", "certificates-issued", "score-per-week"]},
+     "tags": ["learning"], "period_field": "created_at", "cards": ["accuracy-by-exam", "certificates-issued", "score-per-week"], "access": {"report": "signed_in"}},
 ]
