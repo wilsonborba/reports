@@ -157,11 +157,6 @@ class PublicFooter extends StatelessWidget {
           () => context.go(AppRoutes.homeArchitecture),
         ),
         _FooterLink(
-          context.tr('pub_api_docs'),
-          () => openPublicLink(engineUrl(apiDocsPath)),
-          external: true,
-        ),
-        _FooterLink(
           context.tr('pub_api_openapi'),
           () => openPublicLink(engineUrl(openApiPath)),
           external: true,

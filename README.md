@@ -66,7 +66,7 @@ cargo run --manifest-path engine/Cargo.toml -- serve
 
 ## API
 
-Interactive docs: `http://localhost:8109/scalar` (OpenAPI at `/openapi.json`).
+OpenAPI description: `http://localhost:8109/openapi.json`.
 
 Guest routes (the gateway checks no session; the engine treats every caller as a guest):
 

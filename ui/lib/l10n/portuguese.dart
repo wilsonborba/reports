@@ -378,7 +378,6 @@ const Map<String, String> portugueseAdditional = {
   'pub_nav_api': 'API',
   
   
-  'pub_api_docs': 'Abrir a documentação da API',
   'pub_api_openapi': 'Arquivo OpenAPI',
   
   
