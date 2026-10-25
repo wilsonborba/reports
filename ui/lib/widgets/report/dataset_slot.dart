@@ -55,6 +55,18 @@ class _DatasetSlotState extends State<DatasetSlot> {
   bool _filtersOpen = false;
   bool _asTable = false;
 
+  @override
+  void didUpdateWidget(DatasetSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The same place on the board can show another card: take that card's own state.
+    if (oldWidget.project != widget.project || oldWidget.report != widget.report || oldWidget.slot.key != widget.slot.key) {
+      _filters = CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
+      _filtersOpen = false;
+      _asTable = false;
+      _last = null;
+    }
+  }
+
   Future<SlotData> _fetch(String lang, Map<String, String> filters) async {
     final service = ReportService.instance;
     final ids = [widget.slot.datasetId, ...widget.slot.companions.where((c) => widget.view.dataset(c) != null)];
@@ -73,7 +85,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       return;
     }
     final sorted = _filters.keys.toList()..sort();
-    final key = '${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
+    final key = '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
     if (key == _key) return;
     _key = key;
     _future = _fetch(lang, _filters);
