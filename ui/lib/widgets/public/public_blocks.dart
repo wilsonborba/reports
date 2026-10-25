@@ -16,7 +16,7 @@ class Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: context.palette.textMuted, letterSpacing: 0.16),
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.palette.accent, letterSpacing: 0.16),
       );
 }
 
@@ -53,6 +53,7 @@ class PublicHero extends StatelessWidget {
     ]);
     return PublicSection(
       vertical: phone ? 40 : 88,
+      glow: true,
       child: wide && visual != null
           ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               Expanded(flex: 6, child: Reveal(child: texts)),
@@ -213,35 +214,49 @@ class _PublicCardState extends State<PublicCard> {
   }
 }
 
-/// Primary (filled) or secondary (outlined) button of the public pages, with an arrow.
+/// Emphasis of a public page button (Carbon): one primary per page, tertiary for other
+/// positive actions, ghost for the least pronounced ones.
+enum ButtonKind { primary, tertiary, ghost }
+
+/// Button of the public pages, with an icon after the label.
 class PublicButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
-  final bool primary;
+  final ButtonKind kind;
   final IconData icon;
 
-  const PublicButton({super.key, required this.label, required this.onPressed, this.primary = true, this.icon = Icons.arrow_forward_rounded});
+  const PublicButton({super.key, required this.label, required this.onPressed, this.kind = ButtonKind.primary, this.icon = Icons.arrow_forward_rounded});
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     const padding = EdgeInsets.symmetric(horizontal: 20, vertical: 18);
-    if (primary) {
-      return FilledButton.icon(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(backgroundColor: p.accent, foregroundColor: p.onAccent, padding: padding),
-        iconAlignment: IconAlignment.end,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-      );
-    }
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(padding: padding),
-      iconAlignment: IconAlignment.end,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-    );
+    final label = Text(this.label);
+    final icon = Icon(this.icon, size: 18);
+    return switch (kind) {
+      ButtonKind.primary => FilledButton.icon(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(backgroundColor: p.accent, foregroundColor: p.onAccent, padding: padding),
+          iconAlignment: IconAlignment.end,
+          icon: icon,
+          label: label,
+        ),
+      // Tertiary: outline and text in the interactive color.
+      ButtonKind.tertiary => OutlinedButton.icon(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(padding: padding, foregroundColor: p.accent, side: BorderSide(color: p.accent)),
+          iconAlignment: IconAlignment.end,
+          icon: icon,
+          label: label,
+        ),
+      ButtonKind.ghost => TextButton.icon(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(padding: padding, foregroundColor: p.accent),
+          iconAlignment: IconAlignment.end,
+          icon: icon,
+          label: label,
+        ),
+    };
   }
 }
 
@@ -373,7 +388,7 @@ class StatBand extends StatelessWidget {
               padding: const EdgeInsets.only(top: 16),
               decoration: BoxDecoration(border: Border(top: BorderSide(color: p.border))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(value, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w300, color: p.textPrimary, height: 1.1)),
+                Text(value, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w300, color: p.highlight, height: 1.1)),
                 const SizedBox(height: 8),
                 Text(label, style: TextStyle(fontSize: 14, color: p.textMuted, height: 1.45)),
               ]),

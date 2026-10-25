@@ -34,7 +34,7 @@ class ContactView extends StatelessWidget {
               PublicButton(
                 key: Key('contact_group_${s.network}'),
                 label: socialName(s.network),
-                primary: i == 0,
+                kind: i == 0 ? ButtonKind.primary : ButtonKind.tertiary,
                 icon: Icons.forum_outlined,
                 onPressed: () => openPublicLink(s.url),
               ),

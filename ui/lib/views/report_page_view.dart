@@ -18,6 +18,7 @@ import '../widgets/report/artifacts_menu.dart';
 import '../widgets/report/section_board.dart';
 import '../widgets/report/section_pills.dart';
 import '../widgets/shell/breadcrumbs.dart';
+import '../widgets/shell/guest_prompt.dart';
 import '../widgets/shell/page_header.dart';
 
 /// Report page (/v1/menu/:project/:report?section=N): one section at a time,
@@ -40,6 +41,9 @@ class _ReportPageViewState extends State<ReportPageView> {
   Future<ProjectSummary?>? _project;
   String? _key;
 
+  /// Tier of the cards to show (engine filter); null shows every card.
+  String? _tier;
+
   /// Custom section names of this report (browser).
   Map<int, String> _names = {};
 
@@ -57,9 +61,11 @@ class _ReportPageViewState extends State<ReportPageView> {
 
   void _load(String lang) {
     _lang = lang;
-    final key = '${widget.project}/${widget.report}/$lang';
-    if (key == _key) return;
     final reportChanged = _key == null || !_key!.startsWith('${widget.project}/${widget.report}/');
+    // Another report starts without a tier filter.
+    if (reportChanged) _tier = null;
+    final key = '${widget.project}/${widget.report}/$lang/${_tier ?? ''}';
+    if (key == _key) return;
     _key = key;
     if (reportChanged) {
       _jobs?.dispose();
@@ -70,7 +76,9 @@ class _ReportPageViewState extends State<ReportPageView> {
         if (mounted && project == widget.project && report == widget.report) setState(() => _names = n);
       });
     }
-    _future = ReportService.instance.report(widget.project, widget.report, lang: lang);
+    _future = ReportService.instance.report(widget.project, widget.report, lang: lang, tier: _tier);
+    // The guest prompt shows what a sign in would open in this report (engine counts).
+    _future!.then((v) => GuestPrompt.report.value = v.access, onError: (_) => GuestPrompt.report.value = null);
     _project = CatalogService.instance.project(widget.project, lang: lang);
   }
 
@@ -89,6 +97,7 @@ class _ReportPageViewState extends State<ReportPageView> {
   @override
   void dispose() {
     _jobs?.dispose();
+    GuestPrompt.report.value = null;
     super.dispose();
   }
 
@@ -138,6 +147,16 @@ class _ReportPageViewState extends State<ReportPageView> {
                     style: TextStyle(fontSize: 12.5, color: p.textMuted)),
               ],
               const SizedBox(height: 18),
+              // Card tier filter, when the report mixes tiers (the engine lists them).
+              if (view.tiers.length > 1) ...[
+                TierFilter(
+                  key: const Key('card_tier_filter'),
+                  tiers: view.tiers,
+                  selected: _tier,
+                  onChanged: (t) => setState(() => _tier = t),
+                ),
+                const SizedBox(height: 16),
+              ],
               if (sections.length > 1) ...[
                 SectionPills(
                   count: sections.length,

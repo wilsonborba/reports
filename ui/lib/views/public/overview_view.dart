@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
+import '../../services/session_store.dart';
+import '../../widgets/shell/session_prompt.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
 import '../../routes.dart';
@@ -63,18 +66,15 @@ class OverviewView extends StatelessWidget {
           eyebrow: context.tr('pub_home_eyebrow'),
           title: context.tr('pub_home_title'),
           lead: context.tr('pub_home_lead'),
+          // One primary action and the session action. Projects and science have their
+          // tabs and their sections further down this page.
           actions: [
             PublicButton(
-              key: const Key('home_cta_projects'),
-              label: context.tr('pub_home_cta_projects'),
-              onPressed: () => context.go(AppRoutes.homeProjects),
+              key: const Key('home_cta_reports'),
+              label: context.tr('pub_cta_reports_title'),
+              onPressed: () => context.go(AppRoutes.menu),
             ),
-            PublicButton(
-              key: const Key('home_cta_science'),
-              label: context.tr('pub_home_cta_science'),
-              primary: false,
-              onPressed: () => context.go(AppRoutes.homeScience),
-            ),
+            const _SessionAction(),
           ],
           // The data path, then the kind of chart that the reports show at its end.
           visual: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -207,3 +207,34 @@ List<Widget> nextStepBand(BuildContext context) => [
         ],
       ),
     ];
+
+/// Sign in (guest) or log out (signed in), as the ghost button next to the hero action.
+class _SessionAction extends StatelessWidget {
+  const _SessionAction();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SessionStore.instance,
+      builder: (context, _) {
+        final session = SessionStore.instance;
+        if (!session.isLoaded) return const SizedBox.shrink();
+        return session.hasSession
+            ? PublicButton(
+                key: const Key('home_log_out'),
+                label: context.tr('auth_log_out'),
+                kind: ButtonKind.ghost,
+                icon: Icons.logout_rounded,
+                onPressed: () => logOut(GoRouter.of(context)),
+              )
+            : PublicButton(
+                key: const Key('home_sign_in'),
+                label: context.tr('sign_in'),
+                kind: ButtonKind.ghost,
+                icon: Icons.login_rounded,
+                onPressed: () => AuthService.instance.signIn(returnTo: AppRoutes.menu),
+              );
+      },
+    );
+  }
+}

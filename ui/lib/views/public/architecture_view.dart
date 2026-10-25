@@ -235,6 +235,7 @@ class _TitleSlideState extends State<_TitleSlide> {
     return PublicSection(
       key: const Key('arch_slide_1'),
       background: p.textPrimary,
+      glow: true,
       child: SplitBlock(text: text, visual: Reveal(delay: const Duration(milliseconds: 120), child: visual)),
     );
   }

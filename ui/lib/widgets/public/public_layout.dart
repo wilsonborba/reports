@@ -66,18 +66,18 @@ class PublicSection extends StatelessWidget {
   final bool topBorder;
   final double? vertical;
 
-  const PublicSection({super.key, required this.child, this.background, this.topBorder = false, this.vertical});
+  /// Soft brand glow behind the content (hero bands only): accent at the top right,
+  /// highlight at the bottom left.
+  final bool glow;
+
+  const PublicSection({super.key, required this.child, this.background, this.topBorder = false, this.vertical, this.glow = false});
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final phone = PublicLayout.isPhone(context);
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: background ?? p.canvas,
-        border: topBorder ? Border(top: BorderSide(color: p.border)) : null,
-      ),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Widget content = Padding(
       padding: EdgeInsets.symmetric(horizontal: PublicLayout.gutter(context), vertical: vertical ?? (phone ? 40 : 72)),
       // The content column always takes the full width up to the maximum, so short blocks stay left.
       child: Align(
@@ -87,6 +87,22 @@ class PublicSection extends StatelessWidget {
           child: SizedBox(width: double.infinity, child: _Band(color: background ?? p.canvas, child: child)),
         ),
       ),
+    );
+    if (glow) {
+      RadialGradient blob(Alignment at, Color color, double alpha) =>
+          RadialGradient(center: at, radius: 1.1, colors: [color.withValues(alpha: alpha), color.withValues(alpha: 0)]);
+      content = DecoratedBox(
+        decoration: BoxDecoration(gradient: blob(const Alignment(0.9, -0.8), p.accent, dark ? 0.20 : 0.12)),
+        child: DecoratedBox(decoration: BoxDecoration(gradient: blob(const Alignment(-0.9, 0.9), p.highlight, dark ? 0.10 : 0.08)), child: content),
+      );
+    }
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: background ?? p.canvas,
+        border: topBorder ? Border(top: BorderSide(color: p.border)) : null,
+      ),
+      child: content,
     );
   }
 }

@@ -34,7 +34,7 @@ class FlowDiagram extends StatelessWidget {
           builder: (context, t) {
             final nodes = [
               for (var i = 0; i < steps.length; i++)
-                _Node(step: steps[i], color: p.seriesAt(i), t: ((t * 2.2) - i * 0.18).clamp(0.0, 1.0)),
+                _Node(step: steps[i], color: _brand(p, i), t: ((t * 2.2) - i * 0.18).clamp(0.0, 1.0)),
             ];
             // The link line goes under the steps, the data dots over them.
             Widget paint(Widget child) => CustomPaint(
@@ -149,3 +149,6 @@ class _LinkPainter extends CustomPainter {
   @override
   bool shouldRepaint(_LinkPainter old) => old.t != t || old.row != row || old.palette != palette || old.dots != dots;
 }
+
+/// Brand color of a step: accent, highlight, info, caution, positive, in turn.
+Color _brand(ReportPalette p, int i) => [p.accent, p.highlight, p.info, p.caution, p.positive][i % 5];

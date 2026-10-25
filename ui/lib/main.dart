@@ -127,6 +127,7 @@ class _ReportsAppState extends State<ReportsApp> {
                             datasetId: state.pathParameters['dataset']!,
                             visual: DatasetFullView.visualOf(state.uri.queryParameters['visual']),
                             filters: DatasetFullView.filtersOf(state.uri.queryParameters),
+                            table: state.uri.queryParameters['view'] == 'table',
                           ),
                         ),
                       ],

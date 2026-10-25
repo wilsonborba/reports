@@ -27,6 +27,49 @@ class DataTierBadge extends StatelessWidget {
   }
 }
 
+/// Tier filter of a list or a report: All, then the given tiers (real, hybrid, sample).
+/// The engine filters; this only picks the value it sends.
+class TierFilter extends StatelessWidget {
+  final List<String> tiers;
+  final String? selected;
+  final ValueChanged<String?> onChanged;
+
+  const TierFilter({super.key, required this.tiers, required this.selected, required this.onChanged});
+
+  static const all = ['real', 'hybrid', 'sample'];
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    Widget chip(String? tier) {
+      final on = tier == selected;
+      final label = tier == null ? context.tr('tier_all') : context.tr('data_tier_$tier');
+      return ChoiceChip(
+        key: Key('tier_filter_${tier ?? 'all'}'),
+        label: Text(label),
+        selected: on,
+        showCheckmark: false,
+        onSelected: (_) => onChanged(tier),
+        labelStyle: TextStyle(fontSize: 12.5, fontWeight: on ? FontWeight.w600 : FontWeight.w400, color: on ? p.onAccent : p.textPrimary),
+        selectedColor: p.accent,
+        backgroundColor: p.surface,
+        side: BorderSide(color: on ? p.accent : p.border),
+        visualDensity: VisualDensity.compact,
+      );
+    }
+
+    return Semantics(
+      container: true,
+      label: context.tr('tier_filter'),
+      child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Text(context.tr('tier_filter'), style: TextStyle(fontSize: 12.5, color: p.textMuted)),
+        chip(null),
+        for (final t in tiers) chip(t),
+      ]),
+    );
+  }
+}
+
 /// Grid or list view choice, shared by the catalog pages and kept in the browser.
 class CatalogViewModeStore {
   static const _key = 'catalog_view_mode';

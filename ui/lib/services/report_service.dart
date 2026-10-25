@@ -23,14 +23,16 @@ class ReportService {
 
   String get _mode => SessionStore.instance.hasSession ? 'u:${SessionStore.instance.user?.userId}' : 'guest';
 
-  Future<ReportView> report(String project, String report, {required String lang}) async {
-    final key = '$_mode/$project/$report/$lang';
+  /// [tier] keeps only the cards of that tier (engine filter); null shows every card.
+  Future<ReportView> report(String project, String report, {required String lang, String? tier}) async {
+    final key = '$_mode/$project/$report/$lang/${tier ?? ''}';
+    final q = {'lang': lang, 'tier': ?tier};
     final hit = _reports[key];
     if (hit != null && DateTime.now().difference(hit.$1) < ttl) return hit.$2;
     final session = SessionStore.instance;
     if (session.hasSession) {
       try {
-        final view = ReportView.fromJson(await api.getJson('/projects/$project/reports/$report', {'lang': lang}));
+        final view = ReportView.fromJson(await api.getJson('/projects/$project/reports/$report', q));
         _reports[key] = (DateTime.now(), view);
         return view;
       } on ApiException catch (e) {
@@ -38,8 +40,8 @@ class ReportService {
         session.markExpired();
       }
     }
-    final showcase = Showcase.fromJson(await api.getJson('/projects/$project/showcase/$report', {'lang': lang}));
-    final guestKey = 'guest/$project/$report/$lang';
+    final showcase = Showcase.fromJson(await api.getJson('/projects/$project/showcase/$report', q));
+    final guestKey = 'guest/$project/$report/$lang/${tier ?? ''}';
     _reports[guestKey] = (DateTime.now(), showcase.view);
     showcase.pages.forEach((id, page) => _datasets[_datasetKey('guest', project, report, id, lang, showcaseRows, 0, const {})] = page);
     return showcase.view;

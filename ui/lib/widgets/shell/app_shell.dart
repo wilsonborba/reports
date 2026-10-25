@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import 'package:go_router/go_router.dart';
-import '../../services/auth_service.dart';
 import '../../services/catalog_service.dart';
 import '../../services/session_store.dart';
 import '../../themes/catalog_brands.dart';
 import '../../themes/report_palette.dart';
 import '../../themes/theme_controller.dart';
 import '../../themes/theme_registry.dart';
+import '../../routes.dart';
+import 'guest_prompt.dart';
 import 'sidebar.dart';
 import 'top_bar.dart';
 
@@ -43,7 +44,8 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  /// The gateway ended the session: say so once, offer a login, change nothing else.
+  /// The gateway ended the session: say so once, change nothing else (the guest prompt
+  /// offers the login).
   void _onSession() {
     final session = SessionStore.instance;
     if (!session.sessionEnded || !mounted) return;
@@ -53,7 +55,6 @@ class _AppShellState extends State<AppShell> {
       key: const Key('session_ended'),
       content: Text(context.tr('auth_session_ended_text')),
       duration: const Duration(seconds: 8),
-      action: SnackBarAction(label: context.tr('sign_in'), onPressed: () => AuthService.instance.signIn(returnTo: GoRouterState.of(context).uri.path)),
     ));
   }
 
@@ -74,24 +75,33 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) => Theme(
         data: ThemeRegistry.theme(widget.project, brightness),
         child: Builder(
-          builder: (context) => Scaffold(
-            backgroundColor: context.palette.canvas,
-            body: Column(
-              children: [
-                const TopBar(),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (widget.showSidebar) Sidebar(project: widget.project, report: widget.report),
-                      // The content takes the remaining width and adjusts when the sidebar changes.
-                      Expanded(child: widget.child),
-                    ],
+          builder: (context) {
+            final path = GoRouterState.of(context).uri.path;
+            final inReports = path.startsWith(AppRoutes.menu);
+            return Scaffold(
+              backgroundColor: context.palette.canvas,
+              body: Column(
+                children: [
+                  const TopBar(),
+                  Expanded(
+                    child: Stack(children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.showSidebar) Sidebar(project: widget.project, report: widget.report),
+                          // The content takes the remaining width and adjusts when the sidebar changes.
+                          Expanded(child: widget.child),
+                        ],
+                      ),
+                      // A guest in the report area gets the sign in prompt at the bottom.
+                      if (inReports)
+                        Positioned(left: 0, right: 0, bottom: 20, child: Center(child: GuestPrompt(returnTo: path))),
+                    ]),
                   ),
-                ),
-              ],
-            ),
-          ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

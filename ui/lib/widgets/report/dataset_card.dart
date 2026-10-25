@@ -35,6 +35,9 @@ class DatasetCard extends StatefulWidget {
   /// Switches between chart and table; null hides the menu item.
   final VoidCallback? onToggleTable;
 
+  /// Opens the share dialog of a public chart; null hides the menu item.
+  final VoidCallback? onShare;
+
   const DatasetCard({
     super.key,
     required this.descriptor,
@@ -47,6 +50,7 @@ class DatasetCard extends StatefulWidget {
     this.fill = false,
     this.tableView = false,
     this.onToggleTable,
+    this.onShare,
   });
 
   @override
@@ -102,6 +106,8 @@ class _DatasetCardState extends State<DatasetCard> {
             c.onMove?.call();
           case 'table':
             widget.onToggleTable?.call();
+          case 'share':
+            widget.onShare?.call();
         }
       },
       itemBuilder: (context) => [
@@ -116,6 +122,12 @@ class _DatasetCardState extends State<DatasetCard> {
             key: const Key('card_menu_table'),
             child: _menuRow(context, widget.tableView ? Icons.bar_chart_rounded : Icons.table_rows_outlined,
                 context.tr(widget.tableView ? 'show_chart' : 'show_table')),
+          ),
+        if (widget.onShare != null)
+          PopupMenuItem(
+            value: 'share',
+            key: const Key('card_menu_share'),
+            child: _menuRow(context, Icons.share_outlined, context.tr('share')),
           ),
         if (c.onToggleMinimize != null)
           PopupMenuItem(

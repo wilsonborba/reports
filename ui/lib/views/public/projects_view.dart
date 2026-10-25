@@ -106,26 +106,30 @@ class _ProjectBlock extends StatelessWidget {
       ],
       const SizedBox(height: 28),
       Wrap(spacing: 12, runSpacing: 12, children: [
+        // The page repeats one block per project, so no block has a primary button
+        // (Carbon): the reports of the project first, the outside links as ghosts.
         PublicButton(
-          key: Key('proj_website_${pr.slug}'),
-          label: context.tr('website'),
-          icon: Icons.open_in_new_rounded,
-          onPressed: pr.websiteUrl == null ? null : () => openPublicLink(pr.websiteUrl!),
+          key: Key('proj_reports_${pr.slug}'),
+          label: context.tr('open_reports'),
+          kind: ButtonKind.tertiary,
+          onPressed: () => context.go(AppRoutes.project(pr.slug)),
         ),
+        if (pr.websiteUrl != null)
+          PublicButton(
+            key: Key('proj_website_${pr.slug}'),
+            label: context.tr('website'),
+            kind: ButtonKind.ghost,
+            icon: Icons.open_in_new_rounded,
+            onPressed: () => openPublicLink(pr.websiteUrl!),
+          ),
         if (pr.repositoryUrl != null && pr.repositoryUrl != pr.websiteUrl)
           PublicButton(
             key: Key('proj_repository_${pr.slug}'),
             label: context.tr('pub_project_repository'),
-            primary: false,
+            kind: ButtonKind.ghost,
             icon: Icons.code_rounded,
             onPressed: () => openPublicLink(pr.repositoryUrl!),
           ),
-        PublicButton(
-          key: Key('proj_reports_${pr.slug}'),
-          label: context.tr('open_reports'),
-          primary: false,
-          onPressed: () => context.go(AppRoutes.project(pr.slug)),
-        ),
       ]),
     ]);
     return SplitBlock(reverse: reverse, text: text, visual: Reveal(delay: const Duration(milliseconds: 150), child: _Facts(project: pr)));

@@ -4,7 +4,6 @@ import '../../l10n/strings.dart';
 import '../../export/card_filter_state.dart';
 import '../../layouts/report_layout.dart';
 import '../../models/report.dart';
-import '../../routes.dart';
 import '../../services/report_service.dart';
 import '../../themes/report_palette.dart';
 import '../charts/data_table_view.dart';
@@ -12,8 +11,7 @@ import '../charts/format.dart';
 import '../charts/visual_chooser.dart';
 import 'card_filters.dart';
 import 'dataset_card.dart';
-import '../../services/auth_service.dart';
-import '../../services/session_store.dart';
+import 'share_dialog.dart';
 
 /// Rows and companion datasets of one slot.
 class SlotData {
@@ -81,15 +79,15 @@ class _DatasetSlotState extends State<DatasetSlot> {
     _future = _fetch(lang, _filters);
   }
 
-  /// Full view URL with the visual and the card filters.
-  String _fullViewUrl() {
-    final query = <String, String>{
-      if (widget.slot.visual != Visual.auto) 'visual': widget.slot.visual.name,
-      ..._filters,
-    };
-    final path = AppRoutes.dataset(widget.project, widget.report, widget.slot.datasetId);
-    return Uri(path: path, queryParameters: query.isEmpty ? null : query).toString();
-  }
+  /// Full view URL with the visual, the chart or table view and the card filters.
+  String _fullViewUrl() => chartPath(
+        project: widget.project,
+        report: widget.report,
+        datasetId: widget.slot.datasetId,
+        visual: widget.slot.visual,
+        table: _asTable,
+        filters: _filters,
+      );
 
   Widget _seeAllFooter(BuildContext context, DatasetPage page) {
     final p = context.palette;
@@ -117,12 +115,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final p = context.palette;
     final descriptor = widget.view.dataset(widget.slot.datasetId)!;
     if (!descriptor.canView) {
-      return _GatedChartSkeleton(
-        descriptor: descriptor,
-        project: widget.project,
-        report: widget.report,
-        fill: widget.fill,
-      );
+      return _GatedChartSkeleton(descriptor: descriptor, fill: widget.fill);
     }
     final active = CardFilterQuery.active(_filters);
     final headerActions = <Widget>[
@@ -184,6 +177,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
           fill: widget.fill,
           tableView: _asTable,
           onToggleTable: () => setState(() => _asTable = !_asTable),
+          // Only a public chart opens for anyone who gets the link.
+          onShare: descriptor.visibility == 'public' ? () => showShareDialog(context, _fullViewUrl()) : null,
           headerActions: headerActions,
           toolbar: toolbar,
           footer: seeAll ? _seeAllFooter(context, data.page) : null,
@@ -193,28 +188,23 @@ class _DatasetSlotState extends State<DatasetSlot> {
   }
 }
 
+/// Placeholder of a card that the caller cannot open: a faded chart, a lock and what
+/// opens it. The sign in action lives once in the report access notice, not on each card.
 class _GatedChartSkeleton extends StatelessWidget {
   final DatasetDescriptor descriptor;
-  final String project;
-  final String report;
   final bool fill;
 
-  const _GatedChartSkeleton({
-    required this.descriptor,
-    required this.project,
-    required this.report,
-    this.fill = false,
-  });
+  const _GatedChartSkeleton({required this.descriptor, this.fill = false});
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final isRestricted = descriptor.visibility == 'restricted';
-    final hasSession = SessionStore.instance.hasSession;
-
+    // The engine sends the effective visibility (the stricter of report and card).
+    final needsAdmin = descriptor.visibility == 'restricted';
     return DatasetCard(
       descriptor: descriptor,
       body: Container(
+        key: Key('gated_card_${descriptor.datasetId}'),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -236,35 +226,13 @@ class _GatedChartSkeleton extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Icon(
-              isRestricted ? Icons.lock_outline_rounded : Icons.login_rounded,
-              size: 28,
-              color: p.textMuted,
-            ),
+            Icon(needsAdmin ? Icons.admin_panel_settings_outlined : Icons.lock_outline_rounded, size: 28, color: p.textMuted),
             const SizedBox(height: 10),
             Text(
-              isRestricted
-                  ? (hasSession
-                      ? context.tr('restricted_access_msg')
-                      : context.tr('restricted_access_guest_msg'))
-                  : context.tr('signin_to_view_chart'),
+              context.tr(needsAdmin ? 'gated_admin_text' : 'gated_login_text'),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: p.textMuted),
             ),
-            if (!hasSession) ...[
-              const SizedBox(height: 14),
-              ElevatedButton.icon(
-                key: Key('gated_login_cta_${descriptor.datasetId}'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: p.accent,
-                  foregroundColor: p.onAccent,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                onPressed: () => AuthService.instance.signIn(returnTo: AppRoutes.report(project, report)),
-                icon: const Icon(Icons.login_rounded, size: 16),
-                label: Text(context.tr('sign_in')),
-              ),
-            ],
           ],
         ),
       ),

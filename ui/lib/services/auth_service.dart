@@ -50,8 +50,8 @@ class AuthService {
 
   static const String _nextKey = 'reports_after_login';
 
-  /// The auth_apps login URL for this app.
-  Uri loginUri({required String returnOrigin}) {
+  /// The auth_apps login URL for this app ([signUp]: the sign up page instead).
+  Uri loginUri({required String returnOrigin, bool signUp = false}) {
     final appContext = <String, dynamic>{
       'name': 'Reports',
       'description': 'Reports, statistics and dashboards of the Asodya projects.',
@@ -67,16 +67,17 @@ class AuthService {
     final key = encrypt.Key.fromBase64(ReportsConfig.appContextFernetKey);
     final encrypted = encrypt.Encrypter(encrypt.Fernet(key)).encrypt(jsonEncode(appContext)).base64;
     return Uri.parse(ReportsConfig.authBaseUrl)
-        .replace(path: ReportsConfig.authLoginRoute, queryParameters: {ReportsConfig.appContextParam: encrypted});
+        .replace(path: signUp ? ReportsConfig.authSignupRoute : ReportsConfig.authLoginRoute, queryParameters: {ReportsConfig.appContextParam: encrypted});
   }
 
-  /// Starts a login and comes back to [returnTo] (an internal path) afterwards.
-  Future<void> signIn({String? returnTo}) async {
+  /// Starts a login ([signUp]: an account creation) and comes back to [returnTo] (an
+  /// internal path) afterwards.
+  Future<void> signIn({String? returnTo, bool signUp = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_nextKey, AuthRoutes.safeNext(returnTo));
     } catch (_) {}
-    final uri = loginUri(returnOrigin: currentOrigin());
+    final uri = loginUri(returnOrigin: currentOrigin(), signUp: signUp);
     await (launcher ?? _launch)(uri);
   }
 
