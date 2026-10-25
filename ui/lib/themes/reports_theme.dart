@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'report_palette.dart';
 
-/// Reports fallback theme in the asodya.com brand: charcoal and white surfaces, neon purple
-/// for actions, lime (dark) or cyan (light) for highlights, neon state colors. Text colors
-/// keep AA contrast: the dark accent is a lighter purple with dark text on it.
+/// Reports fallback theme in the asodya.com colors (domain repository, `my_theme.dart` and the
+/// landing): neon lime with black in the dark theme, neon purple with white in the light
+/// theme, and the other asodya.com neons (orange, cyan, pink, yellow, violet, teal) for
+/// charts and states. No blue. Chart orders pass the dataviz checks (colorblind separation
+/// and normal vision); the dark neons are brighter than the usual band on purpose (brand).
 class ReportsTheme {
   static const neonPurple = Color(0xFF8C52FF);
   static const neonLime = Color(0xFF6EFF00);
@@ -17,16 +19,16 @@ class ReportsTheme {
           border: Color(0xFF272D3D),
           textPrimary: Color(0xFFF4F4F5),
           textMuted: Color(0xFF9CA3AF),
-          accent: Color(0xFFA47BFF),
+          accent: neonLime,
           onAccent: Color(0xFF0B0C10),
-          highlight: neonLime,
+          highlight: Color(0xFFA47BFF),
           positive: Color(0xFF00E676),
           warning: Color(0xFFFFD60A),
           negative: Color(0xFFFF1744),
           info: neonCyan,
           caution: Color(0xFFFF9100),
-          // Validated categorical order (dataviz checks pass on dark surfaces).
-          series: [Color(0xFF3987E5), Color(0xFFD95926), Color(0xFF199E70), Color(0xFFC98500), Color(0xFFD55181), Color(0xFF008300), Color(0xFF9085E9), Color(0xFFE66767)],
+          // Lime, purple, orange, cyan, pink, yellow, violet, teal.
+          series: [neonLime, neonPurple, Color(0xFFFF9100), neonCyan, Color(0xFFFF4FA3), Color(0xFFFFD60A), Color(0xFFA201FF), Color(0xFF1DE9B6)],
           other: Color(0xFF6F6F6F),
         )
       : const ReportPalette(
@@ -38,14 +40,14 @@ class ReportsTheme {
           textMuted: Color(0xFF52525B),
           accent: Color(0xFF7C3AED),
           onAccent: Color(0xFFFFFFFF),
-          highlight: Color(0xFF0891B2),
+          highlight: Color(0xFF16A34A),
           positive: Color(0xFF16A34A),
-          warning: Color(0xFFEAB308),
+          warning: Color(0xFFCA8A04),
           negative: Color(0xFFDC2626),
-          info: Color(0xFF0284C7),
+          info: Color(0xFF0891B2),
           caution: Color(0xFFEA580C),
-          // Validated categorical order (dataviz checks pass on light surfaces).
-          series: [Color(0xFF2A78D6), Color(0xFFEB6834), Color(0xFF1BAF7A), Color(0xFFEDA100), Color(0xFFE87BA4), Color(0xFF008300), Color(0xFF6250D6), Color(0xFFE34948)],
+          // Purple, green, cyan, orange, teal, violet, pink, amber.
+          series: [Color(0xFF7C3AED), Color(0xFF16A34A), Color(0xFF0891B2), Color(0xFFEA580C), Color(0xFF0D9488), Color(0xFFA201FF), Color(0xFFDB2777), Color(0xFFCA8A04)],
           other: Color(0xFFA8A8A8),
         );
 }

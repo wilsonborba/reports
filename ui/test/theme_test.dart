@@ -16,9 +16,13 @@ void main() {
     test('screens outside a project use the Reports theme in the asodya.com colors', () {
       final dark = ThemeRegistry.palette(null, Brightness.dark);
       final light = ThemeRegistry.palette(null, Brightness.light);
-      expect(dark.accent, const Color(0xFFA47BFF), reason: 'neon purple, light enough for text on charcoal');
-      expect(light.accent, const Color(0xFF7C3AED));
-      expect(dark.highlight, ReportsTheme.neonLime);
+      expect(dark.accent, ReportsTheme.neonLime, reason: 'neon lime with black in the dark theme');
+      expect(dark.onAccent, const Color(0xFF0B0C10));
+      expect(light.accent, const Color(0xFF7C3AED), reason: 'purple with white in the light theme');
+      expect(light.onAccent, const Color(0xFFFFFFFF));
+      // The first chart color is the main brand color of the mode.
+      expect(dark.series.first, dark.accent);
+      expect(light.series.first, light.accent);
       expect(dark.canvas, const Color(0xFF0B0C10), reason: 'asodya.com dark background');
       expect(dark.positive, isNot(dark.negative));
     });
@@ -44,7 +48,7 @@ void main() {
       expect(p.series.length, 8);
       expect(p.series.first, const Color(0xFFC9A800));
       expect(p.other, const Color(0xFFA8A8A8));
-      expect(ThemeRegistry.palette('cortex', Brightness.dark).accent, const Color(0xFFA47BFF), reason: 'no dark tokens: fallback');
+      expect(ThemeRegistry.palette('cortex', Brightness.dark).accent, ReportsTheme.neonLime, reason: 'no dark tokens: fallback');
       final theme = ThemeRegistry.theme('cortex', Brightness.light);
       expect(theme.extension<ReportPalette>()!.canvas, const Color(0xFFFFFFFF));
     });

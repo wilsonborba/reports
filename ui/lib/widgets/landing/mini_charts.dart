@@ -30,7 +30,10 @@ class MiniBars extends StatelessWidget {
   final String Function(int value) format;
   final String moreLabel;
 
-  const MiniBars({super.key, required this.items, required this.format, required this.moreLabel, this.top = 4});
+  /// Series slot of the bars (each mini chart of a tile takes its own color).
+  final int slot;
+
+  const MiniBars({super.key, required this.items, required this.format, required this.moreLabel, this.top = 4, this.slot = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +41,7 @@ class MiniBars extends StatelessWidget {
     final sorted = [...items]..sort((a, b) => b.value.compareTo(a.value));
     final shown = sorted.take(top).toList();
     final maxV = shown.isEmpty ? 0 : shown.first.value;
-    final color = p.seriesAt(0);
+    final color = p.seriesAt(slot);
     return EntryAnimation(
       duration: const Duration(milliseconds: 600),
       builder: (context, t) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -93,7 +96,10 @@ class Sparkline extends StatelessWidget {
   /// Tooltip text (the period and the total rows).
   final String tooltip;
 
-  const Sparkline({super.key, required this.days, required this.tooltip, this.height = 56});
+  /// Series slot of the line.
+  final int slot;
+
+  const Sparkline({super.key, required this.days, required this.tooltip, this.height = 56, this.slot = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +112,7 @@ class Sparkline extends StatelessWidget {
           duration: const Duration(milliseconds: 700),
           builder: (context, t) => SizedBox(
             height: height,
-            child: CustomPaint(painter: _SparkPainter(days: days, color: p.seriesAt(0), t: t)),
+            child: CustomPaint(painter: _SparkPainter(days: days, color: p.seriesAt(slot), t: t)),
           ),
         ),
         const SizedBox(height: 4),
