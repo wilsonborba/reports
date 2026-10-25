@@ -44,19 +44,21 @@ class CatalogService {
 
   /// Reports that this viewer can see: guests get the public list, a signed-in user gets
   /// the session list (granted and signed-in reports too).
-  Future<Paged<ReportSummary>> reports(String project, {required String lang, int page = 1, int pageSize = 12, String query = ''}) async {
-    final q = {'lang': lang, 'page': '$page', 'page_size': '$pageSize', if (query.isNotEmpty) 'q': query};
+  /// [tier] keeps only the reports of that tier (engine filter): sample, hybrid or real.
+  Future<Paged<ReportSummary>> reports(String project,
+      {required String lang, int page = 1, int pageSize = 12, String query = '', String? tier}) async {
+    final q = {'lang': lang, 'page': '$page', 'page_size': '$pageSize', if (query.isNotEmpty) 'q': query, 'tier': ?tier};
     final session = SessionStore.instance;
     if (session.hasSession) {
       try {
-        final key = 'me:${session.user?.userId}:reports:$project:$lang:$page:$pageSize:$query';
+        final key = 'me:${session.user?.userId}:reports:$project:$lang:$page:$pageSize:$query:${tier ?? ''}';
         return Paged.fromJson(await _cached(key, () => api.getJson('/me/projects/$project/reports', q), persist: false), ReportSummary.fromJson);
       } on ApiException catch (e) {
         if (!e.needsLogin && !e.accessLimited) rethrow;
         session.markExpired();
       }
     }
-    final j = await _cached('reports:$project:$lang:$page:$pageSize:$query', () => api.getJson('/projects/$project/reports', q));
+    final j = await _cached('reports:$project:$lang:$page:$pageSize:$query:${tier ?? ''}', () => api.getJson('/projects/$project/reports', q));
     return Paged.fromJson(j, ReportSummary.fromJson);
   }
 

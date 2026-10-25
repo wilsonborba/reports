@@ -56,8 +56,8 @@ void main() {
       expect(SessionStore.instance.state, SessionState.guest);
       expect(api.calls['/me'], isNull);
       expect(api.calls['/user/info/v1/'], isNull);
-      expect(find.byKey(const Key('top_bar_sign_in')), findsOneWidget);
-      expect(find.byKey(const Key('top_bar_log_out')), findsNothing);
+      expect(find.byKey(const Key('guest_prompt_sign_in')), findsOneWidget, reason: 'the report area offers the login once');
+      expect(find.byKey(const Key('top_bar_sign_in')), findsNothing, reason: 'no session buttons in the header');
     });
 
     testWidgets('the csrf cookie and GET /me open the session once, then the user info loads', (tester) async {
@@ -69,7 +69,8 @@ void main() {
       expect(api.calls['/user/info/v1/'], 1);
       expect(SessionStore.instance.user!.name, 'Test Viewer');
       expect(SessionStore.instance.user!.email, 'viewer@example.org');
-      expect(find.byKey(const Key('top_bar_log_out')), findsOneWidget);
+      expect(find.byKey(const Key('guest_prompt')), findsNothing, reason: 'a session gets no login prompt');
+      expect(find.byKey(const Key('top_bar_log_out')), findsNothing, reason: 'log out lives in the sidebar');
     });
 
     testWidgets('a refused session becomes a guest once, with a message and no redirect', (tester) async {
@@ -93,7 +94,7 @@ void main() {
       api.install(withSession: false);
       await tester.pumpWidget(const ReportsApp(initialLocation: '/v1/menu/cortex'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('top_bar_sign_in')));
+      await tester.tap(find.byKey(const Key('guest_prompt_sign_in')));
       await tester.pumpAndSettle();
       expect(api.launched, hasLength(1));
       final uri = api.launched.single;

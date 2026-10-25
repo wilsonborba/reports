@@ -27,6 +27,9 @@ class _ReportListViewState extends State<ReportListView> {
   CatalogViewMode _mode = CatalogViewMode.grid;
   int _page = 1;
   String _query = '';
+
+  /// Tier of the reports to list (engine filter); null lists all.
+  String? _tier;
   Timer? _debounce;
   Future<Paged<ReportSummary>>? _reports;
   Future<ProjectSummary?>? _projectInfo;
@@ -44,6 +47,7 @@ class _ReportListViewState extends State<ReportListView> {
     if (old.project != widget.project) {
       _page = 1;
       _query = '';
+      _tier = null;
       _key = null;
     }
   }
@@ -55,12 +59,12 @@ class _ReportListViewState extends State<ReportListView> {
   }
 
   void _load(String lang) {
-    final key = '${widget.project}:$lang:$_page:$_query';
+    final key = '${widget.project}:$lang:$_page:$_query:${_tier ?? ''}';
     if (key == _key) return;
     _key = key;
     final catalog = CatalogService.instance;
     _projectInfo = catalog.project(widget.project, lang: lang);
-    _reports = catalog.reports(widget.project, lang: lang, page: _page, pageSize: ReportListView.pageSize, query: _query);
+    _reports = catalog.reports(widget.project, lang: lang, page: _page, pageSize: ReportListView.pageSize, query: _query, tier: _tier);
   }
 
   @override
@@ -109,7 +113,17 @@ class _ReportListViewState extends State<ReportListView> {
                   }),
                 ],
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 16),
+              TierFilter(
+                key: const Key('report_tier_filter'),
+                tiers: TierFilter.all,
+                selected: _tier,
+                onChanged: (t) => setState(() {
+                  _tier = t;
+                  _page = 1;
+                }),
+              ),
+              const SizedBox(height: 18),
               FutureBuilder<Paged<ReportSummary>>(
                 future: _reports,
                 builder: (context, snap) {

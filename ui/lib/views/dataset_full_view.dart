@@ -11,19 +11,25 @@ import '../themes/report_palette.dart';
 import '../widgets/catalog/catalog_widgets.dart';
 import '../widgets/charts/format.dart';
 import '../widgets/charts/visual_chooser.dart';
+import '../widgets/charts/data_table_view.dart';
 import '../widgets/report/card_filters.dart';
+import '../widgets/report/share_dialog.dart';
 import '../widgets/report/dataset_card.dart';
 import '../widgets/shell/breadcrumbs.dart';
 import '../widgets/shell/page_header.dart';
 
 /// One chart with all its rows (/v1/menu/:project/:report/:dataset). The card
-/// filters and the visual come in the URL query.
+/// filters, the visual and the table view come in the URL query, so a shared link opens
+/// the chart in the state it was shared, with the filter bar showing its values.
 class DatasetFullView extends StatefulWidget {
   final String project;
   final String report;
   final String datasetId;
   final Visual? visual;
   final Map<String, String> filters;
+
+  /// Table instead of the chart (`view=table`).
+  final bool table;
 
   const DatasetFullView({
     super.key,
@@ -32,6 +38,7 @@ class DatasetFullView extends StatefulWidget {
     required this.datasetId,
     this.visual,
     this.filters = const {},
+    this.table = false,
   });
 
   /// Filters from URL query parameters (keys that start with `f.`).
@@ -79,13 +86,17 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     });
   }
 
-  void _setFilters(Map<String, String> filters) {
-    final query = <String, String>{if (widget.visual != null) 'visual': widget.visual!.name, ...filters};
-    context.go(Uri(
-      path: AppRoutes.dataset(widget.project, widget.report, widget.datasetId),
-      queryParameters: query.isEmpty ? null : query,
-    ).toString());
-  }
+  /// This chart with the given state (the URL holds the whole state).
+  String _path({Map<String, String>? filters, bool? table}) => chartPath(
+        project: widget.project,
+        report: widget.report,
+        datasetId: widget.datasetId,
+        visual: widget.visual ?? Visual.auto,
+        table: table ?? widget.table,
+        filters: filters ?? widget.filters,
+      );
+
+  void _setFilters(Map<String, String> filters) => context.go(_path(filters: filters));
 
   @override
   Widget build(BuildContext context) {
@@ -143,8 +154,11 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                     ),
                     const SizedBox(height: 10),
                     // The chart frame is at most 80% of the screen height.
-                    VisualChooser.build(data.$1, slot,
-                        companions: data.$2, full: true, frame: (MediaQuery.sizeOf(context).height * 0.8).clamp(320.0, 4000.0)),
+                    if (widget.table)
+                      DataTableView(page: data.$1, maxHeight: (MediaQuery.sizeOf(context).height * 0.8).clamp(320.0, 4000.0))
+                    else
+                      VisualChooser.build(data.$1, slot,
+                          companions: data.$2, full: true, frame: (MediaQuery.sizeOf(context).height * 0.8).clamp(320.0, 4000.0)),
                   ]);
                 }
                 return DatasetCard(
@@ -152,6 +166,9 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                   descriptor: descriptor,
                   body: body,
                   loading: loading,
+                  tableView: widget.table,
+                  onToggleTable: () => context.go(_path(table: !widget.table)),
+                  onShare: descriptor.visibility == 'public' ? () => showShareDialog(context, _path()) : null,
                   toolbar: descriptor.filters.isEmpty
                       ? null
                       : CardFilterBar(filters: descriptor.filters, values: widget.filters, onChanged: _setFilters),

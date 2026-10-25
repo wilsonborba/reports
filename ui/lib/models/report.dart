@@ -105,6 +105,23 @@ class DatasetDescriptor {
       );
 }
 
+/// Cards of a report that the caller sees and what opens the others, counted by the
+/// engine for this caller (API `access`). The app shows the numbers as they are.
+class AccessSummary {
+  final int total;
+  final int readable;
+  final int needsSignIn;
+  final int needsAdmin;
+
+  const AccessSummary({this.total = 0, this.readable = 0, this.needsSignIn = 0, this.needsAdmin = 0});
+
+  factory AccessSummary.fromJson(dynamic j) {
+    if (j is! Map) return const AccessSummary();
+    int n(String k) => (j[k] as num?)?.toInt() ?? 0;
+    return AccessSummary(total: n('total'), readable: n('readable'), needsSignIn: n('needs_sign_in'), needsAdmin: n('needs_admin'));
+  }
+}
+
 class ReportView {
   final String project;
   final String report;
@@ -117,6 +134,10 @@ class ReportView {
   final String dataTier;
   final String visibility;
 
+  /// Tiers of the visible cards, for the card tier filter (all cards, before a filter).
+  final List<String> tiers;
+  final AccessSummary access;
+
   const ReportView({
     required this.project,
     required this.report,
@@ -128,6 +149,8 @@ class ReportView {
     required this.datasets,
     this.dataTier = 'sample',
     this.visibility = 'public',
+    this.tiers = const [],
+    this.access = const AccessSummary(),
   });
 
   DatasetDescriptor? dataset(String id) {
@@ -148,6 +171,8 @@ class ReportView {
         datasets: ((j['datasets'] as List?) ?? const []).map((e) => DatasetDescriptor.fromJson(e as Map<String, dynamic>)).toList(),
         dataTier: (j['data_tier'] ?? 'sample') as String,
         visibility: (j['visibility'] ?? 'public') as String,
+        tiers: ((j['tiers'] as List?) ?? const []).map((e) => '$e').toList(),
+        access: AccessSummary.fromJson(j['access']),
       );
 }
 
@@ -239,6 +264,8 @@ class Showcase {
       datasets: descriptors,
       dataTier: '${j['data_tier'] ?? 'sample'}',
       visibility: '${j['visibility'] ?? 'public'}',
+      tiers: ((j['tiers'] as List?) ?? const []).map((e) => '$e').toList(),
+      access: AccessSummary.fromJson(j['access']),
     );
     return Showcase(view, pages);
   }

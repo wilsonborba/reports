@@ -25,6 +25,9 @@ class ReportsConfig {
   /// Login route of auth_apps.
   static const String authLoginRoute = '/login';
 
+  /// Sign up route of auth_apps (same app_context as the login).
+  static const String authSignupRoute = '/signup';
+
   /// auth_apps sends the browser back to `<origin>/sync?auth_exchange_token=...`.
   static const String syncPath = '/sync';
   static const String exchangeTokenParam = 'auth_exchange_token';

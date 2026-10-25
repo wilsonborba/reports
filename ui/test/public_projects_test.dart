@@ -27,9 +27,11 @@ void main() {
     expect(find.descendant(of: facts, matching: find.text('active')), findsOneWidget, reason: 'Domain status, not translated');
     expect(find.descendant(of: facts, matching: find.text('Providers')), findsOneWidget, reason: 'Domain statistic');
     expect(find.descendant(of: facts, matching: find.text('wilsonborba')), findsOneWidget, reason: 'collaborators');
-    final certifications = tester.widget<FilledButton>(
-        find.descendant(of: find.byKey(const Key('proj_website_certifications')), matching: find.byWidgetPredicate((w) => w is FilledButton)));
-    expect(certifications.onPressed, isNull, reason: 'no website gives a disabled button');
+    // One block per project, so no primary button: the reports as tertiary, links as ghosts.
+    expect(find.descendant(of: find.byKey(const Key('proj_reports_cortex')), matching: find.byType(OutlinedButton)), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const Key('proj_website_cortex')), matching: find.byType(TextButton)), findsOneWidget);
+    expect(find.byKey(const Key('proj_website_certifications')), findsNothing, reason: 'no website, no button');
+    expect(find.byKey(const Key('proj_reports_certifications')), findsOneWidget);
     expect(find.descendant(of: find.byKey(const Key('project_facts_certifications')), matching: find.text('No website yet')), findsOneWidget);
     for (final m in ['schemas', 'calculations', 'access', 'exports']) {
       expect(find.byKey(Key('method_$m')), findsOneWidget);

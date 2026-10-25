@@ -5,9 +5,6 @@ import '../../routes.dart';
 import '../../themes/report_palette.dart';
 import '../../themes/theme_controller.dart';
 import '../brand/asodya_brand.dart';
-import '../../services/auth_service.dart';
-import '../../services/session_store.dart';
-import 'session_prompt.dart';
 
 /// One page of the public site navigation.
 class PublicTab {
@@ -21,9 +18,11 @@ class PublicTab {
   bool matches(String path) => route == AppRoutes.home ? path == route || path == '$route/' : path.startsWith(route);
 }
 
-/// Top bar: the Asodya mark and Reports name on the left (opens the public site), the public site
-/// tabs in the middle, the "Reports" button, the language and theme switches on the right.
-/// Narrow screens replace the tabs and the Reports button with a menu button.
+/// Top bar of every page (Carbon UI shell header): the Asodya mark on the left (opens the
+/// public site), the navigation tabs in the middle (Reports is one of them), the language and
+/// theme switches on the right. Narrow screens replace the tabs with a menu button. The
+/// header holds no session buttons: a guest gets the sign in prompt in the report area, and a
+/// signed-in user logs out from the sidebar.
 class TopBar extends StatelessWidget implements PreferredSizeWidget {
   const TopBar({super.key});
 
@@ -35,6 +34,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
   static const List<PublicTab> tabs = [
     PublicTab('overview', AppRoutes.home, 'pub_nav_overview'),
     PublicTab('projects', AppRoutes.homeProjects, 'pub_nav_projects'),
+    PublicTab('reports', AppRoutes.menu, 'pub_nav_reports'),
     PublicTab('science', AppRoutes.homeScience, 'pub_nav_science'),
     PublicTab('architecture', AppRoutes.homeArchitecture, 'pub_nav_architecture'),
     PublicTab('contact', AppRoutes.homeContact, 'pub_nav_contact'),
@@ -60,8 +60,6 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
     final lang = LanguageScope.of(context);
     final wide = MediaQuery.sizeOf(context).width >= tabsMinWidth;
     final compact = MediaQuery.sizeOf(context).width < 520;
-    final inReports = path.startsWith(AppRoutes.menu);
-    final inPublicSite = path == AppRoutes.home || path.startsWith('${AppRoutes.home}/');
     final name = Align(
       alignment: Alignment.centerLeft,
       child: Semantics(
@@ -86,8 +84,6 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
         icon: Icon(theme.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, size: 20),
         onPressed: theme.toggle,
       ),
-      const SizedBox(width: 4),
-      _SessionButton(path: path),
     ];
     return Container(
       height: height,
@@ -96,45 +92,36 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
         color: p.canvas,
         border: Border(bottom: BorderSide(color: p.border)),
       ),
-      child: inPublicSite
-          ? (wide
-              // Equal sides keep the tabs in the middle of the bar.
-              ? Row(children: [
-                  name,
-                  const Spacer(),
-                  Semantics(
-                    container: true,
-                    label: context.tr('pub_nav_label'),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      for (final t in tabs) _Tab(tab: t, selected: t.matches(path)),
-                    ]),
-                  ),
-                  const Spacer(),
-                  Row(mainAxisSize: MainAxisSize.min, children: [
-                    _ReportsButton(selected: inReports),
-                    const SizedBox(width: 12),
-                    ...switches,
-                  ]),
-                ])
-              // The name gives way on narrow phones; the switches and the menu keep their size.
-              : Row(children: [
-                  Expanded(child: name),
-                  ...switches,
-                  IconButton(
-                    key: const Key('top_bar_menu'),
-                    tooltip: context.tr('pub_nav_open_menu'),
-                    icon: const Icon(Icons.menu_rounded, size: 22),
-                    onPressed: () => _openMenu(context, path),
-                  ),
-                ]))
+      child: wide
+          // Equal sides keep the tabs in the middle of the bar.
+          ? Row(children: [
+              name,
+              const Spacer(),
+              Semantics(
+                container: true,
+                label: context.tr('pub_nav_label'),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (final t in tabs) _Tab(tab: t, selected: t.matches(path)),
+                ]),
+              ),
+              const Spacer(),
+              Row(mainAxisSize: MainAxisSize.min, children: switches),
+            ])
+          // The name gives way on narrow phones; the switches and the menu keep their size.
           : Row(children: [
               Expanded(child: name),
               ...switches,
+              IconButton(
+                key: const Key('top_bar_menu'),
+                tooltip: context.tr('pub_nav_open_menu'),
+                icon: const Icon(Icons.menu_rounded, size: 22),
+                onPressed: () => _openMenu(context, path),
+              ),
             ]),
     );
   }
 
-  /// Panel below the bar with the same links as the tabs and the Reports button.
+  /// Panel below the bar with the same links as the tabs.
   void _openMenu(BuildContext context, String path) {
     final router = GoRouter.of(context);
     showGeneralDialog<void>(
@@ -199,34 +186,6 @@ class _Tab extends StatelessWidget {
   }
 }
 
-/// "Reports" button: opens the report area (/v1/menu).
-class _ReportsButton extends StatelessWidget {
-  final bool selected;
-
-  const _ReportsButton({required this.selected});
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return Tooltip(
-      message: context.tr('pub_nav_reports_hint'),
-      child: FilledButton.icon(
-        key: const Key('nav_reports'),
-        onPressed: () => context.go(AppRoutes.menu),
-        style: FilledButton.styleFrom(
-          backgroundColor: selected ? p.surfaceAlt : p.accent,
-          foregroundColor: selected ? p.textPrimary : p.onAccent,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          minimumSize: const Size(0, 36),
-        ),
-        iconAlignment: IconAlignment.end,
-        icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-        label: Text(context.tr('pub_nav_reports'), style: const TextStyle(fontWeight: FontWeight.w600)),
-      ),
-    );
-  }
-}
-
 /// Menu panel of narrow screens: one row per page, the current page marked on the left.
 class _MenuPanel extends StatelessWidget {
   final String path;
@@ -237,7 +196,7 @@ class _MenuPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    Widget row(String id, String route, String label, bool selected, {IconData? icon}) => Semantics(
+    Widget row(String id, String route, String label, bool selected) => Semantics(
           selected: selected,
           link: true,
           child: InkWell(
@@ -255,7 +214,6 @@ class _MenuPanel extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 16, fontWeight: selected ? FontWeight.w600 : FontWeight.w400, color: p.textPrimary)),
                 ),
-                if (icon != null) Icon(icon, size: 18, color: p.textMuted),
               ]),
             ),
           ),
@@ -273,9 +231,6 @@ class _MenuPanel extends StatelessWidget {
               top: false,
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 for (final t in TopBar.tabs) row(t.id, t.route, context.tr(t.labelKey), t.matches(path)),
-                Divider(height: 1, color: p.border),
-                row('reports', AppRoutes.menu, context.tr('pub_nav_reports'), path.startsWith(AppRoutes.menu),
-                    icon: Icons.arrow_forward_rounded),
               ]),
             ),
           ),
@@ -321,37 +276,6 @@ class _LanguageSwitch extends StatelessWidget {
         decoration: BoxDecoration(border: Border.all(color: p.border), borderRadius: BorderRadius.circular(ReportPalette.controlRadius)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [option('en', 'EN'), option('pt-BR', 'PT'), option('th', 'TH')]),
       ),
-    );
-  }
-}
-
-/// Sign in (guest) or log out (signed in). A guest returns to this page after the login.
-class _SessionButton extends StatelessWidget {
-  final String path;
-
-  const _SessionButton({required this.path});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: SessionStore.instance,
-      builder: (context, _) {
-        final session = SessionStore.instance;
-        if (!session.isLoaded) return const SizedBox.shrink();
-        if (session.hasSession) {
-          return IconButton(
-            key: const Key('top_bar_log_out'),
-            tooltip: context.tr('auth_log_out'),
-            icon: const Icon(Icons.logout_rounded, size: 20),
-            onPressed: () => logOut(GoRouter.of(context)),
-          );
-        }
-        final compact = MediaQuery.sizeOf(context).width < 520;
-        void signIn() => AuthService.instance.signIn(returnTo: path.startsWith('/v1/') ? path : null);
-        return compact
-            ? IconButton(key: const Key('top_bar_sign_in'), tooltip: context.tr('sign_in'), icon: const Icon(Icons.login_rounded, size: 20), onPressed: signIn)
-            : TextButton.icon(key: const Key('top_bar_sign_in'), onPressed: signIn, icon: const Icon(Icons.login_rounded, size: 18), label: Text(context.tr('sign_in')));
-      },
     );
   }
 }

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Colors of one theme in one brightness. Every widget reads its colors from here
 /// (`context.palette`). Project palettes come from the API theme tokens; the only
-/// built-in palette is the neutral Reports theme (the fallback).
+/// built-in palette is the Reports theme in the asodya.com brand colors (the fallback).
 @immutable
 class ReportPalette extends ThemeExtension<ReportPalette> {
   final Color canvas;
@@ -25,6 +25,10 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
   /// Gray for the folded "Other" category.
   final Color other;
 
+  /// Second brand color for highlights (glow, statistic numbers); the accent when a theme
+  /// has none (optional `highlight` token).
+  final Color highlight;
+
   const ReportPalette({
     required this.canvas,
     required this.surface,
@@ -41,7 +45,8 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
     required this.caution,
     required this.series,
     this.other = const Color(0xFFA8A8A8),
-  });
+    Color? highlight,
+  }) : highlight = highlight ?? accent;
 
   /// Number of categorical slots; a 9th category folds into [other].
   static const int slots = 8;
@@ -78,6 +83,7 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
       caution: v['caution']!,
       series: series.cast<Color>(),
       other: v['other']!,
+      highlight: c(t['highlight']),
     );
   }
 
@@ -98,6 +104,7 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
         caution: caution,
         series: series ?? this.series,
         other: other,
+        highlight: highlight,
       );
 
   @override
@@ -120,6 +127,7 @@ class ReportPalette extends ThemeExtension<ReportPalette> {
       caution: l(caution, other.caution),
       series: t < 0.5 ? series : other.series,
       other: l(this.other, other.other),
+      highlight: l(highlight, other.highlight),
     );
   }
 

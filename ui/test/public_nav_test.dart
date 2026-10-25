@@ -53,12 +53,13 @@ void main() {
     expect(_underline(tester, 'overview').color, Colors.transparent);
   });
 
-  testWidgets('the Reports button opens the report hub', (tester) async {
+  testWidgets('Reports is a tab like the others and opens the report hub', (tester) async {
     await _open(tester, '/v1/home');
-    await tester.tap(find.byKey(const Key('nav_reports')));
+    await tester.tap(find.byKey(const Key('nav_tab_reports')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('project_tile_cortex')), findsOneWidget);
-    expect(find.byKey(const Key('nav_tab_overview')), findsNothing, reason: 'the public tabs do not appear inside the report area');
+    expect(_underline(tester, 'reports').width, 3, reason: 'the report area marks the Reports tab');
+    expect(_underline(tester, 'overview').color, Colors.transparent);
   });
 
   testWidgets('phones use a menu button with the same links and no horizontal overflow', (tester) async {
@@ -90,20 +91,18 @@ void main() {
     expect(ReportPalette.controlRadius, 2);
   });
 
-  testWidgets('public navigation tabs and menu button do not appear in-app', (tester) async {
-    await _open(tester, '/v1/menu');
-    for (final id in ['overview', 'projects', 'science', 'architecture', 'contact']) {
-      expect(find.byKey(Key('nav_tab_$id')), findsNothing);
+  testWidgets('the report area keeps the same header: tabs, no session buttons', (tester) async {
+    await _open(tester, '/v1/menu/cortex');
+    for (final id in ['overview', 'projects', 'reports', 'science', 'architecture', 'contact']) {
+      expect(find.byKey(Key('nav_tab_$id')), findsOneWidget, reason: id);
     }
-    expect(find.byKey(const Key('nav_reports')), findsNothing);
-    expect(find.byKey(const Key('top_bar_menu')), findsNothing);
-
-    // Narrow screen in-app
+    expect(find.byKey(const Key('top_bar_sign_in')), findsNothing);
+    expect(find.byKey(const Key('top_bar_log_out')), findsNothing, reason: 'log out lives in the sidebar');
+    // Narrow screen in the report area: the menu button with the same links.
     await _open(tester, '/v1/menu', size: const Size(390, 844));
-    for (final id in ['overview', 'projects', 'science', 'architecture', 'contact']) {
-      expect(find.byKey(Key('nav_tab_$id')), findsNothing);
-    }
-    expect(find.byKey(const Key('nav_reports')), findsNothing);
-    expect(find.byKey(const Key('top_bar_menu')), findsNothing);
+    expect(find.byKey(const Key('nav_tab_reports')), findsNothing);
+    await tester.tap(find.byKey(const Key('top_bar_menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('nav_menu_reports')), findsOneWidget);
   });
 }

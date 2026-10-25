@@ -6,6 +6,7 @@ import 'package:reports_ui/services/api_client.dart';
 import 'package:reports_ui/services/auth_service.dart';
 import 'package:reports_ui/services/client_telemetry_service.dart';
 import 'package:reports_ui/services/session_store.dart';
+import 'package:reports_ui/widgets/shell/guest_prompt.dart';
 import 'package:reports_ui/services/catalog_service.dart';
 import 'package:reports_ui/services/report_service.dart';
 
@@ -224,8 +225,10 @@ class FakeApi {
   /// signed-in test user ([withSession] false: a guest). With [checkSession] the store
   /// starts unknown and checks the `csrf` cookie and `GET /me` like the real app.
   FakeApi install({bool withSession = true, bool checkSession = false}) {
-    // Card filters live in session memory; each test starts without them.
+    // Card filters and the closed guest prompt live in session memory; each test starts fresh.
     CardFilterState.instance.clear();
+    GuestPrompt.dismissed = false;
+    GuestPrompt.report.value = null;
     ClientTelemetryService.instance = ClientTelemetryService(
         client: MockClient((req) async {
           telemetry.add(jsonDecode(req.body) as Map<String, dynamic>);
