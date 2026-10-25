@@ -159,8 +159,9 @@ class ViewModeSwitch extends StatelessWidget {
           onTap: () => onChanged(m),
           child: Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: selected ? p.accent : Colors.transparent, borderRadius: BorderRadius.circular(ReportPalette.controlRadius)),
-            child: Icon(icon, size: 18, color: selected ? p.onAccent : p.textMuted),
+            // Carbon content switcher: the selected item is inverse, not the brand color.
+            decoration: BoxDecoration(color: selected ? p.textPrimary : Colors.transparent, borderRadius: BorderRadius.circular(ReportPalette.controlRadius)),
+            child: Icon(icon, size: 18, color: selected ? p.canvas : p.textMuted),
           ),
         ),
       );
@@ -319,17 +320,17 @@ class ReportCard extends StatelessWidget {
       onTap: onOpen,
       child: compact
           ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.insert_chart_outlined_rounded, color: p.accent),
+              Icon(Icons.insert_chart_outlined_rounded, color: p.textMuted),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [title, const SizedBox(height: 4), desc, const SizedBox(height: 8), chips])),
               Icon(Icons.chevron_right_rounded, color: p.textMuted),
             ])
           : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Icon(Icons.insert_chart_outlined_rounded, color: p.accent),
+                Icon(Icons.insert_chart_outlined_rounded, color: p.textMuted),
                 const Spacer(),
-                Text(context.tr('open'), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: p.accent)),
-                Icon(Icons.chevron_right_rounded, size: 18, color: p.accent),
+                Text(context.tr('open'), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: p.textPrimary)),
+                Icon(Icons.chevron_right_rounded, size: 18, color: p.textPrimary),
               ]),
               const SizedBox(height: 10),
               SizedBox(height: 44, child: title),
