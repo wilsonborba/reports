@@ -82,3 +82,18 @@ async fn access_counts_say_what_opens_the_placeholders_for_each_caller() {
     let (_, root) = t.get("/projects/cortex/reports/token-usage", &[("x-uuid", ROOT), ("x-access-level", "1")]).await;
     assert_eq!(root["access"], json!({"total": 3, "readable": 3, "needs_sign_in": 0, "needs_admin": 0}));
 }
+
+#[tokio::test]
+async fn card_order_of_the_report_sets_the_card_order_of_both_views() {
+    let t = setup().await;
+    let (s, v) = t.service("PUT", "/projects/cortex/admin/reports/token-usage", json!({
+        "title": {"en": "Token Usage"}, "visibility": "public",
+        "metadata": {"card_order": ["latency-by-model", "tokens-by-provider"]}
+    })).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, guest) = t.get("/projects/cortex/showcase/token-usage", &[]).await;
+    // Listed cards first in the listed order, then the others by ID.
+    assert_eq!(ids(&guest["cards"]), ["latency-by-model", "tokens-by-provider", "errors-by-type"]);
+    let (_, root) = t.get("/projects/cortex/reports/token-usage", &[("x-uuid", ROOT), ("x-access-level", "1")]).await;
+    assert_eq!(ids(&root["datasets"]), ["latency-by-model", "tokens-by-provider", "errors-by-type"]);
+}

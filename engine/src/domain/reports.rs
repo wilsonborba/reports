@@ -63,6 +63,15 @@ pub fn dataset_access(scope: &ViewerScope, r: &ReportRecord, report: Access, d: 
     }
 }
 
+/// Cards of a report in the order of its `card_order`, then the others by ID.
+async fn ordered_datasets(svc: &DatasetService, r: &ReportRecord) -> Result<Vec<DatasetRecord>, ReportError> {
+    let mut datasets = catalog::list_datasets(&svc.stores().db, &r.project, &r.slug).await?;
+    let order = &r.metadata.card_order;
+    let rank = |id: &str| order.iter().position(|o| o == id).unwrap_or(order.len());
+    datasets.sort_by(|a, b| rank(&a.dataset_id).cmp(&rank(&b.dataset_id)).then_with(|| a.dataset_id.cmp(&b.dataset_id)));
+    Ok(datasets)
+}
+
 fn report_tier(datasets: &[DatasetRecord]) -> DataTier {
     DataTier::aggregate(datasets.iter().map(|d| d.data_tier))
 }
@@ -263,7 +272,7 @@ pub async fn report_view(
         Access::Discoverable => return Err(scope.denied(&format!("report '{project}/{report}'"))),
         Access::Readable => {}
     }
-    let datasets = catalog::list_datasets(&svc.stores().db, project, report).await?;
+    let datasets = ordered_datasets(svc, &r).await?;
     let mut descriptors = Vec::with_capacity(datasets.len());
     let mut shown = Vec::new();
     let mut cards = Vec::new();
@@ -407,7 +416,7 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
     if access == Access::Hidden {
         return Err(not_found(project, report));
     }
-    let datasets = catalog::list_datasets(&svc.stores().db, project, report).await?;
+    let datasets = ordered_datasets(svc, &r).await?;
     let mut cards = Vec::new();
     let mut shown = Vec::new();
     for d in &datasets {

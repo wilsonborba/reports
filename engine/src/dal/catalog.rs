@@ -61,6 +61,10 @@ pub struct ReportMetadata {
     pub sort_order: i64,
     #[serde(default)]
     pub period_source: Option<PeriodSource>,
+    /// Order of the cards in the report views: listed card IDs first, in this order, then
+    /// the others by ID. The client groups the cards into sections in this order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub card_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
