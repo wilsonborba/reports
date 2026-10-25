@@ -19,7 +19,7 @@ use crate::domain::datasets::engine::Row;
 use crate::domain::datasets::service::AccessClass;
 use crate::domain::datasets::spec::{resolve_text, DataTier, FilterParam};
 use crate::domain::datasets::{DatasetDescriptor, DatasetPage, DatasetService};
-use crate::domain::models::{ProjectSummary, ReportPeriod, ReportSummary, ReportView};
+use crate::domain::models::{AccessSummary, ProjectSummary, ReportPeriod, ReportSummary, ReportView};
 
 /// Rows of each public card sent inline in the showcase.
 pub const SHOWCASE_ROWS: usize = 500;
@@ -65,6 +65,30 @@ pub fn dataset_access(scope: &ViewerScope, r: &ReportRecord, report: Access, d: 
 
 fn report_tier(datasets: &[DatasetRecord]) -> DataTier {
     DataTier::aggregate(datasets.iter().map(|d| d.data_tier))
+}
+
+/// Distinct tiers of the cards, real first.
+fn tiers_of(datasets: &[DatasetRecord]) -> Vec<DataTier> {
+    [DataTier::Real, DataTier::Hybrid, DataTier::Sample]
+        .into_iter()
+        .filter(|t| datasets.iter().any(|d| d.data_tier == *t))
+        .collect()
+}
+
+/// Counts of an answer. `cards` holds the effective visibility of each card and whether
+/// the caller reads it. A signed-in placeholder opens with any session, so only a guest
+/// needs to sign in for it; a restricted one needs an admin or a grant.
+fn access_summary(scope: &ViewerScope, cards: &[(Visibility, bool)]) -> AccessSummary {
+    let mut out = AccessSummary { total: cards.len(), ..AccessSummary::default() };
+    for (visibility, readable) in cards {
+        match (readable, visibility) {
+            (true, _) => out.readable += 1,
+            (false, Visibility::Restricted) => out.needs_admin += 1,
+            (false, _) if !scope.is_authenticated() => out.needs_sign_in += 1,
+            (false, _) => out.needs_admin += 1,
+        }
+    }
+    out
 }
 
 fn class_of(v: Visibility) -> AccessClass {
@@ -141,6 +165,7 @@ pub async fn report_summaries(
     project: &str,
     lang: &str,
     query: Option<&str>,
+    tier: Option<DataTier>,
     scope: &ViewerScope,
 ) -> Result<Vec<ReportSummary>, ReportError> {
     catalog::active_project(&svc.stores().db, project).await?;
@@ -165,6 +190,10 @@ pub async fn report_summaries(
             .into_iter()
             .filter(|d| dataset_access(scope, &r, access, d) != Access::Hidden)
             .collect();
+        let data_tier = report_tier(&datasets);
+        if tier.is_some_and(|t| t != data_tier) {
+            continue;
+        }
         out.push(ReportSummary {
             slug: r.slug.clone(),
             project: r.project.clone(),
@@ -174,7 +203,7 @@ pub async fn report_summaries(
             dataset_count: datasets.len() as i64,
             updated_at: r.updated_at.clone(),
             tags: r.metadata.tags.clone(),
-            data_tier: report_tier(&datasets),
+            data_tier,
             visibility: Visibility::parse(&r.visibility),
             can_view: access == Access::Readable,
         });
@@ -218,7 +247,16 @@ fn skeleton_descriptor(d: &DatasetRecord, visibility: Visibility, lang: &str) ->
 }
 
 /// Full report view for a session caller. Hidden: 404. Discoverable only: 401 or 403.
-pub async fn report_view(svc: &DatasetService, project: &str, report: &str, lang: &str, scope: &ViewerScope) -> Result<ReportView, ReportError> {
+/// `tier` keeps only the cards of that tier; the report tier and the tier list stay those
+/// of all the visible cards.
+pub async fn report_view(
+    svc: &DatasetService,
+    project: &str,
+    report: &str,
+    lang: &str,
+    tier: Option<DataTier>,
+    scope: &ViewerScope,
+) -> Result<ReportView, ReportError> {
     let r = load_report(svc, project, report).await?;
     match report_access(scope, &r) {
         Access::Hidden => return Err(not_found(project, report)),
@@ -228,20 +266,24 @@ pub async fn report_view(svc: &DatasetService, project: &str, report: &str, lang
     let datasets = catalog::list_datasets(&svc.stores().db, project, report).await?;
     let mut descriptors = Vec::with_capacity(datasets.len());
     let mut shown = Vec::new();
+    let mut cards = Vec::new();
     for d in &datasets {
         let visibility = effective(&r, d);
-        match dataset_access(scope, &r, Access::Readable, d) {
-            Access::Readable => {
-                let mut desc = svc.describe(d, lang).await?;
-                desc.visibility = visibility.as_str().to_string();
-                descriptors.push(desc);
-                shown.push(d.clone());
-            }
-            Access::Discoverable => {
-                descriptors.push(skeleton_descriptor(d, visibility, lang));
-                shown.push(d.clone());
-            }
-            Access::Hidden => {}
+        let access = dataset_access(scope, &r, Access::Readable, d);
+        if access == Access::Hidden {
+            continue;
+        }
+        shown.push(d.clone());
+        if tier.is_some_and(|t| t != d.data_tier) {
+            continue;
+        }
+        cards.push((visibility, access == Access::Readable));
+        if access == Access::Readable {
+            let mut desc = svc.describe(d, lang).await?;
+            desc.visibility = visibility.as_str().to_string();
+            descriptors.push(desc);
+        } else {
+            descriptors.push(skeleton_descriptor(d, visibility, lang));
         }
     }
     Ok(ReportView {
@@ -254,7 +296,9 @@ pub async fn report_view(svc: &DatasetService, project: &str, report: &str, lang
         updated_at: r.updated_at.clone(),
         language: lang.to_string(),
         data_tier: report_tier(&shown),
+        tiers: tiers_of(&shown),
         visibility: Visibility::parse(&r.visibility),
+        access: access_summary(scope, &cards),
         datasets: descriptors,
     })
 }
@@ -327,9 +371,13 @@ pub struct ShowcaseView {
     pub period: Option<ReportPeriod>,
     pub updated_at: String,
     pub language: String,
+    /// Tier of the whole report (all its visible cards, before a `tier` filter).
     pub data_tier: DataTier,
+    /// Tiers of the visible cards, for the card filter (before a `tier` filter).
+    pub tiers: Vec<DataTier>,
     pub visibility: Visibility,
     pub can_view: bool,
+    pub access: AccessSummary,
     pub cards: Vec<ShowcaseCard>,
 }
 
@@ -351,7 +399,8 @@ fn skeleton_card(d: &DatasetRecord, visibility: Visibility, lang: &str) -> Showc
 }
 
 /// Guest view of a report: public cards with data, discoverable gated cards as skeletons.
-pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &str) -> Result<ShowcaseView, ReportError> {
+/// `tier` keeps only the cards of that tier, like the session view.
+pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &str, tier: Option<DataTier>) -> Result<ShowcaseView, ReportError> {
     let scope = ViewerScope::guest();
     let r = load_report(svc, project, report).await?;
     let access = report_access(&scope, &r);
@@ -363,7 +412,14 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
     let mut shown = Vec::new();
     for d in &datasets {
         let visibility = effective(&r, d);
-        match dataset_access(&scope, &r, access, d) {
+        let card_access = dataset_access(&scope, &r, access, d);
+        if card_access != Access::Hidden {
+            shown.push(d.clone());
+        }
+        if tier.is_some_and(|t| t != d.data_tier) {
+            continue;
+        }
+        match card_access {
             Access::Readable => {
                 let page = svc.page(d, &[], lang, 0, SHOWCASE_ROWS, AccessClass::Public).await?;
                 cards.push(ShowcaseCard {
@@ -377,15 +433,12 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
                     descriptor: Some(page.descriptor),
                     skeleton: None,
                 });
-                shown.push(d.clone());
             }
-            Access::Discoverable => {
-                cards.push(skeleton_card(d, visibility, lang));
-                shown.push(d.clone());
-            }
+            Access::Discoverable => cards.push(skeleton_card(d, visibility, lang)),
             Access::Hidden => {}
         }
     }
+    let counts: Vec<(Visibility, bool)> = cards.iter().map(|c| (c.visibility, c.can_view)).collect();
     Ok(ShowcaseView {
         project: r.project.clone(),
         report: r.slug.clone(),
@@ -396,8 +449,10 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
         updated_at: r.updated_at.clone(),
         language: lang.to_string(),
         data_tier: report_tier(&shown),
+        tiers: tiers_of(&shown),
         visibility: Visibility::parse(&r.visibility),
         can_view: access == Access::Readable,
+        access: access_summary(&scope, &counts),
         cards,
     })
 }

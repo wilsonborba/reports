@@ -143,6 +143,7 @@ it stops with a clear message when the schema is missing or outdated.
         crate::domain::composition::DomainStatus,
         crate::dal::ProjectRole,
         crate::domain::reports::ShowcaseView,
+        crate::domain::models::AccessSummary,
         crate::domain::reports::ShowcaseCard,
         crate::domain::reports::Skeleton,
         viewer::MeResponse,

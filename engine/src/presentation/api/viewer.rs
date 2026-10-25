@@ -12,7 +12,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::identity::{require_session, resolve_lang, Caller};
-use super::public::{CatalogQuery, LangQuery};
+use super::public::{CatalogQuery, ReportQuery};
 use super::server::AppState;
 use crate::core::error::ReportError;
 use crate::domain::datasets::{DatasetPage, FilterParam};
@@ -78,7 +78,7 @@ pub async fn my_reports(
 ) -> Result<Response, ReportError> {
     require_session(&scope)?;
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), &scope).await?;
+    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), q.tier, &scope).await?;
     Ok(private(paginate(items, q.page, q.page_size, &lang)))
 }
 
@@ -87,7 +87,7 @@ pub async fn my_reports(
     path = "/projects/{project}/reports/{report}",
     summary = "Report view for the caller",
     description = "Readable datasets come with fields and filters. A dataset that the caller cannot read has `can_view = false` and no fields, filters or formula.",
-    params(("project" = String, Path), ("report" = String, Path), LangQuery),
+    params(("project" = String, Path), ("report" = String, Path), ReportQuery),
     responses(
         (status = 200, description = "Report metadata and dataset descriptors", body = ReportView),
         (status = 401, description = "No session"),
@@ -100,11 +100,11 @@ pub async fn report_view(
     State(state): State<Arc<AppState>>,
     Caller(scope): Caller,
     Path((project, report)): Path<(String, String)>,
-    Query(q): Query<LangQuery>,
+    Query(q): Query<ReportQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(private(reports::report_view(&state.datasets, &project, &report, &lang, &scope).await?))
+    Ok(private(reports::report_view(&state.datasets, &project, &report, &lang, q.tier, &scope).await?))
 }
 
 #[utoipa::path(

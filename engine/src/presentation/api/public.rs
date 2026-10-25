@@ -23,6 +23,7 @@ use crate::domain::models::{paginate, Paged, ProjectSummary, ReportSummary};
 use crate::domain::reports::ShowcaseView;
 use crate::domain::stats::{GlobalStats, ProjectStats};
 use crate::domain::themes::{asodya_theme, ProjectTheme};
+use crate::domain::datasets::spec::DataTier;
 use crate::domain::{reports, stats};
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -41,6 +42,17 @@ pub struct CatalogQuery {
     pub page_size: Option<usize>,
     /// Text search in slug, title, description and tags (reports only)
     pub q: Option<String>,
+    /// Only reports of this tier: sample, hybrid or real (reports only)
+    pub tier: Option<DataTier>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ReportQuery {
+    /// en, pt-BR or th (default: Accept-Language, then en)
+    pub lang: Option<String>,
+    /// Only cards of this tier: sample, hybrid or real. `data_tier` and `tiers` still
+    /// describe every visible card.
+    pub tier: Option<DataTier>,
 }
 
 #[utoipa::path(
@@ -123,7 +135,7 @@ pub async fn list_reports(
     headers: HeaderMap,
 ) -> Result<Json<Paged<ReportSummary>>, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), &ViewerScope::guest()).await?;
+    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), q.tier, &ViewerScope::guest()).await?;
     Ok(Json(paginate(items, q.page, q.page_size, &lang)))
 }
 
@@ -176,18 +188,18 @@ pub fn public<T: serde::Serialize>(body: T) -> Response {
     path = "/projects/{project}/showcase/{report}",
     summary = "Guest view of a report",
     description = "Public cards come with their first rows. Discoverable signed-in or restricted cards come as a skeleton only (stable ID, title, visibility, no data). Other cards are omitted. Example: `curl https://api.asodya.com/apps/reports/v1/projects/cortex/showcase/token-usage`",
-    params(("project" = String, Path), ("report" = String, Path), LangQuery),
+    params(("project" = String, Path), ("report" = String, Path), ReportQuery),
     responses((status = 200, description = "Report with public cards and skeletons", body = ShowcaseView), (status = 404, description = "Not found or hidden")),
     tag = "Reports"
 )]
 pub async fn showcase(
     State(state): State<Arc<AppState>>,
     Path((project, report)): Path<(String, String)>,
-    Query(q): Query<LangQuery>,
+    Query(q): Query<ReportQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(public(reports::showcase(&state.datasets, &project, &report, &lang).await?))
+    Ok(public(reports::showcase(&state.datasets, &project, &report, &lang, q.tier).await?))
 }
 
 #[utoipa::path(
