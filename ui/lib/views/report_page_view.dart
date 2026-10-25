@@ -111,8 +111,12 @@ class _ReportPageViewState extends State<ReportPageView> {
         if (snap.hasError) {
           return ApiErrorState(error: snap.error, onRetry: () => setState(() => _key = null), returnTo: AppRoutes.report(widget.project, widget.report));
         }
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final view = snap.data!;
+        // A FutureBuilder keeps the previous answer while the next one loads; the cards of
+        // another report must not show under this report.
+        final view = snap.data;
+        if (view == null || view.project != widget.project || view.report != widget.report) {
+          return const Center(child: CircularProgressIndicator());
+        }
         if (!identical(_colorsFor, view)) {
           _colorsFor = view;
           _colors = SeriesColorMap()..registerReport(view);

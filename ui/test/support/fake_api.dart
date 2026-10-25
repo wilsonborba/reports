@@ -144,9 +144,9 @@ class FakeApi {
   /// Registers a report with [count] datasets; each dataset returns [rowsPerDataset] rows.
   /// The session routes and the guest showcase both answer (the showcase without rows,
   /// so a guest card loads its page from the card route).
-  FakeApi withReport(String project, String report, int count, {int rowsPerDataset = 3}) {
+  FakeApi withReport(String project, String report, int count, {int rowsPerDataset = 3, String prefix = 'd'}) {
     final datasets = List.generate(count, (i) => {
-          'dataset_id': 'd${i + 1}',
+          'dataset_id': '$prefix${i + 1}',
           'title': 'Dataset ${i + 1}',
           'description': 'Description ${i + 1}',
           'equation': i == 0 ? 'T_total = sum(tokens_i)' : null,

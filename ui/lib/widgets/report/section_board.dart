@@ -60,7 +60,13 @@ class SectionBoardState extends State<SectionBoard> {
   @override
   void didUpdateWidget(SectionBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.section != widget.section || oldWidget.report != widget.report || oldWidget.project != widget.project) {
+    // Another section, report or card list gets its own layout (a stale layout names
+    // cards that are not there and the board stays empty).
+    final cards = widget.slots.map((s) => s.key).join(',');
+    if (oldWidget.section != widget.section ||
+        oldWidget.report != widget.report ||
+        oldWidget.project != widget.project ||
+        oldWidget.slots.map((s) => s.key).join(',') != cards) {
       layout = BoardLayout.fallback(widget.slots);
       draft = null;
       _restore();
