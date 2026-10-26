@@ -12,6 +12,8 @@ class AppRoutes {
 
   static String scienceTopic(String topic) => '$homeScience/$topic';
 
+  static String embed(String project,String report,String dataset) => '/v1/embed/$project/$report/$dataset';
+
   static String project(String project) => '$menu/$project';
 
   static String report(String project, String report) => '$menu/$project/$report';

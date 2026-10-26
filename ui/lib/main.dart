@@ -73,6 +73,19 @@ class _ReportsAppState extends State<ReportsApp> {
           path: '/v1',
           redirect: (context, state) => AppRoutes.home,
         ),
+        // Compact, public item view: no app shell or full-report navigation.
+        GoRoute(
+          path: '/v1/embed/:project/:report/:dataset',
+          builder: (context,state) => Scaffold(body:DatasetFullView(
+            project:state.pathParameters['project']!,
+            report:state.pathParameters['report']!,
+            datasetId:state.pathParameters['dataset']!,
+            visual:DatasetFullView.visualOf(state.uri.queryParameters['visual']),
+            filters:DatasetFullView.filtersOf(state.uri.queryParameters),
+            table:state.uri.queryParameters['view']=='table',
+            language:state.uri.queryParameters['lang'],compact:true,
+          )),
+        ),
         // Every page lives inside the app shell (top bar and project theme).
         ShellRoute(
           builder: (context, state, child) => AppShell(
