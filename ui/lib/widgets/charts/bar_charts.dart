@@ -283,7 +283,7 @@ class _RankingBarsState extends State<RankingBars> {
     final p = context.palette;
     final rows = widget.maxItems == null ? widget.page.rows : widget.page.rows.take(widget.maxItems!).toList();
     final measure = widget.measure;
-    final maxValue = widget.maxValue ?? rows.fold<double>(0, (m, r) => (asDouble(r[measure.name]) ?? 0) > m ? (asDouble(r[measure.name]) ?? 0) : m);
+    final maxValue = widget.maxValue ?? rankingScale(rows, measure);
     // The value column is as wide as its longest text, so values are never cut.
     final longest = rows.fold<int>(0, (m, r) => _valueText(r).length > m ? _valueText(r).length : m);
     final valueWidth = (longest * 7.2 + 8).clamp(48.0, 220.0);
@@ -398,7 +398,7 @@ class _RankingColumnsState extends State<RankingColumns> {
   @override
   Widget build(BuildContext context) {
     final rows = widget.page.rows;
-    final maxValue = rows.fold<double>(0, (m, r) => (asDouble(r[widget.measure.name]) ?? 0) > m ? (asDouble(r[widget.measure.name]) ?? 0) : m);
+    final maxValue = rankingScale(rows, widget.measure);
     return LayoutBuilder(builder: (context, c) {
       final cols = RankingColumns.columnsFor(rows.length, c.maxWidth,
           perColumn: widget.perColumn, maxColumns: widget.maxColumns, minColumnWidth: widget.minColumnWidth);
@@ -506,4 +506,11 @@ class SmallMultiples extends StatelessWidget {
       );
     });
   }
+}
+
+/// Full bar length of a ranking: the largest value, but at least 100 for percent
+/// measures so a rate bar reads against the whole 0 to 100% range.
+double rankingScale(List<Map<String, dynamic>> rows, FieldInfo measure) {
+  final top = rows.fold<double>(0, (m, r) => (asDouble(r[measure.name]) ?? 0) > m ? (asDouble(r[measure.name]) ?? 0) : m);
+  return measure.type == 'percent' && top < 100 ? 100 : top;
 }
