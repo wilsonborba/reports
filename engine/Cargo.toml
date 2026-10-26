@@ -1,6 +1,6 @@
 [package]
 name = "reports"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 authors = ["Wilson Borba <wilsonmatheuslimaborba@gmail.com>"]
 description = "Asodya Reports engine: headless JSON API for project reports, statistics and dashboards"
@@ -31,6 +31,8 @@ sqlx = { version = "0.7", default-features = false, features = [
 ] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 urlencoding = "2.1"
+url = "2"
+resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts"] }
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 async-trait = "0.1.92"

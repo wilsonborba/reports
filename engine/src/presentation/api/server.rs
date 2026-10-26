@@ -9,7 +9,7 @@ use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use utoipa::{OpenApi, ToSchema};
 
-use super::{admin, docs::ApiDoc, public, viewer};
+use super::{admin, docs::ApiDoc, public, viewer, embeds};
 use crate::core::config::Settings;
 use crate::core::error::ReportError;
 use crate::dal::domain_api::HttpDomain;
@@ -159,6 +159,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/projects/:project/stats", get(public::project_stats))
         .route("/projects/:project/showcase/:report", get(public::showcase))
         .route("/projects/:project/showcase/:report/cards/:card", get(public::showcase_card))
+        .route("/projects/:project/showcase/:report/cards/:dataset/embed", get(embeds::descriptor))
+        .route("/projects/:project/showcase/:report/cards/:dataset/thumbnail.png", get(embeds::thumbnail))
         .route("/stats", get(public::global_stats))
         // Session routes (gateway session rule).
         .route("/me", get(viewer::me))
