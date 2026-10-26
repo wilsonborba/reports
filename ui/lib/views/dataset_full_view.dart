@@ -30,6 +30,8 @@ class DatasetFullView extends StatefulWidget {
 
   /// Table instead of the chart (`view=table`).
   final bool table;
+  final bool compact;
+  final String? language;
 
   const DatasetFullView({
     super.key,
@@ -39,6 +41,8 @@ class DatasetFullView extends StatefulWidget {
     this.visual,
     this.filters = const {},
     this.table = false,
+    this.compact = false,
+    this.language,
   });
 
   /// Filters from URL query parameters (keys that start with `f.`).
@@ -74,7 +78,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     _key = key;
     final service = ReportService.instance;
     _view = service.report(widget.project, widget.report, lang: lang);
-    _project = CatalogService.instance.project(widget.project, lang: lang);
+    if (!widget.compact) _project = CatalogService.instance.project(widget.project, lang: lang);
     _rows = _view!.then((view) async {
       final slot = _slot(view);
       final page = await service.allRows(widget.project, widget.report, widget.datasetId, lang: lang, filters: widget.filters);
@@ -100,7 +104,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
 
   @override
   Widget build(BuildContext context) {
-    _load(context.langCode);
+    _load(widget.language ?? context.langCode);
     final p = context.palette;
     return FutureBuilder<ReportView>(
       future: _view,
@@ -116,9 +120,9 @@ class _DatasetFullViewState extends State<DatasetFullView> {
         }
         final slot = _slot(view);
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(widget.compact ? 12 : 24),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            FutureBuilder<ProjectSummary?>(
+            if (!widget.compact) FutureBuilder<ProjectSummary?>(
               future: _project,
               builder: (context, ps) => PageHeader(
                 crumbs: [
@@ -131,7 +135,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                 subtitle: descriptor.description,
               ),
             ),
-            const SizedBox(height: 18),
+            if (!widget.compact) const SizedBox(height: 18),
             FutureBuilder<(DatasetPage, Map<String, DatasetPage>)>(
               future: _rows,
               builder: (context, rs) {
@@ -167,9 +171,9 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                   body: body,
                   loading: loading,
                   tableView: widget.table,
-                  onToggleTable: () => context.go(_path(table: !widget.table)),
-                  onShare: descriptor.visibility == 'public' ? () => showShareDialog(context, _path()) : null,
-                  toolbar: descriptor.filters.isEmpty
+                  onToggleTable: widget.compact ? null : () => context.go(_path(table: !widget.table)),
+                  onShare: !widget.compact && descriptor.visibility == 'public' ? () => showShareDialog(context, _path()) : null,
+                  toolbar: widget.compact || descriptor.filters.isEmpty
                       ? null
                       : CardFilterBar(filters: descriptor.filters, values: widget.filters, onChanged: _setFilters),
                 );
