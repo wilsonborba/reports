@@ -2,6 +2,20 @@
 
 All notable changes to this project are listed here. The list comes from the commit history.
 
+## [3.1.2] - 2026-10-27
+
+### Bug fixes
+
+- *(ui)* Name api_for_apps, domain_api and FSM on the Architecture page (#27)
+- *(ui)* Merge Architecture service names (#27)
+
+### Other
+
+- Back-merge v3.1.1 into development
+- Back-merge v3.1.1 into feature/main
+- Promote feature/main to development for v3.1.2
+
+
 ## [3.1.1] - 2026-10-27
 
 ### Bug fixes
