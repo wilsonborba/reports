@@ -1676,6 +1676,7 @@ dependencies = [
  "futures-util",
  "hex",
  "redis",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

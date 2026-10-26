@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Features
+
+- *(logs)* Stream redacted engine logs from the journald writer
+
+### Other
+
+- Back-merge v3.1.2 into feature/main
+
+
 # Changelog
 
 All notable changes to this project are listed here. The list comes from the commit history.

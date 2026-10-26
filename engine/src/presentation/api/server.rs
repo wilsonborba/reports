@@ -146,6 +146,7 @@ fn admin_routes(with_reads: bool) -> Router<Arc<AppState>> {
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route("/logs/stream", get(super::logs::stream))
         .route("/openapi.json", get(|| async { Json(ApiDoc::openapi()) }))
         .route("/", get(|| async { Json(serde_json::json!({"service": "reports", "openapi": "/openapi.json"})) }))
         .route("/health", get(health))
@@ -177,6 +178,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .layer(TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<axum::body::Body>| {
             tracing::debug_span!("request", method = %req.method(), path = %req.uri().path())
         }))
+        .layer(axum::middleware::from_fn(super::logs::request_log))
         .with_state(state)
 }
 

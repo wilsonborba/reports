@@ -6,6 +6,7 @@ authors = ["Wilson Borba <wilsonmatheuslimaborba@gmail.com>"]
 description = "Asodya Reports engine: headless JSON API for project reports, statistics and dashboards"
 
 [dependencies]
+regex = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
 sha2 = "0.10"
 hex = "0.4"
