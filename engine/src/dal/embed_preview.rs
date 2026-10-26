@@ -76,6 +76,8 @@ pub async fn capture(settings: &Settings, url: &str) -> Result<Vec<u8>, ReportEr
             "--no-default-browser-check",
             "--hide-scrollbars",
             "--disable-dev-shm-usage",
+            // Without a session keyring, Chrome otherwise waits on D-Bus before the first request.
+            "--password-store=basic",
             "--remote-debugging-port=0",
         ])
         .arg(format!("--user-data-dir={}", directory.path().display()))
