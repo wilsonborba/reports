@@ -38,4 +38,14 @@ void main() {
     await openPublic(tester, '/v1/home/architecture', size: const Size(390, 9000));
     expect(tester.takeException(), isNull);
   });
+
+  for (final lang in ['en', 'pt-BR']) {
+    testWidgets('the Architecture page names every service it uses ($lang)', (tester) async {
+      SharedPreferences.setMockInitialValues({'app_language': lang});
+      await openPublic(tester, '/v1/home/architecture', size: const Size(1440, 9000));
+      for (final name in ['api_for_apps', 'domain_api', 'PostgreSQL', 'CouchDB', 'Redis', 'FSM']) {
+        expect(find.textContaining(name), findsWidgets, reason: '$name on the $lang page');
+      }
+    });
+  }
 }
