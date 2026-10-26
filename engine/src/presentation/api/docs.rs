@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use super::{admin, public, server, viewer};
+use super::{admin, public, server, viewer, embeds};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -55,6 +55,8 @@ it stops with a clear message when the schema is missing or outdated.
         public::project_stats,
         public::showcase,
         public::showcase_card,
+        embeds::descriptor,
+        embeds::thumbnail,
         viewer::me,
         viewer::my_reports,
         viewer::report_view,
