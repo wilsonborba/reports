@@ -4,6 +4,7 @@ import 'report_service.dart';
 Future<Map<String, dynamic>> itemEmbed(
   String path, {
   required String language,
+  String? theme,
 }) {
   final uri = Uri.parse(path);
   final parts = uri.pathSegments;
@@ -14,6 +15,6 @@ Future<Map<String, dynamic>> itemEmbed(
   }
   return ReportService.instance.api.getJson(
     '/projects/${Uri.encodeComponent(parts[2])}/showcase/${Uri.encodeComponent(parts[3])}/cards/${Uri.encodeComponent(parts[4])}/embed',
-    {'lang': language, ...uri.queryParameters},
+    {'lang': language, 'theme': ?theme, ...uri.queryParameters},
   );
 }

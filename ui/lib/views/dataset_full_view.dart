@@ -32,6 +32,8 @@ class DatasetFullView extends StatefulWidget {
   final bool table;
   final bool compact;
   final String? language;
+  final ReportService? service;
+  final VoidCallback? onReady;
 
   const DatasetFullView({
     super.key,
@@ -43,6 +45,8 @@ class DatasetFullView extends StatefulWidget {
     this.table = false,
     this.compact = false,
     this.language,
+    this.service,
+    this.onReady,
   });
 
   /// Filters from URL query parameters (keys that start with `f.`).
@@ -76,7 +80,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     final key = '${widget.project}/${widget.report}/${widget.datasetId}/$lang/${sorted.map((k) => '$k=${widget.filters[k]}').join('&')}';
     if (key == _key) return;
     _key = key;
-    final service = ReportService.instance;
+    final service = widget.service ?? ReportService.instance;
     _view = service.report(widget.project, widget.report, lang: lang);
     if (!widget.compact) _project = CatalogService.instance.project(widget.project, lang: lang);
     _rows = _view!.then((view) async {
@@ -141,6 +145,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
               builder: (context, rs) {
                 if (rs.hasData) _last = rs.data;
                 final loading = rs.connectionState != ConnectionState.done;
+                if (rs.hasData && !loading && widget.onReady != null) WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) widget.onReady!(); });
                 final data = rs.hasData ? rs.data : (loading ? _last : null);
                 final Widget body;
                 if (rs.hasError) {
@@ -172,7 +177,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                   loading: loading,
                   tableView: widget.table,
                   onToggleTable: widget.compact ? null : () => context.go(_path(table: !widget.table)),
-                  onShare: !widget.compact && descriptor.visibility == 'public' ? () => showShareDialog(context, _path()) : null,
+                  onShare: !widget.compact && descriptor.visibility == 'public' ? () => showShareDialog(context, _path(), full: true) : null,
                   toolbar: widget.compact || descriptor.filters.isEmpty
                       ? null
                       : CardFilterBar(filters: descriptor.filters, values: widget.filters, onChanged: _setFilters),

@@ -32,11 +32,14 @@ sqlx = { version = "0.7", default-features = false, features = [
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 urlencoding = "2.1"
 url = "2"
-resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts"] }
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 async-trait = "0.1.92"
 evalexpr = "13.1"
 
-[dev-dependencies]
 tempfile = "3.10"
+tokio-tungstenite = "0.28"
+futures-util = "0.3"
+base64 = "0.22"
+
+[dev-dependencies]

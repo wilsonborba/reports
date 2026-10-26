@@ -32,17 +32,25 @@ pub async fn thumbnail(
     let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
     let page =
         embeds::public_page(&state.datasets, &project, &report, &dataset, &query, &lang).await?;
-    let bytes = tokio::task::spawn_blocking(move || {
-        embeds::preview_png(
-            &page,
-            query.get("view").is_some_and(|v| v == "table"),
-            query
-                .get("visual")
-                .is_some_and(|v| matches!(v.as_str(), "line" | "area")),
-        )
-    })
-    .await
-    .map_err(|_| ReportError::Internal("Preview rendering failed".into()))??;
+    let (_, url, _) = embeds::item_urls(&project, &report, &dataset, &query);
+    let key = crate::dal::embed_preview::cache_key(&url, &page);
+    let bytes = if let Some(bytes) = state
+        .stores
+        .cache
+        .get(&key)
+        .await
+        .and_then(|v| hex::decode(v).ok())
+    {
+        bytes
+    } else {
+        let bytes = crate::dal::embed_preview::capture(&state.settings, &url).await?;
+        state
+            .stores
+            .cache
+            .set(&key, &hex::encode(&bytes), 120)
+            .await;
+        bytes
+    };
     Ok((
         StatusCode::OK,
         [
