@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
@@ -277,24 +278,27 @@ class _FooterLink extends StatelessWidget {
     final p = context.palette;
     return Semantics(
       link: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  style: TextStyle(fontSize: 14, color: p.textMuted),
+      child: track(
+        'public.footer.open',
+        InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(fontSize: 14, color: p.textMuted),
+                  ),
                 ),
-              ),
-              if (external) ...[
-                const SizedBox(width: 6),
-                Icon(Icons.open_in_new_rounded, size: 13, color: p.textMuted),
+                if (external) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.open_in_new_rounded, size: 13, color: p.textMuted),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import '../../layouts/board_layout.dart';
@@ -20,7 +21,14 @@ class SectionBoard extends StatefulWidget {
   final int section;
   final List<Slot> slots;
 
-  const SectionBoard({super.key, required this.project, required this.report, required this.view, required this.section, required this.slots});
+  const SectionBoard({
+    super.key,
+    required this.project,
+    required this.report,
+    required this.view,
+    required this.section,
+    required this.slots,
+  });
 
   static const double minColWidth = 220;
   static const double rowHeight = 180;
@@ -49,7 +57,8 @@ class SectionBoardState extends State<SectionBoard> {
     super.dispose();
   }
 
-  String get storeKey => BoardLayoutStore.key(widget.project, widget.report, widget.section);
+  String get storeKey =>
+      BoardLayoutStore.key(widget.project, widget.report, widget.section);
 
   @override
   void initState() {
@@ -76,7 +85,9 @@ class SectionBoardState extends State<SectionBoard> {
   Future<void> _restore() async {
     final key = storeKey;
     final saved = await BoardLayoutStore.load(key);
-    if (mounted && key == storeKey) setState(() => layout = BoardLayout.resolve(saved, widget.slots));
+    if (mounted && key == storeKey) {
+      setState(() => layout = BoardLayout.resolve(saved, widget.slots));
+    }
   }
 
   void save() => BoardLayoutStore.save(storeKey, layout);
@@ -86,6 +97,7 @@ class SectionBoardState extends State<SectionBoard> {
   void startEdit() => setState(() => draft = layout);
 
   void _done() {
+    trackSubmit(context, 'report.layout.save');
     setState(() {
       layout = draft ?? layout;
       draft = null;
@@ -104,17 +116,18 @@ class SectionBoardState extends State<SectionBoard> {
   }
 
   CardControls controlsFor(String key, {required bool canEdit}) => CardControls(
-        minimized: layout.minimized.contains(key),
-        onMove: canEdit ? startEdit : null,
-        onToggleMinimize: () {
-          final m = {...layout.minimized};
-          m.contains(key) ? m.remove(key) : m.add(key);
-          setState(() => layout = layout.copyWith(minimized: m));
-          save();
-        },
-      );
+    minimized: layout.minimized.contains(key),
+    onMove: canEdit ? startEdit : null,
+    onToggleMinimize: () {
+      final m = {...layout.minimized};
+      m.contains(key) ? m.remove(key) : m.add(key);
+      setState(() => layout = layout.copyWith(minimized: m));
+      save();
+    },
+  );
 
-  Widget _card(Slot slot, {required bool fill, bool canEdit = false}) => DatasetSlot(
+  Widget _card(Slot slot, {required bool fill, bool canEdit = false}) =>
+      DatasetSlot(
         project: widget.project,
         report: widget.report,
         view: widget.view,
@@ -140,14 +153,41 @@ class SectionBoardState extends State<SectionBoard> {
         spacing: 12,
         runSpacing: 8,
         children: [
-          Text(context.tr('arrange_hint'), style: TextStyle(fontSize: 12.5, color: p.textPrimary)),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            TextButton(key: const Key('reset_layout'), onPressed: _reset, child: Text(context.tr('reset_layout'))),
-            const SizedBox(width: 6),
-            OutlinedButton(key: const Key('edit_cancel'), onPressed: _cancel, child: Text(context.tr('cancel'))),
-            const SizedBox(width: 6),
-            FilledButton(key: const Key('edit_done'), onPressed: _done, child: Text(context.tr('done'))),
-          ]),
+          Text(
+            context.tr('arrange_hint'),
+            style: TextStyle(fontSize: 12.5, color: p.textPrimary),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              track(
+                'report.layout.reset',
+                TextButton(
+                  key: const Key('reset_layout'),
+                  onPressed: _reset,
+                  child: Text(context.tr('reset_layout')),
+                ),
+              ),
+              const SizedBox(width: 6),
+              track(
+                'report.layout.cancel',
+                OutlinedButton(
+                  key: const Key('edit_cancel'),
+                  onPressed: _cancel,
+                  child: Text(context.tr('cancel')),
+                ),
+              ),
+              const SizedBox(width: 6),
+              track(
+                'report.layout.save',
+                FilledButton(
+                  key: const Key('edit_done'),
+                  onPressed: _done,
+                  child: Text(context.tr('done')),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -156,89 +196,123 @@ class SectionBoardState extends State<SectionBoard> {
   @override
   Widget build(BuildContext context) {
     final byKey = _byKey;
-    return LayoutBuilder(builder: (context, c) {
-      if (c.maxWidth < SectionBoard.phoneWidth) {
-        return Column(
-          key: const Key('board_phone'),
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final item in layout.readingOrder)
-              if (byKey[item.key] != null)
-                Padding(
-                  key: ValueKey('card_${item.key}'),
-                  padding: const EdgeInsets.only(bottom: SectionBoard.gap),
-                  child: _card(byKey[item.key]!, fill: false),
-                ),
-          ],
-        );
-      }
-      final canEdit = c.maxWidth >= SectionBoard.editWidth;
-      if (draft != null && canEdit) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-          _editBar(context),
-          BoardEditor(
-            layout: draft!,
-            slots: byKey,
-            titles: {for (final s in widget.slots) s.key: widget.view.dataset(s.datasetId)?.title ?? s.key},
-            rowHeight: SectionBoard.rowHeight,
-            gap: SectionBoard.gap,
-            onChanged: (next) => setState(() => draft = next),
-          ),
-        ]);
-      }
-      final cols = layout.usedCols.clamp(1, BoardLayout.maxCols);
-      final rows = layout.usedRows.clamp(1, 64);
-      final colWidth = ((c.maxWidth - SectionBoard.gap * (cols - 1)) / cols).clamp(SectionBoard.minColWidth, double.infinity);
-      final width = colWidth * cols + SectionBoard.gap * (cols - 1);
-      final height = SectionBoard.rowHeight * rows + SectionBoard.gap * (rows - 1);
-      double x(int col) => col * (colWidth + SectionBoard.gap);
-      double y(int row) => row * (SectionBoard.rowHeight + SectionBoard.gap);
-      double w(int span) => span * colWidth + (span - 1) * SectionBoard.gap;
-      double h(int span) => span * SectionBoard.rowHeight + (span - 1) * SectionBoard.gap;
-      final board = SizedBox(
-        key: const Key('board'),
-        width: width,
-        height: height,
-        child: Stack(children: [
-          for (final item in layout.items)
-            if (byKey[item.key] != null)
-              Positioned(
-                key: ValueKey('card_${item.key}'),
-                left: x(item.col),
-                top: y(item.row),
-                width: w(item.colSpan),
-                height: h(item.rowSpan),
-                child: layout.minimized.contains(item.key)
-                    ? Align(alignment: Alignment.topCenter, child: _card(byKey[item.key]!, fill: false, canEdit: canEdit))
-                    : _card(byKey[item.key]!, fill: true, canEdit: canEdit),
+    return LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth < SectionBoard.phoneWidth) {
+          return Column(
+            key: const Key('board_phone'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final item in layout.readingOrder)
+                if (byKey[item.key] != null)
+                  Padding(
+                    key: ValueKey('card_${item.key}'),
+                    padding: const EdgeInsets.only(bottom: SectionBoard.gap),
+                    child: _card(byKey[item.key]!, fill: false),
+                  ),
+            ],
+          );
+        }
+        final canEdit = c.maxWidth >= SectionBoard.editWidth;
+        if (draft != null && canEdit) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _editBar(context),
+              BoardEditor(
+                layout: draft!,
+                slots: byKey,
+                titles: {
+                  for (final s in widget.slots)
+                    s.key: widget.view.dataset(s.datasetId)?.title ?? s.key,
+                },
+                rowHeight: SectionBoard.rowHeight,
+                gap: SectionBoard.gap,
+                onChanged: (next) => setState(() => draft = next),
               ),
-        ]),
-      );
-      final editButton = Align(
-        alignment: Alignment.centerRight,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: TextButton.icon(
-            key: const Key('edit_layout'),
-            onPressed: startEdit,
-            icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
-            label: Text(context.tr('edit_layout')),
+            ],
+          );
+        }
+        final cols = layout.usedCols.clamp(1, BoardLayout.maxCols);
+        final rows = layout.usedRows.clamp(1, 64);
+        final colWidth = ((c.maxWidth - SectionBoard.gap * (cols - 1)) / cols)
+            .clamp(SectionBoard.minColWidth, double.infinity);
+        final width = colWidth * cols + SectionBoard.gap * (cols - 1);
+        final height =
+            SectionBoard.rowHeight * rows + SectionBoard.gap * (rows - 1);
+        double x(int col) => col * (colWidth + SectionBoard.gap);
+        double y(int row) => row * (SectionBoard.rowHeight + SectionBoard.gap);
+        double w(int span) => span * colWidth + (span - 1) * SectionBoard.gap;
+        double h(int span) =>
+            span * SectionBoard.rowHeight + (span - 1) * SectionBoard.gap;
+        final board = SizedBox(
+          key: const Key('board'),
+          width: width,
+          height: height,
+          child: Stack(
+            children: [
+              for (final item in layout.items)
+                if (byKey[item.key] != null)
+                  Positioned(
+                    key: ValueKey('card_${item.key}'),
+                    left: x(item.col),
+                    top: y(item.row),
+                    width: w(item.colSpan),
+                    height: h(item.rowSpan),
+                    child: layout.minimized.contains(item.key)
+                        ? Align(
+                            alignment: Alignment.topCenter,
+                            child: _card(
+                              byKey[item.key]!,
+                              fill: false,
+                              canEdit: canEdit,
+                            ),
+                          )
+                        : _card(byKey[item.key]!, fill: true, canEdit: canEdit),
+                  ),
+            ],
           ),
-        ),
-      );
-      Widget withButton(Widget b) =>
-          canEdit ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [editButton, b]) : b;
-      if (width <= c.maxWidth + 0.5) return withButton(board);
-      return withButton(Scrollbar(
-        controller: _horizontal,
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          key: const Key('board_scroll'),
-          controller: _horizontal,
-          scrollDirection: Axis.horizontal,
-          child: Padding(padding: const EdgeInsets.only(bottom: 12), child: board),
-        ),
-      ));
-    });
+        );
+        final editButton = Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: track(
+              'report.layout.edit',
+              TextButton.icon(
+                key: const Key('edit_layout'),
+                onPressed: startEdit,
+                icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
+                label: Text(context.tr('edit_layout')),
+              ),
+            ),
+          ),
+        );
+        Widget withButton(Widget b) => canEdit
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [editButton, b],
+              )
+            : b;
+        if (width <= c.maxWidth + 0.5) return withButton(board);
+        return withButton(
+          Scrollbar(
+            controller: _horizontal,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              key: const Key('board_scroll'),
+              controller: _horizontal,
+              scrollDirection: Axis.horizontal,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: board,
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

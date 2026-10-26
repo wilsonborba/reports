@@ -36,7 +36,7 @@ class ApiException implements Exception {
 
 /// JSON client of the Reports engine through the gateway. Calls carry the browser
 /// cookies (the gateway session). Every failure except 401 and 403 (expected access
-/// states) is reported to the shared client-error telemetry.
+/// states) is reported to the shared error telemetry.
 class ApiClient {
   final String baseUrl;
   final http.Client _client;

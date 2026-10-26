@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../l10n/strings.dart';
@@ -37,27 +38,57 @@ class AuthMessagePage extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              busy ? const CircularProgressIndicator() : Icon(icon, size: 44, color: p.textMuted),
-              const SizedBox(height: 20),
-              Text(title,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                busy
+                    ? const CircularProgressIndicator()
+                    : Icon(icon, size: 44, color: p.textMuted),
+                const SizedBox(height: 20),
+                Text(
+                  title,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w400, color: p.textPrimary, height: 1.25)),
-              const SizedBox(height: 12),
-              Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 15, color: p.textMuted, height: 1.5)),
-              if (actionLabel != null && onAction != null) ...[
-                const SizedBox(height: 24),
-                FilledButton(key: const Key('auth_action'), onPressed: onAction, child: Text(actionLabel!)),
-              ],
-              if (showHomeLink) ...[
-                const SizedBox(height: 24),
-                TextButton(
-                  key: const Key('auth_home_link'),
-                  onPressed: () => context.go(AuthRoutes.home),
-                  child: Text(context.tr('auth_go_home')),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w400,
+                    color: p.textPrimary,
+                    height: 1.25,
+                  ),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: p.textMuted,
+                    height: 1.5,
+                  ),
+                ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(height: 24),
+                  track(
+                    'auth.message.action',
+                    FilledButton(
+                      key: const Key('auth_action'),
+                      onPressed: onAction,
+                      child: Text(actionLabel!),
+                    ),
+                  ),
+                ],
+                if (showHomeLink) ...[
+                  const SizedBox(height: 24),
+                  track(
+                    'auth.message.home',
+                    TextButton(
+                      key: const Key('auth_home_link'),
+                      onPressed: () => context.go(AuthRoutes.home),
+                      child: Text(context.tr('auth_go_home')),
+                    ),
+                  ),
+                ],
               ],
-            ]),
+            ),
           ),
         ),
       ),

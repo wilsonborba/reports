@@ -28,6 +28,10 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  asodya_tracking:
+    git:
+      url: https://github.com/wilsonborba/asodya_tracking.git
+      ref: 48db2722b8e1017f33e5c5ae29475a4c6ef4ba3d
   flutter:
     sdk: flutter
   flutter_web_plugins:

@@ -11,50 +11,106 @@ void main() {
     FakeApi().install();
   });
 
-  testWidgets('every project of the API gets a block with its links, Domain details and facts', (tester) async {
-    await openPublic(tester, '/v1/home/projects', size: const Size(1440, 6000));
-    for (final slug in ['cortex', 'certifications', 'fsm']) {
-      expect(find.byKey(Key('project_block_$slug')), findsOneWidget, reason: slug);
-      expect(find.byKey(Key('proj_reports_$slug')), findsOneWidget);
-    }
-    expect(find.text('LLM gateway'), findsOneWidget);
-    // Cortex has a website, a repository and Domain details; Certifications has none.
-    expect(find.byKey(const Key('proj_repository_cortex')), findsOneWidget);
-    expect(find.byKey(const Key('proj_categories_cortex')), findsOneWidget);
-    final facts = find.byKey(const Key('project_facts_cortex'));
-    expect(find.descendant(of: facts, matching: find.text('cortex.asodya.com')), findsOneWidget);
-    expect(find.descendant(of: facts, matching: find.text('github.com')), findsOneWidget);
-    expect(find.descendant(of: facts, matching: find.text('active')), findsOneWidget, reason: 'Domain status, not translated');
-    expect(find.descendant(of: facts, matching: find.text('Providers')), findsOneWidget, reason: 'Domain statistic');
-    expect(find.descendant(of: facts, matching: find.text('wilsonborba')), findsOneWidget, reason: 'collaborators');
-    // One block per project, so no primary button: the reports as tertiary, links as ghosts.
-    expect(find.descendant(of: find.byKey(const Key('proj_reports_cortex')), matching: find.byType(OutlinedButton)), findsOneWidget);
-    expect(find.descendant(of: find.byKey(const Key('proj_website_cortex')), matching: find.byType(TextButton)), findsOneWidget);
-    expect(find.byKey(const Key('proj_website_certifications')), findsNothing, reason: 'no website, no button');
-    expect(find.byKey(const Key('proj_reports_certifications')), findsOneWidget);
-    expect(find.descendant(of: find.byKey(const Key('project_facts_certifications')), matching: find.text('No website yet')), findsOneWidget);
-    for (final m in ['schemas', 'calculations', 'access', 'exports']) {
-      expect(find.byKey(Key('method_$m')), findsOneWidget);
-    }
-  });
+  testWidgets(
+    'every project of the API gets a block with its links, Domain details and facts',
+    (tester) async {
+      await openPublic(
+        tester,
+        '/v1/home/projects',
+        size: const Size(1440, 6000),
+      );
+      for (final slug in ['cortex', 'certifications', 'fsm']) {
+        expect(
+          find.byKey(Key('project_block_$slug')),
+          findsOneWidget,
+          reason: slug,
+        );
+        expect(find.byKey(Key('proj_reports_$slug')), findsOneWidget);
+      }
+      expect(find.text('LLM gateway'), findsOneWidget);
+      // Cortex has a website, a repository and Domain details; Certifications has none.
+      expect(find.byKey(const Key('proj_repository_cortex')), findsOneWidget);
+      expect(find.byKey(const Key('proj_categories_cortex')), findsOneWidget);
+      final facts = find.byKey(const Key('project_facts_cortex'));
+      expect(
+        find.descendant(of: facts, matching: find.text('cortex.asodya.com')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: facts, matching: find.text('github.com')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: facts, matching: find.text('active')),
+        findsOneWidget,
+        reason: 'Domain status, not translated',
+      );
+      expect(
+        find.descendant(of: facts, matching: find.text('Providers')),
+        findsOneWidget,
+        reason: 'Domain statistic',
+      );
+      expect(
+        find.descendant(of: facts, matching: find.text('wilsonborba')),
+        findsOneWidget,
+        reason: 'collaborators',
+      );
+      // One block per project, so no primary button: the reports as tertiary, links as ghosts.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('proj_reports_cortex')),
+          matching: find.byType(OutlinedButton),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('proj_website_cortex')),
+          matching: find.byType(TextButton),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('proj_website_certifications')),
+        findsNothing,
+        reason: 'no website, no button',
+      );
+      expect(
+        find.byKey(const Key('proj_reports_certifications')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('project_facts_certifications')),
+          matching: find.text('No website yet'),
+        ),
+        findsOneWidget,
+      );
+      for (final m in ['schemas', 'calculations', 'access', 'exports']) {
+        expect(find.byKey(Key('method_$m')), findsOneWidget);
+      }
+    },
+  );
 
   testWidgets('a stale Domain copy says when it was fetched', (tester) async {
     final api = FakeApi();
     api.routes['/catalog'] = (q) => {
-          'items': [
-            {...FakeApi.cortexProject(), 'domain_status': 'stale'},
-          ],
-          'page': 1,
-          'page_size': 100,
-          'total': 1,
-        };
+      'items': [
+        {...FakeApi.cortexProject(), 'domain_status': 'stale'},
+      ],
+      'page': 1,
+      'page_size': 100,
+      'total': 1,
+    };
     api.install();
     await openPublic(tester, '/v1/home/projects', size: const Size(1440, 4000));
     expect(find.byKey(const Key('domain_stale_cortex')), findsOneWidget);
     expect(find.textContaining('2026-10-22'), findsOneWidget);
   });
 
-  testWidgets('the reports button opens the project in the report area', (tester) async {
+  testWidgets('the reports button opens the project in the report area', (
+    tester,
+  ) async {
     await openPublic(tester, '/v1/home/projects', size: const Size(1440, 6000));
     await tester.ensureVisible(find.byKey(const Key('proj_reports_cortex')));
     await tester.tap(find.byKey(const Key('proj_reports_cortex')));
@@ -64,7 +120,13 @@ void main() {
 
   testWidgets('an empty catalog shows the empty state', (tester) async {
     final api = FakeApi();
-    api.routes['/catalog'] = (q) => {'items': [], 'page': 1, 'page_size': 100, 'total': 0, 'language': 'en'};
+    api.routes['/catalog'] = (q) => {
+      'items': [],
+      'page': 1,
+      'page_size': 100,
+      'total': 0,
+      'language': 'en',
+    };
     api.install();
     await openPublic(tester, '/v1/home/projects');
     expect(find.text('No projects yet'), findsOneWidget);
@@ -77,7 +139,13 @@ void main() {
     CatalogService.instance = CatalogService(broken.apiClient);
     await openPublic(tester, '/v1/home/projects');
     expect(find.text('The data could not be loaded.'), findsOneWidget);
-    expect(broken.telemetry.where((t) => t['details']['path'] == '/catalog'), isNotEmpty, reason: 'the failure is reported');
+    expect(
+      broken.telemetry.where(
+        (t) => (t['message'] as String).contains('/catalog'),
+      ),
+      isNotEmpty,
+      reason: 'the failure is reported',
+    );
   });
 
   testWidgets('the projects page fits a phone at 390 px', (tester) async {

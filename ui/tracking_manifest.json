@@ -1,0 +1,821 @@
+{
+  "app_id": "reports",
+  "screens": [
+    {
+      "name": "overview",
+      "route": "/v1/home",
+      "label": "Reports overview"
+    },
+    {
+      "name": "projects",
+      "route": "/v1/home/projects",
+      "label": "Public projects"
+    },
+    {
+      "name": "science",
+      "route": "/v1/home/science",
+      "label": "Science topics"
+    },
+    {
+      "name": "science",
+      "route": "/v1/home/science/:topic",
+      "label": "Science topic"
+    },
+    {
+      "name": "architecture",
+      "route": "/v1/home/architecture",
+      "label": "Architecture"
+    },
+    {
+      "name": "contact",
+      "route": "/v1/home/contact",
+      "label": "Community contacts"
+    },
+    {
+      "name": "catalog",
+      "route": "/v1/menu",
+      "label": "Projects catalog"
+    },
+    {
+      "name": "report_catalog",
+      "route": "/v1/menu/:project",
+      "label": "Project reports"
+    },
+    {
+      "name": "report",
+      "route": "/v1/menu/:project/:report",
+      "label": "Report board"
+    },
+    {
+      "name": "dataset",
+      "route": "/v1/menu/:project/:report/:dataset",
+      "label": "Dataset"
+    },
+    {
+      "name": "embed",
+      "route": "/v1/embed/:project/:report/:dataset",
+      "label": "Embedded dataset"
+    },
+    {
+      "name": "sync",
+      "route": "/sync",
+      "label": "Authentication return"
+    }
+  ],
+  "elements": [
+    {
+      "id": "auth.message.home",
+      "label": "Auth message home",
+      "path": "auth > message > home",
+      "description": "Interaction for auth message home",
+      "source": "ui/lib/views/auth_message_page.dart"
+    },
+    {
+      "id": "auth.message.action",
+      "label": "Auth message action",
+      "path": "auth > message > action",
+      "description": "Interaction for auth message action",
+      "source": "ui/lib/views/auth_message_page.dart"
+    },
+    {
+      "id": "catalog.project_mode.select",
+      "label": "Catalog project mode select",
+      "path": "catalog > project_mode > select",
+      "description": "Interaction for catalog project_mode select",
+      "source": "ui/lib/views/landing_view.dart"
+    },
+    {
+      "id": "public.contact.community",
+      "label": "Public contact community",
+      "path": "public > contact > community",
+      "description": "Interaction for public contact community",
+      "source": "ui/lib/views/public/contact_view.dart"
+    },
+    {
+      "id": "public.overview.login",
+      "label": "Public overview login",
+      "path": "public > overview > login",
+      "description": "Interaction for public overview login",
+      "source": "ui/lib/views/public/overview_view.dart"
+    },
+    {
+      "id": "public.overview.reports",
+      "label": "Public overview reports",
+      "path": "public > overview > reports",
+      "description": "Interaction for public overview reports",
+      "source": "ui/lib/views/public/overview_view.dart"
+    },
+    {
+      "id": "public.project.repository",
+      "label": "Public project repository",
+      "path": "public > project > repository",
+      "description": "Interaction for public project repository",
+      "source": "ui/lib/views/public/projects_view.dart"
+    },
+    {
+      "id": "public.project.website",
+      "label": "Public project website",
+      "path": "public > project > website",
+      "description": "Interaction for public project website",
+      "source": "ui/lib/views/public/projects_view.dart"
+    },
+    {
+      "id": "public.project.reports",
+      "label": "Public project reports",
+      "path": "public > project > reports",
+      "description": "Interaction for public project reports",
+      "source": "ui/lib/views/public/projects_view.dart"
+    },
+    {
+      "id": "public.science.topic",
+      "label": "Public science topic",
+      "path": "public > science > topic",
+      "description": "Interaction for public science topic",
+      "source": "ui/lib/views/public/science_view.dart"
+    },
+    {
+      "id": "catalog.report.search",
+      "label": "Catalog report search",
+      "path": "catalog > report > search",
+      "description": "Interaction for catalog report search",
+      "source": "ui/lib/views/report_list_view.dart"
+    },
+    {
+      "id": "catalog.session.login",
+      "label": "Catalog session login",
+      "path": "catalog > session > login",
+      "description": "Interaction for catalog session login",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.error.retry",
+      "label": "Catalog error retry",
+      "path": "catalog > error > retry",
+      "description": "Interaction for catalog error retry",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.card.open",
+      "label": "Catalog card open",
+      "path": "catalog > card > open",
+      "description": "Interaction for catalog card open",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.pagination.next",
+      "label": "Catalog pagination next",
+      "path": "catalog > pagination > next",
+      "description": "Interaction for catalog pagination next",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.pagination.previous",
+      "label": "Catalog pagination previous",
+      "path": "catalog > pagination > previous",
+      "description": "Interaction for catalog pagination previous",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.view.select",
+      "label": "Catalog view select",
+      "path": "catalog > view > select",
+      "description": "Interaction for catalog view select",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "catalog.tier.open",
+      "label": "Catalog tier open",
+      "path": "catalog > tier > open",
+      "description": "Interaction for catalog tier open",
+      "source": "ui/lib/widgets/catalog/catalog_widgets.dart"
+    },
+    {
+      "id": "dataset.table.next",
+      "label": "Dataset table next",
+      "path": "dataset > table > next",
+      "description": "Interaction for dataset table next",
+      "source": "ui/lib/widgets/charts/data_table_view.dart"
+    },
+    {
+      "id": "dataset.table.previous",
+      "label": "Dataset table previous",
+      "path": "dataset > table > previous",
+      "description": "Interaction for dataset table previous",
+      "source": "ui/lib/widgets/charts/data_table_view.dart"
+    },
+    {
+      "id": "dataset.table.sort",
+      "label": "Dataset table sort",
+      "path": "dataset > table > sort",
+      "description": "Interaction for dataset table sort",
+      "source": "ui/lib/widgets/charts/data_table_view.dart"
+    },
+    {
+      "id": "catalog.carousel.project",
+      "label": "Catalog carousel project",
+      "path": "catalog > carousel > project",
+      "description": "Interaction for catalog carousel project",
+      "source": "ui/lib/widgets/landing/project_carousel.dart"
+    },
+    {
+      "id": "catalog.carousel.surface",
+      "label": "Catalog carousel surface",
+      "path": "catalog > carousel > surface",
+      "description": "Interaction for catalog carousel surface",
+      "source": "ui/lib/widgets/landing/project_carousel.dart"
+    },
+    {
+      "id": "catalog.carousel.arrow",
+      "label": "Catalog carousel arrow",
+      "path": "catalog > carousel > arrow",
+      "description": "Interaction for catalog carousel arrow",
+      "source": "ui/lib/widgets/landing/project_carousel.dart"
+    },
+    {
+      "id": "catalog.project.website",
+      "label": "Catalog project website",
+      "path": "catalog > project > website",
+      "description": "Interaction for catalog project website",
+      "source": "ui/lib/widgets/landing/project_tile.dart"
+    },
+    {
+      "id": "catalog.project.reports",
+      "label": "Catalog project reports",
+      "path": "catalog > project > reports",
+      "description": "Interaction for catalog project reports",
+      "source": "ui/lib/widgets/landing/project_tile.dart"
+    },
+    {
+      "id": "public.formula.open",
+      "label": "Public formula open",
+      "path": "public > formula > open",
+      "description": "Interaction for public formula open",
+      "source": "ui/lib/widgets/public/formula_card.dart"
+    },
+    {
+      "id": "public.card.open",
+      "label": "Public card open",
+      "path": "public > card > open",
+      "description": "Interaction for public card open",
+      "source": "ui/lib/widgets/public/public_blocks.dart"
+    },
+    {
+      "id": "public.link.open",
+      "label": "Public link open",
+      "path": "public > link > open",
+      "description": "Interaction for public link open",
+      "source": "ui/lib/widgets/public/public_blocks.dart"
+    },
+    {
+      "id": "public.feature.open",
+      "label": "Public feature open",
+      "path": "public > feature > open",
+      "description": "Interaction for public feature open",
+      "source": "ui/lib/widgets/public/public_blocks.dart"
+    },
+    {
+      "id": "public.footer.open",
+      "label": "Public footer open",
+      "path": "public > footer > open",
+      "description": "Interaction for public footer open",
+      "source": "ui/lib/widgets/public/public_page.dart"
+    },
+    {
+      "id": "report.export.format",
+      "label": "Report export format",
+      "path": "report > export > format",
+      "description": "Interaction for report export format",
+      "source": "ui/lib/widgets/report/artifacts_menu.dart"
+    },
+    {
+      "id": "report.export.open",
+      "label": "Report export open",
+      "path": "report > export > open",
+      "description": "Interaction for report export open",
+      "source": "ui/lib/widgets/report/artifacts_menu.dart"
+    },
+    {
+      "id": "report.layout.resize",
+      "label": "Report layout resize",
+      "path": "report > layout > resize",
+      "description": "Interaction for report layout resize",
+      "source": "ui/lib/widgets/report/board_editor.dart"
+    },
+    {
+      "id": "report.layout.drag",
+      "label": "Report layout drag",
+      "path": "report > layout > drag",
+      "description": "Interaction for report layout drag",
+      "source": "ui/lib/widgets/report/board_editor.dart"
+    },
+    {
+      "id": "dataset.filter.range.input",
+      "label": "Dataset filter range input",
+      "path": "dataset > filter > range > input",
+      "description": "Interaction for dataset filter range input",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.apply",
+      "label": "Dataset filter category apply",
+      "path": "dataset > filter > category > apply",
+      "description": "Interaction for dataset filter category apply",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.all",
+      "label": "Dataset filter category all",
+      "path": "dataset > filter > category > all",
+      "description": "Interaction for dataset filter category all",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.toggle",
+      "label": "Dataset filter category toggle",
+      "path": "dataset > filter > category > toggle",
+      "description": "Interaction for dataset filter category toggle",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.search",
+      "label": "Dataset filter category search",
+      "path": "dataset > filter > category > search",
+      "description": "Interaction for dataset filter category search",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.open",
+      "label": "Dataset filter category open",
+      "path": "dataset > filter > category > open",
+      "description": "Interaction for dataset filter category open",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.category.option",
+      "label": "Dataset filter category option",
+      "path": "dataset > filter > category > option",
+      "description": "Interaction for dataset filter category option",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.filter.reset",
+      "label": "Dataset filter reset",
+      "path": "dataset > filter > reset",
+      "description": "Interaction for dataset filter reset",
+      "source": "ui/lib/widgets/report/card_filters.dart"
+    },
+    {
+      "id": "dataset.menu.open",
+      "label": "Dataset menu open",
+      "path": "dataset > menu > open",
+      "description": "Interaction for dataset menu open",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.info.close",
+      "label": "Dataset info close",
+      "path": "dataset > info > close",
+      "description": "Interaction for dataset info close",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.error.retry",
+      "label": "Dataset error retry",
+      "path": "dataset > error > retry",
+      "description": "Interaction for dataset error retry",
+      "source": "ui/lib/widgets/report/dataset_slot.dart"
+    },
+    {
+      "id": "dataset.view.expand",
+      "label": "Dataset view expand",
+      "path": "dataset > view > expand",
+      "description": "Interaction for dataset view expand",
+      "source": "ui/lib/widgets/report/dataset_slot.dart"
+    },
+    {
+      "id": "report.layout.edit",
+      "label": "Report layout edit",
+      "path": "report > layout > edit",
+      "description": "Interaction for report layout edit",
+      "source": "ui/lib/widgets/report/section_board.dart"
+    },
+    {
+      "id": "report.layout.save",
+      "label": "Report layout save",
+      "path": "report > layout > save",
+      "description": "Interaction for report layout save",
+      "source": "ui/lib/widgets/report/section_board.dart"
+    },
+    {
+      "id": "report.layout.cancel",
+      "label": "Report layout cancel",
+      "path": "report > layout > cancel",
+      "description": "Interaction for report layout cancel",
+      "source": "ui/lib/widgets/report/section_board.dart"
+    },
+    {
+      "id": "report.layout.reset",
+      "label": "Report layout reset",
+      "path": "report > layout > reset",
+      "description": "Interaction for report layout reset",
+      "source": "ui/lib/widgets/report/section_board.dart"
+    },
+    {
+      "id": "report.section.cancel",
+      "label": "Report section cancel",
+      "path": "report > section > cancel",
+      "description": "Interaction for report section cancel",
+      "source": "ui/lib/widgets/report/section_pills.dart"
+    },
+    {
+      "id": "report.section.save",
+      "label": "Report section save",
+      "path": "report > section > save",
+      "description": "Interaction for report section save",
+      "source": "ui/lib/widgets/report/section_pills.dart"
+    },
+    {
+      "id": "report.section.name",
+      "label": "Report section name",
+      "path": "report > section > name",
+      "description": "Interaction for report section name",
+      "source": "ui/lib/widgets/report/section_pills.dart"
+    },
+    {
+      "id": "report.section.rename",
+      "label": "Report section rename",
+      "path": "report > section > rename",
+      "description": "Interaction for report section rename",
+      "source": "ui/lib/widgets/report/section_pills.dart"
+    },
+    {
+      "id": "report.section.select",
+      "label": "Report section select",
+      "path": "report > section > select",
+      "description": "Interaction for report section select",
+      "source": "ui/lib/widgets/report/section_pills.dart"
+    },
+    {
+      "id": "dataset.share.copy",
+      "label": "Dataset share copy",
+      "path": "dataset > share > copy",
+      "description": "Interaction for dataset share copy",
+      "source": "ui/lib/widgets/report/share_dialog.dart"
+    },
+    {
+      "id": "dataset.share.close",
+      "label": "Dataset share close",
+      "path": "dataset > share > close",
+      "description": "Interaction for dataset share close",
+      "source": "ui/lib/widgets/report/share_dialog.dart"
+    },
+    {
+      "id": "dataset.share.mode",
+      "label": "Dataset share mode",
+      "path": "dataset > share > mode",
+      "description": "Interaction for dataset share mode",
+      "source": "ui/lib/widgets/report/share_dialog.dart"
+    },
+    {
+      "id": "shell.breadcrumb.open",
+      "label": "Shell breadcrumb open",
+      "path": "shell > breadcrumb > open",
+      "description": "Interaction for shell breadcrumb open",
+      "source": "ui/lib/widgets/shell/breadcrumbs.dart"
+    },
+    {
+      "id": "shell.guest.dismiss",
+      "label": "Shell guest dismiss",
+      "path": "shell > guest > dismiss",
+      "description": "Interaction for shell guest dismiss",
+      "source": "ui/lib/widgets/shell/guest_prompt.dart"
+    },
+    {
+      "id": "shell.guest.signup",
+      "label": "Shell guest signup",
+      "path": "shell > guest > signup",
+      "description": "Interaction for shell guest signup",
+      "source": "ui/lib/widgets/shell/guest_prompt.dart"
+    },
+    {
+      "id": "shell.guest.login",
+      "label": "Shell guest login",
+      "path": "shell > guest > login",
+      "description": "Interaction for shell guest login",
+      "source": "ui/lib/widgets/shell/guest_prompt.dart"
+    },
+    {
+      "id": "report.description.expand",
+      "label": "Report description expand",
+      "path": "report > description > expand",
+      "description": "Interaction for report description expand",
+      "source": "ui/lib/widgets/shell/page_header.dart"
+    },
+    {
+      "id": "shell.sidebar.icon",
+      "label": "Shell sidebar icon",
+      "path": "shell > sidebar > icon",
+      "description": "Interaction for shell sidebar icon",
+      "source": "ui/lib/widgets/shell/sidebar.dart"
+    },
+    {
+      "id": "shell.sidebar.navigate",
+      "label": "Shell sidebar navigate",
+      "path": "shell > sidebar > navigate",
+      "description": "Interaction for shell sidebar navigate",
+      "source": "ui/lib/widgets/shell/sidebar.dart"
+    },
+    {
+      "id": "shell.sidebar.group",
+      "label": "Shell sidebar group",
+      "path": "shell > sidebar > group",
+      "description": "Interaction for shell sidebar group",
+      "source": "ui/lib/widgets/shell/sidebar.dart"
+    },
+    {
+      "id": "shell.sidebar.toggle",
+      "label": "Shell sidebar toggle",
+      "path": "shell > sidebar > toggle",
+      "description": "Interaction for shell sidebar toggle",
+      "source": "ui/lib/widgets/shell/sidebar.dart"
+    },
+    {
+      "id": "shell.account.logout",
+      "label": "Shell account logout",
+      "path": "shell > account > logout",
+      "description": "Interaction for shell account logout",
+      "source": "ui/lib/widgets/shell/sidebar_identity.dart"
+    },
+    {
+      "id": "dataset.menu.move",
+      "label": "Dataset menu move",
+      "path": "dataset > menu > move",
+      "description": "Interaction for dataset menu move",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.menu.minimize",
+      "label": "Dataset menu minimize",
+      "path": "dataset > menu > minimize",
+      "description": "Interaction for dataset menu minimize",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.menu.share",
+      "label": "Dataset menu share",
+      "path": "dataset > menu > share",
+      "description": "Interaction for dataset menu share",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.menu.table",
+      "label": "Dataset menu table",
+      "path": "dataset > menu > table",
+      "description": "Interaction for dataset menu table",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.menu.info",
+      "label": "Dataset menu info",
+      "path": "dataset > menu > info",
+      "description": "Interaction for dataset menu info",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "dataset.chart.surface",
+      "label": "Dataset chart surface",
+      "path": "dataset > chart > surface",
+      "description": "Interaction for dataset chart surface",
+      "source": "ui/lib/widgets/report/dataset_card.dart"
+    },
+    {
+      "id": "shell.navigation.home",
+      "label": "Shell navigation home",
+      "path": "shell > navigation > home",
+      "description": "Interaction for shell navigation home",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.overview",
+      "label": "Shell navigation overview",
+      "path": "shell > navigation > overview",
+      "description": "Interaction for shell navigation overview",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.projects",
+      "label": "Shell navigation projects",
+      "path": "shell > navigation > projects",
+      "description": "Interaction for shell navigation projects",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.reports",
+      "label": "Shell navigation reports",
+      "path": "shell > navigation > reports",
+      "description": "Interaction for shell navigation reports",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.science",
+      "label": "Shell navigation science",
+      "path": "shell > navigation > science",
+      "description": "Interaction for shell navigation science",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.architecture",
+      "label": "Shell navigation architecture",
+      "path": "shell > navigation > architecture",
+      "description": "Interaction for shell navigation architecture",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.contact",
+      "label": "Shell navigation contact",
+      "path": "shell > navigation > contact",
+      "description": "Interaction for shell navigation contact",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.menu",
+      "label": "Shell navigation menu",
+      "path": "shell > navigation > menu",
+      "description": "Interaction for shell navigation menu",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.navigation.close",
+      "label": "Shell navigation close",
+      "path": "shell > navigation > close",
+      "description": "Interaction for shell navigation close",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.theme.toggle",
+      "label": "Shell theme toggle",
+      "path": "shell > theme > toggle",
+      "description": "Interaction for shell theme toggle",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.language.english",
+      "label": "Shell language english",
+      "path": "shell > language > english",
+      "description": "Interaction for shell language english",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.language.portuguese",
+      "label": "Shell language portuguese",
+      "path": "shell > language > portuguese",
+      "description": "Interaction for shell language portuguese",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "shell.language.thai",
+      "label": "Shell language thai",
+      "path": "shell > language > thai",
+      "description": "Interaction for shell language thai",
+      "source": "ui/lib/widgets/shell/top_bar.dart (existing semantic labels only)"
+    },
+    {
+      "id": "dataset.share.link",
+      "label": "Dataset share link",
+      "path": "dataset > share > link",
+      "description": "Interaction for dataset share link",
+      "source": ""
+    },
+    {
+      "id": "dataset.share.embed",
+      "label": "Dataset share embed",
+      "path": "dataset > share > embed",
+      "description": "Interaction for dataset share embed",
+      "source": ""
+    },
+    {
+      "id": "report.export.pdf",
+      "label": "Report export pdf",
+      "path": "report > export > pdf",
+      "description": "Interaction for report export pdf",
+      "source": ""
+    },
+    {
+      "id": "report.export.markdown",
+      "label": "Report export markdown",
+      "path": "report > export > markdown",
+      "description": "Interaction for report export markdown",
+      "source": ""
+    },
+    {
+      "id": "report.export.csv",
+      "label": "Report export csv",
+      "path": "report > export > csv",
+      "description": "Interaction for report export csv",
+      "source": ""
+    },
+    {
+      "id": "catalog.carousel.previous",
+      "label": "Catalog carousel previous",
+      "path": "catalog > carousel > previous",
+      "description": "Interaction for catalog carousel previous",
+      "source": ""
+    },
+    {
+      "id": "catalog.carousel.next",
+      "label": "Catalog carousel next",
+      "path": "catalog > carousel > next",
+      "description": "Interaction for catalog carousel next",
+      "source": ""
+    },
+    {
+      "id": "catalog.tier.option",
+      "label": "Catalog tier option",
+      "path": "catalog > tier > option",
+      "description": "Interaction for catalog tier option",
+      "source": ""
+    },
+    {
+      "id": "architecture.surface",
+      "label": "Architecture surface",
+      "path": "architecture > surface",
+      "description": "Interaction for architecture surface",
+      "source": ""
+    },
+    {
+      "id": "catalog.surface",
+      "label": "Catalog surface",
+      "path": "catalog > surface",
+      "description": "Interaction for catalog surface",
+      "source": ""
+    },
+    {
+      "id": "contact.surface",
+      "label": "Contact surface",
+      "path": "contact > surface",
+      "description": "Interaction for contact surface",
+      "source": ""
+    },
+    {
+      "id": "dataset.surface",
+      "label": "Dataset surface",
+      "path": "dataset > surface",
+      "description": "Interaction for dataset surface",
+      "source": ""
+    },
+    {
+      "id": "embed.surface",
+      "label": "Embed surface",
+      "path": "embed > surface",
+      "description": "Interaction for embed surface",
+      "source": ""
+    },
+    {
+      "id": "overview.surface",
+      "label": "Overview surface",
+      "path": "overview > surface",
+      "description": "Interaction for overview surface",
+      "source": ""
+    },
+    {
+      "id": "projects.surface",
+      "label": "Projects surface",
+      "path": "projects > surface",
+      "description": "Interaction for projects surface",
+      "source": ""
+    },
+    {
+      "id": "report.surface",
+      "label": "Report surface",
+      "path": "report > surface",
+      "description": "Interaction for report surface",
+      "source": ""
+    },
+    {
+      "id": "report_catalog.surface",
+      "label": "Report catalog surface",
+      "path": "report_catalog > surface",
+      "description": "Interaction for report_catalog surface",
+      "source": ""
+    },
+    {
+      "id": "science.surface",
+      "label": "Science surface",
+      "path": "science > surface",
+      "description": "Interaction for science surface",
+      "source": ""
+    },
+    {
+      "id": "sync.surface",
+      "label": "Sync surface",
+      "path": "sync > surface",
+      "description": "Interaction for sync surface",
+      "source": ""
+    }
+  ],
+  "header_aliases": {
+    "navigation": "Localized TopBar.tabs labels",
+    "preferences": "EN, PT, TH and localized theme/menu/logout tooltips",
+    "brand": "Existing link semantics in the header brand region"
+  }
+}
