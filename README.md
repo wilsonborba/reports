@@ -122,3 +122,14 @@ cd ui && flutter test
 ```
 
 Tests never touch the production stores.
+
+## Individual embeds
+
+The Share dialog for an individual chart or table offers **Link** and **Embed**.
+The embed preserves `lang`, `visual`, `view` and `f.*` filter parameters. It renders
+one item at `/v1/embed/{project}/{report}/{dataset}` without the application shell.
+The API descriptor is `GET /projects/{project}/showcase/{report}/cards/{dataset}/embed`;
+its `thumbnail_url` points to the corresponding `/thumbnail.png` endpoint.
+Both API endpoints always apply guest/public visibility, even for an authenticated
+caller. They do not expose an entire report or bypass gated content. Descriptors
+and thumbnails use `no-store`. The PNG is rendered from the selected dataset.
