@@ -2,12 +2,25 @@
 
 All notable changes to this project are listed here. The list comes from the commit history.
 
-## [Unreleased]
+## [3.1.0] - 2026-10-26
+
+### Features
+
+- Expose public item embeds and data-backed PNG previews (#33)
+- Merge individual embed descriptors (#33)
+- Add compact item views and copyable embed sharing (#34)
+- Merge compact embed sharing (#34)
+- Merge embed release verification (#35)
+
+### Tests
+
+- Verify public embed visibility and document release operations (#35)
 
 ### Other
 
 - Back-merge v3.0.0 into development
 - Back-merge v3.0.0 into feature/main
+
 
 ## [3.0.0] - 2026-10-25
 
