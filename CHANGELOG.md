@@ -2,6 +2,34 @@
 
 All notable changes to this project are listed here. The list comes from the commit history.
 
+## [3.1.1] - 2026-10-27
+
+### Bug fixes
+
+- Preserve original Reports charts and flat sharing controls (#34)
+- Merge original chart embed fidelity (#34)
+- Avoid keyring wait in chart preview capture (#34)
+- Merge chart preview keyring fix (#34)
+- *(ui)* Show rates by category as bars, not a part-to-whole donut (#36)
+- *(ui)* Merge rate chart selection (#36)
+- *(ui)* Scale rate bars to the whole 0 to 100% range (#36)
+- *(ui)* Merge rate bar scale (#36)
+- *(ui)* Report the page route and real app version in client errors (#32)
+- *(ui)* Merge client error route and version (#32)
+- *(ui)* Write dates as DD/MM/AAAA in pt-BR (#12)
+- *(ui)* Merge pt-BR dates (#12)
+
+### Tests
+
+- *(ui)* Cover pt-BR letters in the PDF export (#15)
+- *(ui)* Merge pt-BR PDF coverage (#15)
+
+### Other
+
+- Promote release/v3.1.0 to development
+- Promote feature/main to development for v3.1.1
+
+
 ## [3.1.0] - 2026-10-26
 
 ### Features
