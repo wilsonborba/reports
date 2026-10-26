@@ -891,7 +891,7 @@ class _Builder {
 /// Short x label of a value (dates as month-day), as on the dashboard.
 class ChartLabel {
   static String of(dynamic v, FieldInfo f) {
-    if (f.type == 'date' && v is String && v.length >= 10) return v.substring(5, 10);
+    if (f.type == 'date' && v is String && v.length >= 10) return shortDateText(v);
     return valueText(v, f);
   }
 }

@@ -31,6 +31,12 @@ class DatasetSlot extends StatefulWidget {
 
   /// True on the board: the card fills its cell and the chart takes the body height.
   final bool fill;
+  final Map<String, String>? initialFilters;
+  final bool initialTable;
+  final bool interactive;
+  final String? language;
+  final ReportService? service;
+  final VoidCallback? onReady;
 
   const DatasetSlot({
     super.key,
@@ -40,6 +46,12 @@ class DatasetSlot extends StatefulWidget {
     required this.slot,
     this.controls = CardControls.none,
     this.fill = false,
+    this.initialFilters,
+    this.initialTable = false,
+    this.interactive = true,
+    this.language,
+    this.service,
+    this.onReady,
   });
 
   @override
@@ -51,24 +63,24 @@ class _DatasetSlotState extends State<DatasetSlot> {
   String? _key;
   SlotData? _last;
   /// Active card filters; they stay in session memory for the exports.
-  late Map<String, String> _filters = CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
+  late Map<String, String> _filters = widget.initialFilters ?? CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
   bool _filtersOpen = false;
-  bool _asTable = false;
+  late bool _asTable = widget.initialTable;
 
   @override
   void didUpdateWidget(DatasetSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The same place on the board can show another card: take that card's own state.
     if (oldWidget.project != widget.project || oldWidget.report != widget.report || oldWidget.slot.key != widget.slot.key) {
-      _filters = CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
+      _filters = widget.initialFilters ?? CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
       _filtersOpen = false;
-      _asTable = false;
+      _asTable = widget.initialTable;
       _last = null;
     }
   }
 
   Future<SlotData> _fetch(String lang, Map<String, String> filters) async {
-    final service = ReportService.instance;
+    final service = widget.service ?? ReportService.instance;
     final ids = [widget.slot.datasetId, ...widget.slot.companions.where((c) => widget.view.dataset(c) != null)];
     final pages = await Future.wait([
       for (final id in ids)
@@ -123,7 +135,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   @override
   Widget build(BuildContext context) {
-    _load(context.langCode);
+    _load(widget.language ?? context.langCode);
     final p = context.palette;
     final descriptor = widget.view.dataset(widget.slot.datasetId)!;
     if (!descriptor.canView) {
@@ -131,7 +143,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
     }
     final active = CardFilterQuery.active(_filters);
     final headerActions = <Widget>[
-      if (descriptor.filters.isNotEmpty)
+      if (widget.interactive && descriptor.filters.isNotEmpty)
         IconButton(
           key: const Key('card_filters_toggle'),
           tooltip: context.tr('filters'),
@@ -161,6 +173,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       builder: (context, snap) {
         if (snap.hasData) _last = snap.data;
         final loading = snap.connectionState != ConnectionState.done;
+        if (snap.hasData && !loading && widget.onReady != null) WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) widget.onReady!(); });
         final data = snap.hasData ? snap.data : (loading ? _last : null);
         final Widget body;
         if (snap.hasError) {
@@ -180,7 +193,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
               ? LayoutBuilder(builder: (context, c) => VisualChooser.build(page, widget.slot, companions: data.companions, height: c.maxHeight))
               : VisualChooser.build(page, widget.slot, companions: data.companions);
         }
-        final seeAll = !_asTable && data != null && data.page.rows.isNotEmpty && VisualChooser.needsFullView(data.page, widget.slot);
+        final seeAll = widget.interactive && !_asTable && data != null && data.page.rows.isNotEmpty && VisualChooser.needsFullView(data.page, widget.slot);
         return DatasetCard(
           descriptor: descriptor,
           body: body,
@@ -188,9 +201,9 @@ class _DatasetSlotState extends State<DatasetSlot> {
           controls: widget.controls,
           fill: widget.fill,
           tableView: _asTable,
-          onToggleTable: () => setState(() => _asTable = !_asTable),
+          onToggleTable: widget.interactive ? () => setState(() => _asTable = !_asTable) : null,
           // Only a public chart opens for anyone who gets the link.
-          onShare: descriptor.visibility == 'public' ? () => showShareDialog(context, _fullViewUrl()) : null,
+          onShare: widget.interactive && descriptor.visibility == 'public' ? () => showShareDialog(context, _fullViewUrl()) : null,
           headerActions: headerActions,
           toolbar: toolbar,
           footer: seeAll ? _seeAllFooter(context, data.page) : null,

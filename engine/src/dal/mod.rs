@@ -5,6 +5,7 @@ pub mod cache;
 pub mod calculations;
 pub mod catalog;
 pub mod documents;
+pub mod embed_preview;
 pub mod domain_api;
 pub mod fixtures;
 pub mod grants;

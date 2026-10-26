@@ -133,3 +133,16 @@ its `thumbnail_url` points to the corresponding `/thumbnail.png` endpoint.
 Both API endpoints always apply guest/public visibility, even for an authenticated
 caller. They do not expose an entire report or bypass gated content. Descriptors
 and thumbnails use `no-store`. The PNG is rendered from the selected dataset.
+
+
+The embed reuses the original `DatasetSlot` and `VisualChooser` card components,
+including their layout slot, series, companion datasets, filters and selected table
+view. Project themes are loaded as in the Reports application. Explicitly shared
+full views retain their full-view renderer. The Link/Embed controls use the standard
+2 px control radius. The dialog previews the live Reports iframe, not a redraw.
+PNG thumbnails are captures of that same public Flutter renderer through a bounded
+Chrome DevTools adapter (`REPORTS_CHROME_BINARY`, default `/usr/bin/google-chrome`).
+The renderer waits for the actual card to paint, has a 25-second timeout, admits
+one capture at a time, caches images in Redis for 120 seconds and checks public
+access before every response. If rendering is unavailable it returns 503 rather
+than substituting another chart. Isolated tests use a cached captured fixture.

@@ -47,6 +47,9 @@ class VisualChooser {
     if (dims.length == 1 && dims.first.type == 'float') return Visual.curve;
     if (dims.length == 1 && dims.first.type == 'string') {
       if (ms.length > 3) return Visual.table;
+      // A donut shows parts of a whole; rates and shares do not add up to one.
+      final main = ms.firstWhere((f) => f.type != 'percent', orElse: () => ms.first);
+      if (main.type == 'percent') return Visual.hbar;
       return page.rows.length <= 6 ? Visual.donut : Visual.hbar;
     }
     return Visual.table;

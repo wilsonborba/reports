@@ -44,7 +44,7 @@ class ChartParts {
 
   /// Short label for an x value (dates show month-day).
   static String xLabel(dynamic v, FieldInfo f) {
-    if (f.type == 'date' && v is String && v.length >= 10) return v.substring(5, 10);
+    if (f.type == 'date' && v is String && v.length >= 10) return shortDateText(v);
     return valueText(v, f);
   }
 }

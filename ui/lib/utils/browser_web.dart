@@ -20,3 +20,5 @@ void deleteCookie(String name) {
 }
 
 String currentOrigin() => web.window.location.origin;
+
+void markEmbedReady() => web.document.documentElement?.setAttribute('data-reports-embed-ready', 'true');

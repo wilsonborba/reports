@@ -18,6 +18,10 @@ class ClientTelemetryService {
   final String appVersion;
   final String environment;
 
+  /// The page the viewer is on (path only, never the query), used when a report
+  /// gives no route. On the web it is the browser path; elsewhere it is unknown.
+  final String? Function() currentRoute;
+
   final Map<String, DateTime> _recentErrors = {};
   static const Duration duplicateThrottleWindow = Duration(seconds: 15);
 
@@ -26,7 +30,11 @@ class ClientTelemetryService {
     this.endpoint = ReportsConfig.telemetryUrl,
     this.appVersion = ReportsConfig.appVersion,
     this.environment = kReleaseMode ? 'production' : 'development',
-  }) : _client = client ?? http.Client();
+    String? Function()? currentRoute,
+  })  : _client = client ?? http.Client(),
+        currentRoute = currentRoute ?? _browserRoute;
+
+  static String? _browserRoute() => kIsWeb ? Uri.base.path : null;
 
   /// Hooks into Flutter framework error handlers.
   void init() {
@@ -63,6 +71,7 @@ class ClientTelemetryService {
     final now = DateTime.now();
     _cleanThrottles(now);
 
+    route ??= currentRoute();
     final key = '$errorTitle:$errorMessage:$route';
     final lastSent = _recentErrors[key];
     if (lastSent != null && now.difference(lastSent) < duplicateThrottleWindow) {
