@@ -10,3 +10,6 @@ void deleteCookie(String name) => impl.deleteCookie(name);
 
 /// Origin of the running app, for example `https://reports.asodya.com`.
 String currentOrigin() => impl.currentOrigin();
+
+/// Signals that the original card has painted for the bounded PNG capture.
+void markEmbedReady() => impl.markEmbedReady();
