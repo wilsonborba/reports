@@ -3,10 +3,16 @@
 ### Features
 
 - *(logs)* Stream redacted engine logs from the journald writer
+- *(telemetry)* Track mapped Reports controls through shared SQL telemetry
+
+### Documentation
+
+- *(changelog)* Record engine logging changes
 
 ### Other
 
 - Back-merge v3.1.2 into feature/main
+- Add Reports engine log stream (#37)
 
 
 # Changelog
