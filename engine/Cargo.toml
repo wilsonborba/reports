@@ -1,6 +1,6 @@
 [package]
 name = "reports"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 authors = ["Wilson Borba <wilsonmatheuslimaborba@gmail.com>"]
 description = "Asodya Reports engine: headless JSON API for project reports, statistics and dashboards"

@@ -1,4 +1,4 @@
-use super::{identity::resolve_lang, public::public, server::AppState};
+use super::{identity::resolve_lang, server::AppState};
 use crate::{core::error::ReportError, domain::embeds};
 use axum::{
     extract::{Path, Query, State},
@@ -14,9 +14,13 @@ pub async fn descriptor(
     headers: HeaderMap,
 ) -> Result<Response, ReportError> {
     let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
-    Ok(public(
-        embeds::descriptor(&state.datasets, &project, &report, &dataset, &query, &lang).await?,
-    ))
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(
+            embeds::descriptor(&state.datasets, &project, &report, &dataset, &query, &lang).await?,
+        ),
+    )
+        .into_response())
 }
 #[utoipa::path(get,path="/projects/{project}/showcase/{report}/cards/{dataset}/thumbnail.png",summary="PNG preview of one public chart or table",responses((status=200,description="PNG image"),(status=401,description="Gated content is not public"),(status=404,description="Item not found")),tag="Reports")]
 pub async fn thumbnail(
