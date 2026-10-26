@@ -43,6 +43,23 @@ String compactNumber(num value) {
   return d(value.toStringAsFixed(1));
 }
 
+final RegExp _isoDate = RegExp(r'^(\d{4})-(\d{2})-(\d{2})');
+
+/// Date of the current language: pt-BR writes DD/MM/AAAA; English and Thai keep the
+/// ISO date. Anything after the date (a time) stays as it is.
+String dateText(String v) {
+  final m = _isoDate.firstMatch(v);
+  if (m == null || _language != 'pt-BR') return v;
+  return '${m[3]}/${m[2]}/${m[1]}${v.substring(10)}';
+}
+
+/// Short axis label of a date: month-day (MM-DD), or day/month (DD/MM) in pt-BR.
+String shortDateText(String v) {
+  final m = _isoDate.firstMatch(v);
+  if (m == null) return v;
+  return _language == 'pt-BR' ? '${m[3]}/${m[2]}' : '${m[2]}-${m[3]}';
+}
+
 double? asDouble(dynamic v) {
   if (v is num) return v.toDouble();
   if (v is String) return double.tryParse(v);
@@ -68,6 +85,7 @@ String valueText(dynamic v, FieldInfo? f) {
     }
   }
   if (v is num) return numberText(v, v == v.roundToDouble() ? 0 : 2);
+  if (v is String && f?.type == 'date') return dateText(v);
   return '$v';
 }
 

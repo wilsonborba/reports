@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdf/pdf.dart' show TtfParser;
 import 'package:reports_ui/export/export_plan.dart';
 import 'package:reports_ui/export/pdf_export.dart';
 import 'package:reports_ui/export/thai_text.dart';
@@ -132,5 +133,32 @@ void main() {
     expect(ThaiText.has('ถนน'), isTrue);
     expect(ThaiText.has('Provider 1'), isFalse);
     expect(ThaiText.has('Soi ที่ 2'), isTrue);
+  });
+
+  test('PDF: Ubuntu Sans has the pt-BR letters and a pt-BR export keeps them as text', () async {
+    final font = TtfParser(await rootBundle.load('assets/fonts/UbuntuSans-Variable.ttf'));
+    for (final ch in 'çÇãÃõÕáÁàâÂéÉêÊíÍóÓôÔúÚü'.runes) {
+      expect(font.charToGlyphIndexMap[ch], isNotNull, reason: 'glyph for ${String.fromCharCode(ch)}');
+    }
+    final data = fixture().take(2).toList();
+    const portuguese = 'Ação, preço e média: São Paulo';
+    final base = plan([for (final d in data) d.$1]);
+    final p = ExportPlan(
+      project: base.project,
+      report: base.report,
+      lang: 'pt-BR',
+      view: base.view,
+      projectInfo: base.projectInfo,
+      sections: [ExportSection(portuguese, [for (final d in data) d.$1])],
+      createdAt: base.createdAt,
+    );
+    final info = PdfLayoutInfo();
+    final fonts = await PdfFonts.load(rootBundle.load);
+    final c = LanguageController();
+    await c.set(AppLanguage.pt);
+    final bytes = await PdfExport.render(p, [for (final d in data) d.$2],
+        t: c.t, fonts: fonts, palette: ReportsTheme.palette(Brightness.light), renderText: fakeRenderer, info: info);
+    expect(utf8.decode(bytes.sublist(0, 5)), '%PDF-');
+    expect(info.imageTexts, isNot(contains(portuguese)), reason: 'Portuguese is PDF text, not an image');
   });
 }

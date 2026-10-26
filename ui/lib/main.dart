@@ -1,3 +1,4 @@
+import 'views/embed_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:go_router/go_router.dart';
@@ -76,15 +77,11 @@ class _ReportsAppState extends State<ReportsApp> {
         // Compact, public item view: no app shell or full-report navigation.
         GoRoute(
           path: '/v1/embed/:project/:report/:dataset',
-          builder: (context,state) => Scaffold(body:DatasetFullView(
-            project:state.pathParameters['project']!,
-            report:state.pathParameters['report']!,
-            datasetId:state.pathParameters['dataset']!,
-            visual:DatasetFullView.visualOf(state.uri.queryParameters['visual']),
-            filters:DatasetFullView.filtersOf(state.uri.queryParameters),
-            table:state.uri.queryParameters['view']=='table',
-            language:state.uri.queryParameters['lang'],compact:true,
-          )),
+          builder: (context,state) => EmbedView(
+            key: ValueKey(state.uri.toString()),
+            project:state.pathParameters['project']!,report:state.pathParameters['report']!,dataset:state.pathParameters['dataset']!,
+            language:state.uri.queryParameters['lang'] ?? context.langCode,query:state.uri.queryParameters,
+          ),
         ),
         // Every page lives inside the app shell (top bar and project theme).
         ShellRoute(

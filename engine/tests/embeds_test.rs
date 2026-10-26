@@ -11,6 +11,12 @@ async fn item_descriptor_preserves_state_and_png_never_leaks_private_rows(){
  let (status,value,_)=t.call("GET",&format!("{base}/embed?view=table&f.provider=ollama&lang=en"),&[],None).await;
  assert_eq!(status,StatusCode::OK,"{value}");
  assert!(value["embed_url"].as_str().unwrap().contains("/v1/embed/"));assert!(value["embed_url"].as_str().unwrap().contains("view=table"));assert!(value["html"].as_str().unwrap().contains("&amp;"));
+ use reports::dal::CacheStore;
+ let query=std::collections::HashMap::from([("view".to_string(),"table".to_string())]);
+ let page=reports::domain::embeds::public_page(&t.state.datasets,"cortex","token-usage","tokens-by-provider",&query,"en").await.unwrap();
+ let (_,url,_)=reports::domain::embeds::item_urls("cortex","token-usage","tokens-by-provider",&query);
+ let key=reports::dal::embed_preview::cache_key(&url,&page);
+ t.cache.set(&key,&hex::encode(include_bytes!("../../ui/web/icons/Icon-192.png")),120).await;
  let response=t.app.clone().oneshot(Request::builder().uri(format!("{base}/thumbnail.png?view=table")).body(Body::empty()).unwrap()).await.unwrap();
  assert_eq!(response.status(),StatusCode::OK);assert_eq!(response.headers()["content-type"],"image/png");
  let bytes=to_bytes(response.into_body(),2_000_000).await.unwrap();assert_eq!(&bytes[..8],b"\x89PNG\r\n\x1a\n");

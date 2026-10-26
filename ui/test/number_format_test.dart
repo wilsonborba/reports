@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reports_ui/l10n/strings.dart';
+import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/widgets/charts/format.dart';
 
 void main() {
@@ -34,5 +35,29 @@ void main() {
     });
     expect(text, '4.599.892');
     expect(numberText(4599892, 0), '4,599,892');
+  });
+
+  test('pt-BR writes dates as DD/MM/AAAA; English and Thai keep the ISO date', () {
+    const day = FieldInfo(name: 'day', label: 'Day', type: 'date', role: 'dimension');
+    for (final (lang, full, short) in [
+      ('en', '2026-10-25', '10-25'),
+      ('th', '2026-10-25', '10-25'),
+      ('pt-BR', '25/10/2026', '25/10'),
+    ]) {
+      numberLanguage = lang;
+      expect(valueText('2026-10-25', day), full, reason: lang);
+      expect(shortDateText('2026-10-25'), short, reason: lang);
+    }
+    numberLanguage = 'pt-BR';
+    expect(dateText('2026-10'), '2026-10', reason: 'a month bucket is not a full date');
+    expect(valueText('2026-10-25', const FieldInfo(name: 'code', label: 'Code', type: 'string', role: 'dimension')), '2026-10-25',
+        reason: 'only date fields change');
+  });
+
+  test('an export in pt-BR writes its dates in pt-BR', () {
+    numberLanguage = 'en';
+    final text = withNumberLanguage('pt-BR', () => dateText('2026-10-25'));
+    expect(text, '25/10/2026');
+    expect(dateText('2026-10-25'), '2026-10-25');
   });
 }

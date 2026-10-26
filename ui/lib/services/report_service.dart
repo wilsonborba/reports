@@ -13,15 +13,16 @@ class ReportService {
 
   final ApiClient api;
   final Duration ttl;
+  final bool publicOnly;
   final Map<String, (DateTime, ReportView)> _reports = {};
   final Map<String, DatasetPage> _datasets = {};
 
   /// Rows of a public card that the showcase sends inline.
   static const int showcaseRows = 500;
 
-  ReportService(this.api, {this.ttl = const Duration(minutes: 5)});
+  ReportService(this.api, {this.ttl = const Duration(minutes: 5), this.publicOnly = false});
 
-  String get _mode => SessionStore.instance.hasSession ? 'u:${SessionStore.instance.user?.userId}' : 'guest';
+  String get _mode => !publicOnly && SessionStore.instance.hasSession ? 'u:${SessionStore.instance.user?.userId}' : 'guest';
 
   /// [tier] keeps only the cards of that tier (engine filter); null shows every card.
   Future<ReportView> report(String project, String report, {required String lang, String? tier}) async {
@@ -30,7 +31,7 @@ class ReportService {
     final hit = _reports[key];
     if (hit != null && DateTime.now().difference(hit.$1) < ttl) return hit.$2;
     final session = SessionStore.instance;
-    if (session.hasSession) {
+    if (!publicOnly && session.hasSession) {
       try {
         final view = ReportView.fromJson(await api.getJson('/projects/$project/reports/$report', q));
         _reports[key] = (DateTime.now(), view);
@@ -70,7 +71,7 @@ class ReportService {
     }
     final query = {'lang': lang, 'limit': '$limit', 'offset': '$offset', ...filters};
     final session = SessionStore.instance;
-    if (session.hasSession) {
+    if (!publicOnly && session.hasSession) {
       try {
         final page = DatasetPage.fromJson(await api.getJson('/projects/$project/reports/$report/datasets/$datasetId', query));
         _datasets[key] = page;

@@ -18,6 +18,7 @@ cd "$UI_DIR"
 "$FLUTTER_BIN" build web --release --base-href / --no-web-resources-cdn \
   --build-name="${BUILD_NAME:-1.0.0}" --build-number="$BUILD_NUMBER" \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
+  --dart-define=APP_VERSION="${BUILD_NAME:-1.0.0}" \
   --dart-define=BUILD_TIMESTAMP="$(TZ=Asia/Bangkok date +'%Y-%m-%d %H:%M ICT')"
 
 echo "Cloudflare Pages artifact: $UI_DIR/build/web"

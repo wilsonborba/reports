@@ -43,6 +43,8 @@ pub struct Settings {
     pub domain_public_url: String,
     pub domain_cache_ttl_secs: u64,
     pub domain_timeout_ms: u64,
+    /// Browser used only for bounded previews of the original Flutter renderer.
+    pub embed_chrome_binary: String,
 }
 
 impl Default for Settings {
@@ -70,6 +72,7 @@ impl Default for Settings {
             domain_public_url: env_or("DOMAIN_PUBLIC_URL", "https://api.asodya.com/apps/domain/v1"),
             domain_cache_ttl_secs: parse_env("DOMAIN_CACHE_TTL_SECS").unwrap_or(600),
             domain_timeout_ms: parse_env("DOMAIN_TIMEOUT_MS").unwrap_or(3000),
+            embed_chrome_binary: env_or("REPORTS_CHROME_BINARY", "/usr/bin/google-chrome"),
         }
     }
 }
