@@ -4,6 +4,12 @@
 /// every static label rendered by the shell, public pages, authentication flow,
 /// report editor and artifact generator.
 const Map<String, String> portugueseAdditional = {
+  'share_link':'Link',
+  'share_embed':'Incorporar',
+  'share_embed_copy':'Copiar código de incorporação',
+  'share_embed_help':'Incorpore este gráfico ou tabela individual. O mesmo descritor está disponível pela API.',
+  'share_embed_copied':'Código de incorporação copiado',
+
   // Architecture page.
   'arch_title': 'Reports',
   'arch_subtitle': 'Registros, cálculos e painéis',

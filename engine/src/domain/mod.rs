@@ -1,3 +1,4 @@
+pub mod embeds;
 pub mod auth;
 pub mod calculations;
 pub mod catalog;
