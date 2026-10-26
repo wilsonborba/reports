@@ -78,6 +78,7 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn development(&self) -> bool { !self.is_production() }
     pub fn is_production(&self) -> bool {
         !matches!(self.environment.as_str(), "development" | "dev" | "local" | "test")
     }

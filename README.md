@@ -146,3 +146,23 @@ The renderer waits for the actual card to paint, has a 25-second timeout, admits
 one capture at a time, caches images in Redis for 120 seconds and checks public
 access before every response. If rendering is unavailable it returns 503 rather
 than substituting another chart. Isolated tests use a cached captured fixture.
+
+
+## Backend live logs
+
+`core/logs` provides debug, info, warning and error functions and formats each event
+as `<RFC3339 timestamp> <LEVEL> <app> <module> <message>`. Debug is development-only;
+info, warning and error are always enabled. Credentials are redacted before the same
+line is written to stderr (journald) and the bounded in-process broadcast stream.
+No local log files are created. Request logs omit queries, headers and bodies.
+
+LAN operators use `GET /logs/stream` (SSE, no backend authentication). Keep the
+service on its existing private listener. Public clients use the gateway's admin-only
+`/apps/reports/v1/logs/stream`. Slow consumers receive a `gap` event instead of
+unbounded buffering; there is no replay or persistence in this service.
+
+Only api_for_apps records streams in appdb. Its deliberate safety locks stop one
+recording after 30 minutes and purge saved rows older than 15 days. This backend
+never connects to appdb or changes its schema.
+
+Development follows `APP_ENV=development|dev|local|test`; production disables debug.

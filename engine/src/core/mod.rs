@@ -3,3 +3,5 @@ pub mod error;
 
 pub use config::Settings;
 pub use error::ReportError;
+
+pub mod logs;

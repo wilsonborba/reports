@@ -1,3 +1,4 @@
+pub mod logs;
 pub mod embeds;
 pub mod admin;
 pub mod docs;

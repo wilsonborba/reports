@@ -47,6 +47,7 @@ it stops with a clear message when the schema is missing or outdated.
     paths(
         server::health,
         server::ready,
+        super::logs::stream,
         public::list_projects,
         public::project_detail,
         public::project_theme,
