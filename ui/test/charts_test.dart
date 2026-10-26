@@ -96,6 +96,15 @@ void main() {
       expect(VisualChooser.auto(page([f('a', 'string', dim: true)], const [])), Visual.table);
     });
 
+    test('rates by category never become a part-to-whole donut', () {
+      final rates = page([f('exam', 'string', dim: true), f('pass_rate', 'percent')], [
+        {'exam': 'A', 'pass_rate': 65.6},
+        {'exam': 'B', 'pass_rate': 54.3},
+        {'exam': 'C', 'pass_rate': 72.7},
+      ]);
+      expect(VisualChooser.auto(rates), Visual.hbar);
+    });
+
     test('measures of one type and unit share an axis; percent is left out', () {
       final ms = VisualChooser.slotMeasures(trendPage.descriptor, const Slot('d'));
       expect(ms.map((m) => m.name), ['volume', 'cars']);
