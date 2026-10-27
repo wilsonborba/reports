@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -38,7 +39,9 @@ class _ReportListViewState extends State<ReportListView> {
   @override
   void initState() {
     super.initState();
-    CatalogViewModeStore.load().then((m) => mounted ? setState(() => _mode = m) : null);
+    CatalogViewModeStore.load().then(
+      (m) => mounted ? setState(() => _mode = m) : null,
+    );
   }
 
   @override
@@ -64,7 +67,14 @@ class _ReportListViewState extends State<ReportListView> {
     _key = key;
     final catalog = CatalogService.instance;
     _projectInfo = catalog.project(widget.project, lang: lang);
-    _reports = catalog.reports(widget.project, lang: lang, page: _page, pageSize: ReportListView.pageSize, query: _query, tier: _tier);
+    _reports = catalog.reports(
+      widget.project,
+      lang: lang,
+      page: _page,
+      pageSize: ReportListView.pageSize,
+      query: _query,
+      tier: _tier,
+    );
   }
 
   @override
@@ -82,7 +92,10 @@ class _ReportListViewState extends State<ReportListView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               PageHeader(
-                crumbs: [Crumb(context.tr('menu'), AppRoutes.menu), Crumb(name)],
+                crumbs: [
+                  Crumb(context.tr('menu'), AppRoutes.menu),
+                  Crumb(name),
+                ],
                 leading: BrandMark(project: widget.project, size: 48),
                 title: name,
                 subtitle: project?.description,
@@ -90,25 +103,44 @@ class _ReportListViewState extends State<ReportListView> {
               ),
               const SizedBox(height: 20),
               // Toolbar (Carbon): search, the data filter and the view switch on one row.
-              Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
                   SizedBox(
                     width: 320,
                     height: TierFilter.height,
-                    child: TextField(
-                      key: const Key('report_search'),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                        hintText: context.tr('search_reports'),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(ReportPalette.controlRadius), borderSide: BorderSide(color: p.border)),
-                      ),
-                      onChanged: (v) {
-                        _debounce?.cancel();
-                        _debounce = Timer(const Duration(milliseconds: 350), () => setState(() {
+                    child: track(
+                      'catalog.report.search',
+                      TextField(
+                        key: const Key('report_search'),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            size: 18,
+                          ),
+                          hintText: context.tr('search_reports'),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(
+                              ReportPalette.controlRadius,
+                            ),
+                            borderSide: BorderSide(color: p.border),
+                          ),
+                        ),
+                        onChanged: (v) {
+                          trackInput(context, 'catalog.report.search', v);
+                          _debounce?.cancel();
+                          _debounce = Timer(
+                            const Duration(milliseconds: 350),
+                            () => setState(() {
                               _query = v.trim();
                               _page = 1;
-                            }));
-                      },
+                            }),
+                          );
+                        },
+                      ),
                     ),
                   ),
                   TierFilter(
@@ -120,34 +152,63 @@ class _ReportListViewState extends State<ReportListView> {
                       _page = 1;
                     }),
                   ),
-                  ViewModeSwitch(mode: _mode, onChanged: (m) {
-                    setState(() => _mode = m);
-                    CatalogViewModeStore.save(m);
-                  }),
-              ]),
+                  ViewModeSwitch(
+                    mode: _mode,
+                    onChanged: (m) {
+                      setState(() => _mode = m);
+                      CatalogViewModeStore.save(m);
+                    },
+                  ),
+                ],
+              ),
               const SizedBox(height: 20),
               FutureBuilder<Paged<ReportSummary>>(
                 future: _reports,
                 builder: (context, snap) {
                   if (snap.hasError) {
-                    return ApiErrorState(error: snap.error, onRetry: () => setState(() => _key = null), returnTo: AppRoutes.project(widget.project));
+                    return ApiErrorState(
+                      error: snap.error,
+                      onRetry: () => setState(() => _key = null),
+                      returnTo: AppRoutes.project(widget.project),
+                    );
                   }
-                  if (!snap.hasData) return const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()));
+                  if (!snap.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
                   final data = snap.data!;
                   if (data.items.isEmpty) {
-                    return StateMessage(icon: Icons.inbox_outlined, title: context.tr('no_reports'), detail: context.tr('no_reports_detail'));
+                    return StateMessage(
+                      icon: Icons.inbox_outlined,
+                      title: context.tr('no_reports'),
+                      detail: context.tr('no_reports_detail'),
+                    );
                   }
-                  return Column(children: [
-                    CatalogLayout(
-                      mode: _mode,
-                      cards: (compact) => [
-                        for (final r in data.items)
-                          ReportCard(report: r, compact: compact, onOpen: () => context.go(AppRoutes.report(widget.project, r.slug))),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Pager(page: data.page, pages: data.pages, onPage: (n) => setState(() => _page = n)),
-                  ]);
+                  return Column(
+                    children: [
+                      CatalogLayout(
+                        mode: _mode,
+                        cards: (compact) => [
+                          for (final r in data.items)
+                            ReportCard(
+                              report: r,
+                              compact: compact,
+                              onOpen: () => context.go(
+                                AppRoutes.report(widget.project, r.slug),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Pager(
+                        page: data.page,
+                        pages: data.pages,
+                        onPage: (n) => setState(() => _page = n),
+                      ),
+                    ],
+                  );
                 },
               ),
             ],

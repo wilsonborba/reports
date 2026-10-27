@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import '../../themes/report_palette.dart';
@@ -36,36 +37,62 @@ class PageHeader extends StatelessWidget {
       children: [
         Breadcrumbs(crumbs: crumbs),
         const SizedBox(height: 10),
-        LayoutBuilder(builder: (context, c) {
-          final heading = Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (leading != null) ...[leading!, const SizedBox(width: 12)],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: p.textPrimary)),
-                    if (subtitle != null && subtitle!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      subtitleLines == null
-                          ? Text(subtitle!, style: text.bodyMedium?.copyWith(color: p.textMuted))
-                          : ClampedText(subtitle!, lines: subtitleLines!, style: text.bodyMedium?.copyWith(color: p.textMuted, height: 1.5)),
+        LayoutBuilder(
+          builder: (context, c) {
+            final heading = Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (leading != null) ...[leading!, const SizedBox(width: 12)],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: text.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: p.textPrimary,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        subtitleLines == null
+                            ? Text(
+                                subtitle!,
+                                style: text.bodyMedium?.copyWith(
+                                  color: p.textMuted,
+                                ),
+                              )
+                            : ClampedText(
+                                subtitle!,
+                                lines: subtitleLines!,
+                                style: text.bodyMedium?.copyWith(
+                                  color: p.textMuted,
+                                  height: 1.5,
+                                ),
+                              ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (c.maxWidth >= narrow) ...actions,
-            ],
-          );
-          // Narrow screens put the actions on their own line under the title.
-          if (c.maxWidth >= narrow || actions.isEmpty) return heading;
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            heading,
-            const SizedBox(height: 12),
-            Row(mainAxisSize: MainAxisSize.min, children: [for (final a in actions) Flexible(child: a)]),
-          ]);
-        }),
+                if (c.maxWidth >= narrow) ...actions,
+              ],
+            );
+            // Narrow screens put the actions on their own line under the title.
+            if (c.maxWidth >= narrow || actions.isEmpty) return heading;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                heading,
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [for (final a in actions) Flexible(child: a)],
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -92,28 +119,51 @@ class _ClampedTextState extends State<ClampedText> {
     final p = context.palette;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 760),
-      child: LayoutBuilder(builder: (context, c) {
-        final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: widget.style),
-          maxLines: widget.lines,
-          textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout(maxWidth: c.maxWidth);
-        final long = painter.didExceedMaxLines;
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Text(widget.text, key: const Key('clamped_text'), style: widget.style, maxLines: _open ? null : widget.lines, overflow: _open ? null : TextOverflow.ellipsis),
-          if (long)
-            InkWell(
-              key: const Key('clamped_toggle'),
-              onTap: () => setState(() => _open = !_open),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(context.tr(_open ? 'show_less' : 'show_more'),
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.textPrimary, decoration: TextDecoration.underline, decorationColor: p.border)),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final painter = TextPainter(
+            text: TextSpan(text: widget.text, style: widget.style),
+            maxLines: widget.lines,
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: c.maxWidth);
+          final long = painter.didExceedMaxLines;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.text,
+                key: const Key('clamped_text'),
+                style: widget.style,
+                maxLines: _open ? null : widget.lines,
+                overflow: _open ? null : TextOverflow.ellipsis,
               ),
-            ),
-        ]);
-      }),
+              if (long)
+                track(
+                  'report.description.expand',
+                  InkWell(
+                    key: const Key('clamped_toggle'),
+                    onTap: () => setState(() => _open = !_open),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        context.tr(_open ? 'show_less' : 'show_more'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: p.textPrimary,
+                          decoration: TextDecoration.underline,
+                          decorationColor: p.border,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

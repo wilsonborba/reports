@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/strings.dart';
@@ -30,17 +31,24 @@ String chartPath({
 }
 
 /// Link and embed options of one public chart/table.
-Future<void> showShareDialog(BuildContext context, String path, {bool full = false}) =>
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          _ItemShareDialog(path: path, url: '${currentOrigin()}$path', full: full),
-    );
+Future<void> showShareDialog(
+  BuildContext context,
+  String path, {
+  bool full = false,
+}) => showDialog<void>(
+  context: context,
+  builder: (ctx) =>
+      _ItemShareDialog(path: path, url: '${currentOrigin()}$path', full: full),
+);
 
 class _ItemShareDialog extends StatefulWidget {
   final String path, url;
   final bool full;
-  const _ItemShareDialog({required this.path, required this.url, required this.full});
+  const _ItemShareDialog({
+    required this.path,
+    required this.url,
+    required this.full,
+  });
   @override
   State<_ItemShareDialog> createState() => _ItemShareDialogState();
 }
@@ -56,7 +64,19 @@ class _ItemShareDialogState extends State<_ItemShareDialog> {
       failed = false;
     });
     try {
-      final data = await itemEmbed(widget.full ? Uri(path: Uri.parse(widget.path).path,queryParameters: {...Uri.parse(widget.path).queryParameters,'render':'full'}).toString() : widget.path, language: context.langCode, theme: Theme.of(context).brightness.name);
+      final data = await itemEmbed(
+        widget.full
+            ? Uri(
+                path: Uri.parse(widget.path).path,
+                queryParameters: {
+                  ...Uri.parse(widget.path).queryParameters,
+                  'render': 'full',
+                },
+              ).toString()
+            : widget.path,
+        language: context.langCode,
+        theme: Theme.of(context).brightness.name,
+      );
       if (mounted) setState(() => descriptor = data);
     } catch (_) {
       if (mounted) setState(() => failed = true);
@@ -91,23 +111,50 @@ class _ItemShareDialogState extends State<_ItemShareDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [
-                for (final value in [false, true]) ...[
-                  if (value) const SizedBox(width: 8),
-                  Expanded(child: OutlinedButton.icon(
-                    key: Key(value ? 'share_mode_embed' : 'share_mode_link'),
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ReportPalette.controlRadius)),
-                      backgroundColor: embed == value ? p.accent : p.surface,
-                      foregroundColor: embed == value ? p.onAccent : p.textPrimary,
-                      side: BorderSide(color: embed == value ? p.accent : p.border),
+              Row(
+                children: [
+                  for (final value in [false, true]) ...[
+                    if (value) const SizedBox(width: 8),
+                    Expanded(
+                      child: track(
+                        value ? 'dataset.share.embed' : 'dataset.share.link',
+                        OutlinedButton.icon(
+                          key: Key(
+                            value ? 'share_mode_embed' : 'share_mode_link',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                ReportPalette.controlRadius,
+                              ),
+                            ),
+                            backgroundColor: embed == value
+                                ? p.accent
+                                : p.surface,
+                            foregroundColor: embed == value
+                                ? p.onAccent
+                                : p.textPrimary,
+                            side: BorderSide(
+                              color: embed == value ? p.accent : p.border,
+                            ),
+                          ),
+                          onPressed: () {
+                            setState(() => embed = value);
+                            if (value) load();
+                          },
+                          icon: Icon(
+                            value ? Icons.code_rounded : Icons.link_rounded,
+                            size: 18,
+                          ),
+                          label: Text(
+                            context.tr(value ? 'share_embed' : 'share_link'),
+                          ),
+                        ),
+                      ),
                     ),
-                    onPressed: () { setState(() => embed = value); if (value) load(); },
-                    icon: Icon(value ? Icons.code_rounded : Icons.link_rounded, size: 18),
-                    label: Text(context.tr(value ? 'share_embed' : 'share_link')),
-                  )),
+                  ],
                 ],
-              ]),
+              ),
               const SizedBox(height: 16),
               Text(
                 context.tr(embed ? 'share_embed_help' : 'share_text'),
@@ -129,7 +176,10 @@ class _ItemShareDialogState extends State<_ItemShareDialog> {
                   style: TextStyle(color: p.negative),
                 ),
               if (embed && descriptor != null) ...[
-                AspectRatio(aspectRatio: 5 / 3, child: embedPreview(descriptor!['embed_url'])),
+                AspectRatio(
+                  aspectRatio: 5 / 3,
+                  child: embedPreview(descriptor!['embed_url']),
+                ),
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -186,17 +236,26 @@ class _ItemShareDialogState extends State<_ItemShareDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(context.tr('close')),
+        track(
+          'dataset.share.close',
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.tr('close')),
+          ),
         ),
-        FilledButton.icon(
-          key: Key(embed ? 'share_embed_copy' : 'share_copy'),
-          onPressed: embed
-              ? (descriptor == null ? null : () => copy(descriptor!['html']))
-              : () => copy(widget.url),
-          icon: Icon(embed ? Icons.code_rounded : Icons.link_rounded, size: 18),
-          label: Text(context.tr(embed ? 'share_embed_copy' : 'share_copy')),
+        track(
+          'dataset.share.copy',
+          FilledButton.icon(
+            key: Key(embed ? 'share_embed_copy' : 'share_copy'),
+            onPressed: embed
+                ? (descriptor == null ? null : () => copy(descriptor!['html']))
+                : () => copy(widget.url),
+            icon: Icon(
+              embed ? Icons.code_rounded : Icons.link_rounded,
+              size: 18,
+            ),
+            label: Text(context.tr(embed ? 'share_embed_copy' : 'share_copy')),
+          ),
         ),
       ],
     );

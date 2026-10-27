@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
@@ -62,8 +63,15 @@ class _DatasetSlotState extends State<DatasetSlot> {
   Future<SlotData>? _future;
   String? _key;
   SlotData? _last;
+
   /// Active card filters; they stay in session memory for the exports.
-  late Map<String, String> _filters = widget.initialFilters ?? CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
+  late Map<String, String> _filters =
+      widget.initialFilters ??
+      CardFilterState.instance.get(
+        widget.project,
+        widget.report,
+        widget.slot.key,
+      );
   bool _filtersOpen = false;
   late bool _asTable = widget.initialTable;
 
@@ -71,8 +79,16 @@ class _DatasetSlotState extends State<DatasetSlot> {
   void didUpdateWidget(DatasetSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The same place on the board can show another card: take that card's own state.
-    if (oldWidget.project != widget.project || oldWidget.report != widget.report || oldWidget.slot.key != widget.slot.key) {
-      _filters = widget.initialFilters ?? CardFilterState.instance.get(widget.project, widget.report, widget.slot.key);
+    if (oldWidget.project != widget.project ||
+        oldWidget.report != widget.report ||
+        oldWidget.slot.key != widget.slot.key) {
+      _filters =
+          widget.initialFilters ??
+          CardFilterState.instance.get(
+            widget.project,
+            widget.report,
+            widget.slot.key,
+          );
       _filtersOpen = false;
       _asTable = widget.initialTable;
       _last = null;
@@ -81,13 +97,24 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   Future<SlotData> _fetch(String lang, Map<String, String> filters) async {
     final service = widget.service ?? ReportService.instance;
-    final ids = [widget.slot.datasetId, ...widget.slot.companions.where((c) => widget.view.dataset(c) != null)];
+    final ids = [
+      widget.slot.datasetId,
+      ...widget.slot.companions.where((c) => widget.view.dataset(c) != null),
+    ];
     final pages = await Future.wait([
       for (final id in ids)
-        service.dataset(widget.project, widget.report, id,
-            lang: lang, filters: id == widget.slot.datasetId ? filters : const {}, limit: id == widget.slot.datasetId ? 500 : 2000),
+        service.dataset(
+          widget.project,
+          widget.report,
+          id,
+          lang: lang,
+          filters: id == widget.slot.datasetId ? filters : const {},
+          limit: id == widget.slot.datasetId ? 500 : 2000,
+        ),
     ]);
-    return SlotData(pages.first, {for (var i = 1; i < ids.length; i++) ids[i]: pages[i]});
+    return SlotData(pages.first, {
+      for (var i = 1; i < ids.length; i++) ids[i]: pages[i],
+    });
   }
 
   void _load(String lang) {
@@ -97,7 +124,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
       return;
     }
     final sorted = _filters.keys.toList()..sort();
-    final key = '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
+    final key =
+        '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
     if (key == _key) return;
     _key = key;
     _future = _fetch(lang, _filters);
@@ -105,31 +133,46 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   /// Full view URL with the visual, the chart or table view and the card filters.
   String _fullViewUrl() => chartPath(
-        project: widget.project,
-        report: widget.report,
-        datasetId: widget.slot.datasetId,
-        visual: widget.slot.visual,
-        table: _asTable,
-        filters: _filters,
-      );
+    project: widget.project,
+    report: widget.report,
+    datasetId: widget.slot.datasetId,
+    visual: widget.slot.visual,
+    table: _asTable,
+    filters: _filters,
+  );
 
   Widget _seeAllFooter(BuildContext context, DatasetPage page) {
     final p = context.palette;
-    final shown = VisualChooser.previewLimit(VisualChooser.resolve(page, widget.slot)) ?? page.rows.length;
-    final total = page.totalRows > page.rows.length ? page.totalRows : page.rows.length;
+    final shown =
+        VisualChooser.previewLimit(VisualChooser.resolve(page, widget.slot)) ??
+        page.rows.length;
+    final total = page.totalRows > page.rows.length
+        ? page.totalRows
+        : page.rows.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 8, 6),
-      child: Row(children: [
-        Expanded(
-          child: Text(context.tr('rows_shown', {'shown': numberText(shown, 0), 'total': numberText(total, 0)}), style: TextStyle(fontSize: 12, color: p.textMuted)),
-        ),
-        TextButton.icon(
-          key: const Key('card_see_all'),
-          onPressed: () => context.go(_fullViewUrl()),
-          icon: const Icon(Icons.open_in_full_rounded, size: 15),
-          label: Text(context.tr('see_all')),
-        ),
-      ]),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              context.tr('rows_shown', {
+                'shown': numberText(shown, 0),
+                'total': numberText(total, 0),
+              }),
+              style: TextStyle(fontSize: 12, color: p.textMuted),
+            ),
+          ),
+          track(
+            'dataset.view.expand',
+            TextButton.icon(
+              key: const Key('card_see_all'),
+              onPressed: () => context.go(_fullViewUrl()),
+              icon: const Icon(Icons.open_in_full_rounded, size: 15),
+              label: Text(context.tr('see_all')),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -144,17 +187,24 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final active = CardFilterQuery.active(_filters);
     final headerActions = <Widget>[
       if (widget.interactive && descriptor.filters.isNotEmpty)
-        IconButton(
-          key: const Key('card_filters_toggle'),
-          tooltip: context.tr('filters'),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
-          icon: Badge(
-            isLabelVisible: active > 0,
-            label: Text('$active'),
-            backgroundColor: p.accent,
-            textColor: p.onAccent,
-            child: Icon(Icons.tune_rounded, size: 18, color: _filtersOpen || active > 0 ? p.accent : p.textMuted),
+        track(
+          'dataset.error.retry',
+          IconButton(
+            key: const Key('card_filters_toggle'),
+            tooltip: context.tr('filters'),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
+            icon: Badge(
+              isLabelVisible: active > 0,
+              label: Text('$active'),
+              backgroundColor: p.accent,
+              textColor: p.onAccent,
+              child: Icon(
+                Icons.tune_rounded,
+                size: 18,
+                color: _filtersOpen || active > 0 ? p.accent : p.textMuted,
+              ),
+            ),
           ),
         ),
     ];
@@ -163,7 +213,12 @@ class _DatasetSlotState extends State<DatasetSlot> {
             filters: descriptor.filters,
             values: _filters,
             onChanged: (v) {
-              CardFilterState.instance.set(widget.project, widget.report, widget.slot.key, v);
+              CardFilterState.instance.set(
+                widget.project,
+                widget.report,
+                widget.slot.key,
+                v,
+              );
               setState(() => _filters = v);
             },
           )
@@ -173,27 +228,58 @@ class _DatasetSlotState extends State<DatasetSlot> {
       builder: (context, snap) {
         if (snap.hasData) _last = snap.data;
         final loading = snap.connectionState != ConnectionState.done;
-        if (snap.hasData && !loading && widget.onReady != null) WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) widget.onReady!(); });
+        if (snap.hasData && !loading && widget.onReady != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) widget.onReady!();
+          });
+        }
         final data = snap.hasData ? snap.data : (loading ? _last : null);
         final Widget body;
         if (snap.hasError) {
-          body = Text(context.tr('error_loading'), style: TextStyle(color: p.negative));
+          body = Text(
+            context.tr('error_loading'),
+            style: TextStyle(color: p.negative),
+          );
         } else if (data == null) {
           body = const SizedBox(height: 120);
         } else if (data.page.rows.isEmpty) {
-          body = Text(context.tr('no_data'), style: TextStyle(color: p.textMuted));
+          body = Text(
+            context.tr('no_data'),
+            style: TextStyle(color: p.textMuted),
+          );
         } else if (_asTable) {
           final page = data.page;
           body = widget.fill
-              ? LayoutBuilder(builder: (context, c) => DataTableView(page: page, maxHeight: (c.maxHeight - 48).clamp(80.0, 4000.0)))
+              ? LayoutBuilder(
+                  builder: (context, c) => DataTableView(
+                    page: page,
+                    maxHeight: (c.maxHeight - 48).clamp(80.0, 4000.0),
+                  ),
+                )
               : DataTableView(page: page);
         } else {
           final page = data.page;
           body = widget.fill
-              ? LayoutBuilder(builder: (context, c) => VisualChooser.build(page, widget.slot, companions: data.companions, height: c.maxHeight))
-              : VisualChooser.build(page, widget.slot, companions: data.companions);
+              ? LayoutBuilder(
+                  builder: (context, c) => VisualChooser.build(
+                    page,
+                    widget.slot,
+                    companions: data.companions,
+                    height: c.maxHeight,
+                  ),
+                )
+              : VisualChooser.build(
+                  page,
+                  widget.slot,
+                  companions: data.companions,
+                );
         }
-        final seeAll = widget.interactive && !_asTable && data != null && data.page.rows.isNotEmpty && VisualChooser.needsFullView(data.page, widget.slot);
+        final seeAll =
+            widget.interactive &&
+            !_asTable &&
+            data != null &&
+            data.page.rows.isNotEmpty &&
+            VisualChooser.needsFullView(data.page, widget.slot);
         return DatasetCard(
           descriptor: descriptor,
           body: body,
@@ -201,9 +287,13 @@ class _DatasetSlotState extends State<DatasetSlot> {
           controls: widget.controls,
           fill: widget.fill,
           tableView: _asTable,
-          onToggleTable: widget.interactive ? () => setState(() => _asTable = !_asTable) : null,
+          onToggleTable: widget.interactive
+              ? () => setState(() => _asTable = !_asTable)
+              : null,
           // Only a public chart opens for anyone who gets the link.
-          onShare: widget.interactive && descriptor.visibility == 'public' ? () => showShareDialog(context, _fullViewUrl()) : null,
+          onShare: widget.interactive && descriptor.visibility == 'public'
+              ? () => showShareDialog(context, _fullViewUrl())
+              : null,
           headerActions: headerActions,
           toolbar: toolbar,
           footer: seeAll ? _seeAllFooter(context, data.page) : null,
@@ -251,7 +341,13 @@ class _GatedChartSkeleton extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Icon(needsAdmin ? Icons.admin_panel_settings_outlined : Icons.lock_outline_rounded, size: 28, color: p.textMuted),
+            Icon(
+              needsAdmin
+                  ? Icons.admin_panel_settings_outlined
+                  : Icons.lock_outline_rounded,
+              size: 28,
+              color: p.textMuted,
+            ),
             const SizedBox(height: 10),
             Text(
               context.tr(needsAdmin ? 'gated_admin_text' : 'gated_login_text'),

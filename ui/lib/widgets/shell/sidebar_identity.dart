@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
@@ -164,11 +165,14 @@ class _IdentityBlock extends StatelessWidget {
               child: avatar,
             ),
             const SizedBox(height: 8),
-            IconButton(
-              key: const Key('identity_log_out'),
-              tooltip: context.tr('auth_log_out'),
-              icon: Icon(Icons.logout_rounded, size: 18, color: p.textMuted),
-              onPressed: onLogOut,
+            track(
+              'shell.account.logout',
+              IconButton(
+                key: const Key('identity_log_out'),
+                tooltip: context.tr('auth_log_out'),
+                icon: Icon(Icons.logout_rounded, size: 18, color: p.textMuted),
+                onPressed: onLogOut,
+              ),
             ),
           ],
         ),
@@ -190,19 +194,25 @@ class _IdentityBlock extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            key: const Key('identity_log_out'),
-            onPressed: onLogOut,
-            icon: const Icon(Icons.logout_rounded, size: 16),
-            label: Text(context.tr('auth_log_out')),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: p.textPrimary,
-              side: BorderSide(color: p.border),
-              shape: const RoundedRectangleBorder(),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              textStyle: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
+          track(
+            'shell.account.logout',
+            OutlinedButton.icon(
+              key: const Key('identity_log_out'),
+              onPressed: onLogOut,
+              icon: const Icon(Icons.logout_rounded, size: 16),
+              label: Text(context.tr('auth_log_out')),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: p.textPrimary,
+                side: BorderSide(color: p.border),
+                shape: const RoundedRectangleBorder(),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),

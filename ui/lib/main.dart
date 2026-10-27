@@ -1,3 +1,5 @@
+import 'core/tracking_manifest.dart';
+import 'widgets/shell/tracking_header.dart';
 import 'views/embed_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -45,14 +47,20 @@ class _ReportsAppState extends State<ReportsApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final ThemeController _theme = ThemeController();
   final LanguageController _language = LanguageController();
+  late final telemetry = ClientTelemetryService.instance;
+  late final tracker = telemetry.tracker;
+  void trackRoute() =>
+      tracker.view(_router.routeInformationProvider.value.uri.path);
 
   @override
   void initState() {
     super.initState();
+    telemetry.init();
     _theme.load();
     _language.load();
     _router = GoRouter(
       initialLocation: widget.initialLocation,
+      observers: [TrackingNavigatorObserver(tracker)],
       navigatorKey: _navigatorKey,
       // No route needs a session up front: guests browse the public reports, and the
       // engine decides per card. Nothing here redirects to the login page.
@@ -60,27 +68,29 @@ class _ReportsAppState extends State<ReportsApp> {
         // auth_apps returns here with the one-time exchange token.
         GoRoute(
           path: AuthRoutes.sync,
-          builder: (context, state) => SyncView(token: state.uri.queryParameters[ReportsConfig.exchangeTokenParam]),
+          builder: (context, state) => SyncView(
+            token: state.uri.queryParameters[ReportsConfig.exchangeTokenParam],
+          ),
         ),
         // Old links of the previous login flow open the public site.
         GoRoute(path: '/v1/sync', redirect: (context, state) => AppRoutes.home),
-        GoRoute(path: '/v1/login-required', redirect: (context, state) => AppRoutes.home),
+        GoRoute(
+          path: '/v1/login-required',
+          redirect: (context, state) => AppRoutes.home,
+        ),
         // The root and /v1 open the public site.
-        GoRoute(
-          path: '/',
-          redirect: (context, state) => AppRoutes.home,
-        ),
-        GoRoute(
-          path: '/v1',
-          redirect: (context, state) => AppRoutes.home,
-        ),
+        GoRoute(path: '/', redirect: (context, state) => AppRoutes.home),
+        GoRoute(path: '/v1', redirect: (context, state) => AppRoutes.home),
         // Compact, public item view: no app shell or full-report navigation.
         GoRoute(
           path: '/v1/embed/:project/:report/:dataset',
-          builder: (context,state) => EmbedView(
+          builder: (context, state) => EmbedView(
             key: ValueKey(state.uri.toString()),
-            project:state.pathParameters['project']!,report:state.pathParameters['report']!,dataset:state.pathParameters['dataset']!,
-            language:state.uri.queryParameters['lang'] ?? context.langCode,query:state.uri.queryParameters,
+            project: state.pathParameters['project']!,
+            report: state.pathParameters['report']!,
+            dataset: state.pathParameters['dataset']!,
+            language: state.uri.queryParameters['lang'] ?? context.langCode,
+            query: state.uri.queryParameters,
           ),
         ),
         // Every page lives inside the app shell (top bar and project theme).
@@ -98,17 +108,34 @@ class _ReportsAppState extends State<ReportsApp> {
               path: AppRoutes.home,
               builder: (context, state) => const OverviewView(),
               routes: <RouteBase>[
-                GoRoute(path: 'projects', builder: (context, state) => const ProjectsView()),
+                GoRoute(
+                  path: 'projects',
+                  builder: (context, state) => const ProjectsView(),
+                ),
                 GoRoute(
                   path: 'science',
                   builder: (context, state) => const ScienceView(),
                   routes: <RouteBase>[
-                    GoRoute(path: ':topic', builder: (context, state) => ScienceTopicView(topic: state.pathParameters['topic']!)),
+                    GoRoute(
+                      path: ':topic',
+                      builder: (context, state) => ScienceTopicView(
+                        topic: state.pathParameters['topic']!,
+                      ),
+                    ),
                   ],
                 ),
-                GoRoute(path: 'architecture', builder: (context, state) => const ArchitectureView()),
-                GoRoute(path: 'api', redirect: (context, state) => AppRoutes.homeArchitecture),
-                GoRoute(path: 'contact', builder: (context, state) => const ContactView()),
+                GoRoute(
+                  path: 'architecture',
+                  builder: (context, state) => const ArchitectureView(),
+                ),
+                GoRoute(
+                  path: 'api',
+                  redirect: (context, state) => AppRoutes.homeArchitecture,
+                ),
+                GoRoute(
+                  path: 'contact',
+                  builder: (context, state) => const ContactView(),
+                ),
               ],
             ),
             // Hierarchical menu tree: /v1/menu -> /v1/menu/:project -> /v1/menu/:project/:report
@@ -118,14 +145,19 @@ class _ReportsAppState extends State<ReportsApp> {
               routes: <RouteBase>[
                 GoRoute(
                   path: ':project',
-                  builder: (context, state) => ReportListView(project: state.pathParameters['project']!),
+                  builder: (context, state) =>
+                      ReportListView(project: state.pathParameters['project']!),
                   routes: <RouteBase>[
                     GoRoute(
                       path: ':report',
                       builder: (context, state) => ReportPageView(
                         project: state.pathParameters['project']!,
                         report: state.pathParameters['report']!,
-                        section: int.tryParse(state.uri.queryParameters['section'] ?? '') ?? 1,
+                        section:
+                            int.tryParse(
+                              state.uri.queryParameters['section'] ?? '',
+                            ) ??
+                            1,
                       ),
                       routes: <RouteBase>[
                         // One chart with all rows: /v1/menu/:project/:report/:dataset
@@ -135,8 +167,12 @@ class _ReportsAppState extends State<ReportsApp> {
                             project: state.pathParameters['project']!,
                             report: state.pathParameters['report']!,
                             datasetId: state.pathParameters['dataset']!,
-                            visual: DatasetFullView.visualOf(state.uri.queryParameters['visual']),
-                            filters: DatasetFullView.filtersOf(state.uri.queryParameters),
+                            visual: DatasetFullView.visualOf(
+                              state.uri.queryParameters['visual'],
+                            ),
+                            filters: DatasetFullView.filtersOf(
+                              state.uri.queryParameters,
+                            ),
                             table: state.uri.queryParameters['view'] == 'table',
                           ),
                         ),
@@ -150,6 +186,8 @@ class _ReportsAppState extends State<ReportsApp> {
         ),
       ],
     );
+    _router.routeInformationProvider.addListener(trackRoute);
+    trackRoute();
     // One session check per page load (no network call for a browser without session).
     SessionStore.instance.ensureLoaded().then((_) {
       if (SessionStore.instance.hasSession) AuthService.instance.loadUserInfo();
@@ -158,6 +196,9 @@ class _ReportsAppState extends State<ReportsApp> {
 
   @override
   void dispose() {
+    _router.routeInformationProvider.removeListener(trackRoute);
+    _router.dispose();
+    telemetry.detach(tracker);
     _theme.dispose();
     _language.dispose();
     super.dispose();
@@ -176,7 +217,13 @@ class _ReportsAppState extends State<ReportsApp> {
         routerConfig: _router,
         builder: (context, child) => ThemeScope(
           controller: _theme,
-          child: LanguageScope(controller: _language, child: child ?? const SizedBox.shrink()),
+          child: LanguageScope(
+            controller: _language,
+            child: ReportsTrackingRoot(
+              tracker: tracker,
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
         ),
       ),
     );

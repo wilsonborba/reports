@@ -1,64 +1,45 @@
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-
 import '../core/config.dart';
+import '../core/tracking_manifest.dart';
 
-/// Forwards frontend errors to the shared Asodya client-error pipeline of api_for_apps
-/// (`/apps/api/v1/client-error`: Redis rate limit, CouchDB store, admin-only query).
-/// It covers uncaught Flutter and platform errors and every failed call to another
-/// service (Reports engine, gateway exchange, logout, user info). It never sends rows,
-/// chart payloads, cookies, tokens or exchange artifacts, and it never reports itself.
+/// Shared SQL-backed tracking, with the existing Reports error-call interface.
 class ClientTelemetryService {
   static ClientTelemetryService instance = ClientTelemetryService();
-
-  final http.Client _client;
-  final String endpoint;
-  final String appVersion;
-  final String environment;
-
-  /// The page the viewer is on (path only, never the query), used when a report
-  /// gives no route. On the web it is the browser path; elsewhere it is unknown.
-  final String? Function() currentRoute;
-
-  final Map<String, DateTime> _recentErrors = {};
-  static const Duration duplicateThrottleWindow = Duration(seconds: 15);
-
   ClientTelemetryService({
     http.Client? client,
     this.endpoint = ReportsConfig.telemetryUrl,
     this.appVersion = ReportsConfig.appVersion,
     this.environment = kReleaseMode ? 'production' : 'development',
     String? Function()? currentRoute,
-  })  : _client = client ?? http.Client(),
-        currentRoute = currentRoute ?? _browserRoute;
-
+    bool? autoFlush,
+  }) : _client = client,
+       currentRoute = currentRoute ?? _browserRoute,
+       _autoFlush = autoFlush ?? client == null;
+  final http.Client? _client;
+  final bool _autoFlush;
+  final String endpoint, appVersion, environment;
+  final String? Function() currentRoute;
+  AsodyaTracker? _tracker;
+  final Map<String, DateTime> _recentErrors = {};
+  static const duplicateThrottleWindow = Duration(seconds: 15);
   static String? _browserRoute() => kIsWeb ? Uri.base.path : null;
-
-  /// Hooks into Flutter framework error handlers.
-  void init() {
-    FlutterError.onError = (details) {
-      FlutterError.presentError(details);
-      reportError(
-        errorTitle: details.exceptionAsString(),
-        errorMessage: details.summary.toString(),
-        stackTrace: details.stack?.toString(),
-        details: {'context': details.context?.toString() ?? 'Flutter framework'},
-      );
-    };
-
-    PlatformDispatcher.instance.onError = (error, stack) {
-      reportError(
-        errorTitle: error.toString(),
-        errorMessage: error.toString(),
-        stackTrace: stack.toString(),
-      );
-      return false;
-    };
+  AsodyaTracker get tracker => _tracker ??= AsodyaTracker(
+    appId: 'reports',
+    baseUrl: Uri.parse(endpoint).origin,
+    buildVersion: appVersion,
+    screens: reportScreens,
+    client: _client,
+    autoFlush: _autoFlush,
+  );
+  void init() => tracker.installErrorCapture();
+  void detach(AsodyaTracker current) {
+    if (identical(_tracker, current)) {
+      _tracker = null;
+    }
+    current.dispose();
   }
 
-  /// Sends a bounded, throttled client error report asynchronously.
   Future<void> reportError({
     required String errorTitle,
     required String errorMessage,
@@ -69,50 +50,22 @@ class ClientTelemetryService {
     Map<String, dynamic> details = const {},
   }) async {
     final now = DateTime.now();
-    _cleanThrottles(now);
-
-    route ??= currentRoute();
-    final key = '$errorTitle:$errorMessage:$route';
-    final lastSent = _recentErrors[key];
-    if (lastSent != null && now.difference(lastSent) < duplicateThrottleWindow) {
-      return;
-    }
+    _recentErrors.removeWhere(
+      (_, at) => now.difference(at) > duplicateThrottleWindow,
+    );
+    final currentRoute = route ?? this.currentRoute();
+    final key = '$errorTitle:$errorMessage:$currentRoute';
+    if (_recentErrors.containsKey(key)) return;
     _recentErrors[key] = now;
-
-    final sanitizedTitle = errorTitle.length > 200 ? errorTitle.substring(0, 200) : errorTitle;
-    final sanitizedMessage = errorMessage.length > 4000 ? errorMessage.substring(0, 4000) : errorMessage;
-    final sanitizedStack = stackTrace != null && stackTrace.length > 8000
-        ? stackTrace.substring(0, 8000)
-        : stackTrace;
-
-    final payload = {
-      'app_name': 'reports',
-      'app_version': appVersion,
-      'environment': environment,
-      'route': route,
-      'error_title': sanitizedTitle,
-      'error_message': sanitizedMessage,
-      'error_code': errorCode,
-      'stack_trace': sanitizedStack,
-      'request_id': requestId,
-      'client_timestamp': now.toIso8601String(),
-      'details': details,
-    };
-
-    try {
-      await _client
-          .post(
-            Uri.parse(endpoint),
-            headers: {'content-type': 'application/json'},
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // Fire-and-forget: never crash or loop if telemetry fails
-    }
+    tracker.error(
+      '$errorTitle: $errorMessage',
+      stackTrace == null ? null : StackTrace.fromString(stackTrace),
+      type: errorCode ?? 'ClientError',
+      route: currentRoute,
+    );
+    await tracker.flush();
   }
 
-  /// A failed call to another service. [path] must not contain a query (tokens).
   Future<void> reportServiceFailure({
     required String service,
     required String method,
@@ -121,18 +74,14 @@ class ClientTelemetryService {
     String? code,
     String? message,
     String? route,
-  }) {
-    final cleanPath = path.split('?').first;
-    return reportError(
-      errorTitle: '$service $method $cleanPath failed',
-      errorMessage: status == 0 ? 'network error: ${message ?? 'no answer'}' : 'HTTP $status${code == null ? '' : ' $code'}',
-      errorCode: status == 0 ? '${service.toUpperCase()}_NETWORK' : '${service.toUpperCase()}_$status',
-      route: route,
-      details: {'service': service, 'method': method, 'path': cleanPath, 'status': status, 'code': ?code},
-    );
-  }
-
-  void _cleanThrottles(DateTime now) {
-    _recentErrors.removeWhere((_, time) => now.difference(time) > duplicateThrottleWindow);
-  }
+  }) => reportError(
+    errorTitle: '$service $method ${routePath(path)} failed',
+    errorMessage: status == 0
+        ? 'network error: ${message ?? 'no answer'}'
+        : 'HTTP $status${code == null ? '' : ' $code'}',
+    errorCode: status == 0
+        ? '${service.toUpperCase()}_NETWORK'
+        : '${service.toUpperCase()}_$status',
+    route: route,
+  );
 }

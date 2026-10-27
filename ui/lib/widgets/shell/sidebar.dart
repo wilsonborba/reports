@@ -1,3 +1,4 @@
+import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,10 +42,12 @@ class _SidebarState extends State<Sidebar> {
     super.initState();
     SessionStore.instance.addListener(_onSessionChanged);
     _projectsOpen = widget.project == null;
-    SharedPreferences.getInstance().then((p) {
-      final saved = p.getBool(_key);
-      if (saved != null && mounted) setState(() => _open = saved);
-    }).catchError((_) {});
+    SharedPreferences.getInstance()
+        .then((p) {
+          final saved = p.getBool(_key);
+          if (saved != null && mounted) setState(() => _open = saved);
+        })
+        .catchError((_) {});
   }
 
   @override
@@ -69,7 +72,11 @@ class _SidebarState extends State<Sidebar> {
     _projects = catalog.projects(lang: lang);
     _reports = widget.project == null
         ? null
-        : catalog.reports(widget.project!, lang: lang, pageSize: Sidebar.reportPreviewCount);
+        : catalog.reports(
+            widget.project!,
+            lang: lang,
+            pageSize: Sidebar.reportPreviewCount,
+          );
   }
 
   @override
@@ -83,12 +90,16 @@ class _SidebarState extends State<Sidebar> {
 
   void _setOpen(bool value) {
     setState(() => _open = value);
-    SharedPreferences.getInstance().then((p) => p.setBool(_key, value)).catchError((_) => false);
+    SharedPreferences.getInstance()
+        .then((p) => p.setBool(_key, value))
+        .catchError((_) => false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.sizeOf(context).width < Sidebar.minScreenWidth) return const SizedBox.shrink();
+    if (MediaQuery.sizeOf(context).width < Sidebar.minScreenWidth) {
+      return const SizedBox.shrink();
+    }
     _load(context.langCode);
     final p = context.palette;
     return AnimatedContainer(
@@ -96,12 +107,16 @@ class _SidebarState extends State<Sidebar> {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
       width: _open ? Sidebar.openWidth : Sidebar.closedWidth,
-      decoration: BoxDecoration(color: p.surface, border: Border(right: BorderSide(color: p.border))),
+      decoration: BoxDecoration(
+        color: p.surface,
+        border: Border(right: BorderSide(color: p.border)),
+      ),
       child: ClipRect(
         child: FutureBuilder<Paged<ProjectSummary>>(
           future: _projects,
           builder: (context, projectsSnap) {
-            final projects = projectsSnap.data?.items ?? const <ProjectSummary>[];
+            final projects =
+                projectsSnap.data?.items ?? const <ProjectSummary>[];
             ProjectSummary? current;
             for (final pr in projects) {
               if (pr.slug == widget.project) current = pr;
@@ -122,7 +137,8 @@ class _SidebarState extends State<Sidebar> {
                         icon: Icons.apps_rounded,
                         label: context.tr('projects'),
                         open: _projectsOpen,
-                        onToggle: () => setState(() => _projectsOpen = !_projectsOpen),
+                        onToggle: () =>
+                            setState(() => _projectsOpen = !_projectsOpen),
                         children: [
                           for (final pr in projects)
                             _item(
@@ -130,8 +146,12 @@ class _SidebarState extends State<Sidebar> {
                               key: 'project_${pr.slug}',
                               leading: BrandMark(project: pr.slug, size: 18),
                               label: pr.name,
-                              route: pr.reportCount > 0 ? AppRoutes.project(pr.slug) : null,
-                              active: pr.slug == widget.project && widget.report == null,
+                              route: pr.reportCount > 0
+                                  ? AppRoutes.project(pr.slug)
+                                  : null,
+                              active:
+                                  pr.slug == widget.project &&
+                                  widget.report == null,
                               nested: true,
                             ),
                         ],
@@ -151,17 +171,30 @@ class _SidebarState extends State<Sidebar> {
 
   Widget _header(BuildContext context, ProjectSummary? current) {
     final p = context.palette;
-    final name = current?.name ?? (widget.project == null ? context.tr('app_name') : '');
-    final arrow = IconButton(
-      key: const Key('sidebar_toggle'),
-      tooltip: context.tr(_open ? 'close_sidebar' : 'open_sidebar'),
-      icon: Icon(_open ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: p.textMuted),
-      onPressed: () => _setOpen(!_open),
+    final name =
+        current?.name ?? (widget.project == null ? context.tr('app_name') : '');
+    final arrow = track(
+      'shell.sidebar.toggle',
+      IconButton(
+        key: const Key('sidebar_toggle'),
+        tooltip: context.tr(_open ? 'close_sidebar' : 'open_sidebar'),
+        icon: Icon(
+          _open ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+          color: p.textMuted,
+        ),
+        onPressed: () => _setOpen(!_open),
+      ),
     );
     if (!_open) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(children: [BrandMark(project: widget.project, size: 30), const SizedBox(height: 6), arrow]),
+        child: Column(
+          children: [
+            BrandMark(project: widget.project, size: 30),
+            const SizedBox(height: 6),
+            arrow,
+          ],
+        ),
       );
     }
     return Padding(
@@ -171,10 +204,16 @@ class _SidebarState extends State<Sidebar> {
           BrandMark(project: widget.project, size: 34),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: p.textPrimary)),
+            child: Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: p.textPrimary,
+              ),
+            ),
           ),
           arrow,
         ],
@@ -207,20 +246,24 @@ class _SidebarState extends State<Sidebar> {
             onToggle: () => setState(() => _reportsOpen = !_reportsOpen),
             children: [
               for (final r in reports.take(Sidebar.reportPreviewCount))
-                _item(context,
-                    key: 'report_${r.slug}',
-                    label: r.title,
-                    route: AppRoutes.report(project, r.slug),
-                    active: r.slug == widget.report,
-                    nested: true),
+                _item(
+                  context,
+                  key: 'report_${r.slug}',
+                  label: r.title,
+                  route: AppRoutes.report(project, r.slug),
+                  active: r.slug == widget.report,
+                  nested: true,
+                ),
               if (total > 0)
-                _item(context,
-                    key: 'see_all',
-                    icon: Icons.arrow_forward_rounded,
-                    label: context.tr('see_all'),
-                    route: AppRoutes.project(project),
-                    nested: true,
-                    muted: true),
+                _item(
+                  context,
+                  key: 'see_all',
+                  icon: Icons.arrow_forward_rounded,
+                  label: context.tr('see_all'),
+                  route: AppRoutes.project(project),
+                  nested: true,
+                  muted: true,
+                ),
             ],
           );
         },
@@ -228,99 +271,173 @@ class _SidebarState extends State<Sidebar> {
     ];
   }
 
-  Widget _group(BuildContext context,
-      {required String key,
-      required IconData icon,
-      required String label,
-      required bool open,
-      required VoidCallback onToggle,
-      required List<Widget> children}) {
+  Widget _group(
+    BuildContext context, {
+    required String key,
+    required IconData icon,
+    required String label,
+    required bool open,
+    required VoidCallback onToggle,
+    required List<Widget> children,
+  }) {
     final p = context.palette;
     if (!_open) {
-      return _iconOnly(context, key: 'group_$key', icon: icon, label: label, onTap: () {
-        _setOpen(true);
-        if (!open) onToggle();
-      });
+      return _iconOnly(
+        context,
+        key: 'group_$key',
+        icon: icon,
+        label: label,
+        onTap: () {
+          _setOpen(true);
+          if (!open) onToggle();
+        },
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-          child: InkWell(
-            key: Key('group_$key'),
-            borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              child: Row(children: [
-                Icon(icon, size: 19, color: p.textMuted),
-                const SizedBox(width: 12),
-                Expanded(child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.textPrimary))),
-                AnimatedRotation(
-                  turns: open ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: Icon(Icons.expand_more_rounded, size: 18, color: p.textMuted),
+          child: track(
+            'shell.sidebar.group',
+            InkWell(
+              key: Key('group_$key'),
+              borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
                 ),
-              ]),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 19, color: p.textMuted),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: p.textPrimary,
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: open ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        size: 18,
+                        color: p.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
         AnimatedSize(
           duration: const Duration(milliseconds: 150),
-          child: open ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children) : const SizedBox(width: double.infinity),
+          child: open
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: children,
+                )
+              : const SizedBox(width: double.infinity),
         ),
       ],
     );
   }
 
-  Widget _item(BuildContext context,
-      {required String key,
-      required String label,
-      String? route,
-      IconData? icon,
-      Widget? leading,
-      bool active = false,
-      bool nested = false,
-      bool muted = false}) {
+  Widget _item(
+    BuildContext context, {
+    required String key,
+    required String label,
+    String? route,
+    IconData? icon,
+    Widget? leading,
+    bool active = false,
+    bool nested = false,
+    bool muted = false,
+  }) {
     final p = context.palette;
     final enabled = route != null;
     if (!_open) {
       if (nested) return const SizedBox.shrink();
-      return _iconOnly(context, key: key, icon: icon ?? Icons.circle_outlined, label: label, active: active,
-          onTap: enabled ? () => context.go(route) : null);
+      return _iconOnly(
+        context,
+        key: key,
+        icon: icon ?? Icons.circle_outlined,
+        label: label,
+        active: active,
+        onTap: enabled ? () => context.go(route) : null,
+      );
     }
-    final color = !enabled ? p.textMuted.withValues(alpha: 0.5) : active ? p.textPrimary : (muted ? p.textMuted : p.textPrimary);
+    final color = !enabled
+        ? p.textMuted.withValues(alpha: 0.5)
+        : active
+        ? p.textPrimary
+        : (muted ? p.textMuted : p.textPrimary);
     return Padding(
       padding: EdgeInsets.fromLTRB(nested ? 22 : 8, 1, 8, 1),
       child: Material(
         color: active ? p.accent.withValues(alpha: 0.14) : Colors.transparent,
         borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
-        child: InkWell(
-          key: Key('nav_$key'),
-          borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
-          onTap: enabled ? () => context.go(route) : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(children: [
-              if (leading != null) ...[leading, const SizedBox(width: 10)],
-              if (leading == null && icon != null) ...[Icon(icon, size: nested ? 16 : 19, color: color), const SizedBox(width: 12)],
-              Expanded(
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: nested ? 12.5 : 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: color)),
+        child: track(
+          'shell.sidebar.navigate',
+          InkWell(
+            key: Key('nav_$key'),
+            borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
+            onTap: enabled ? () => context.go(route) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  if (leading != null) ...[leading, const SizedBox(width: 10)],
+                  if (leading == null && icon != null) ...[
+                    Icon(icon, size: nested ? 16 : 19, color: color),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: nested ? 12.5 : 13,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                  if (active)
+                    Container(
+                      width: 4,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: p.accent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                ],
               ),
-              if (active) Container(width: 4, height: 18, decoration: BoxDecoration(color: p.accent, borderRadius: BorderRadius.circular(2))),
-            ]),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _iconOnly(BuildContext context,
-      {required String key, required IconData icon, required String label, bool active = false, VoidCallback? onTap}) {
+  Widget _iconOnly(
+    BuildContext context, {
+    required String key,
+    required IconData icon,
+    required String label,
+    bool active = false,
+    VoidCallback? onTap,
+  }) {
     final p = context.palette;
     return Tooltip(
       message: label,
@@ -329,11 +446,23 @@ class _SidebarState extends State<Sidebar> {
         child: Material(
           color: active ? p.accent.withValues(alpha: 0.14) : Colors.transparent,
           borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
-          child: InkWell(
-            key: Key('nav_$key'),
-            borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
-            onTap: onTap,
-            child: SizedBox(height: 40, child: Center(child: Icon(icon, size: 21, color: active ? p.accent : p.textMuted))),
+          child: track(
+            'shell.sidebar.icon',
+            InkWell(
+              key: Key('nav_$key'),
+              borderRadius: BorderRadius.circular(ReportPalette.controlRadius),
+              onTap: onTap,
+              child: SizedBox(
+                height: 40,
+                child: Center(
+                  child: Icon(
+                    icon,
+                    size: 21,
+                    color: active ? p.accent : p.textMuted,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

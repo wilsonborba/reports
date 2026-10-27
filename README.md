@@ -166,3 +166,25 @@ recording after 30 minutes and purge saved rows older than 15 days. This backend
 never connects to appdb or changes its schema.
 
 Development follows `APP_ENV=development|dev|local|test`; production disables debug.
+
+## Frontend observability
+
+The UI uses the pinned shared `asodya_tracking` package. Errors and usage use
+separate SQL-backed gateway endpoints. The gateway derives identity and IP.
+`ui/tracking_manifest.json` lists screens, stable element ids, labels, paths and
+existing-header aliases. Matching constants live in `ui/lib/core/tracking_manifest.dart`.
+
+The router observer and route listener record navigation. Root pointer handling
+records mapped clicks. Search, filters and section names record non-sensitive input.
+Save/apply callbacks record submits. Query strings and exchange artifacts are omitted.
+No chart renderer, theme shape or authentication rule changes.
+
+The header keeps its existing implementation. `ReportsTrackingRoot` maps its declared
+localized semantic labels. Explicit control metadata takes priority. This also supports
+projects where a shared header must remain unchanged. Custom language metadata follows
+LanguageScope without changing widget localization.
+
+The existing error-service interface delegates to the shared package. It keeps its
+short duplicate throttle and safe service summaries. Injected mock clients disable
+periodic delivery by default. Tests remain offline. The app detaches its tracker on
+disposal so repeated widget fixtures restore their error handlers.
