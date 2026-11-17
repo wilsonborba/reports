@@ -5,6 +5,10 @@
 - *(logs)* Stream redacted engine logs from the journald writer
 - *(telemetry)* Track mapped Reports controls through shared SQL telemetry
 
+### Bug fixes
+
+- *(telemetry)* Replace tracking dependency with screen_trail (#39)
+
 ### Documentation
 
 - *(changelog)* Record engine logging changes

@@ -11,11 +11,11 @@ class ReportsTrackingRoot extends StatelessWidget {
     required this.tracker,
     required this.child,
   });
-  final AsodyaTracker tracker;
+  final ScreenTrail tracker;
   final Widget child;
   @override
   Widget build(BuildContext context) {
-    final aliases = <String, TrackingElement>{
+    final aliases = <String, TrailElement>{
       for (final tab in TopBar.tabs)
         context.tr(tab.labelKey): reportElements['shell.navigation.${tab.id}']!,
       'EN': reportElements['shell.language.english']!,
@@ -28,7 +28,7 @@ class ReportsTrackingRoot extends StatelessWidget {
           reportElements['shell.navigation.close']!,
       context.tr('auth_log_out'): reportElements['shell.account.logout']!,
     };
-    return TrackingRoot(
+    return ScreenTrailRoot(
       tracker: tracker,
       locale: context.langCode,
       resolveElement: (event, result) {

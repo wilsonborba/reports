@@ -169,8 +169,8 @@ Development follows `APP_ENV=development|dev|local|test`; production disables de
 
 ## Frontend observability
 
-The UI uses the pinned shared `asodya_tracking` package. Errors and usage use
-separate SQL-backed gateway endpoints. The gateway derives identity and IP.
+The UI uses the shared [`screen_trail`](https://pub.dev/packages/screen_trail)
+package. Errors and usage use separate SQL-backed gateway endpoints. The gateway derives identity and IP.
 `ui/tracking_manifest.json` lists screens, stable element ids, labels, paths and
 existing-header aliases. Matching constants live in `ui/lib/core/tracking_manifest.dart`.
 

@@ -60,7 +60,7 @@ class _ReportsAppState extends State<ReportsApp> {
     _language.load();
     _router = GoRouter(
       initialLocation: widget.initialLocation,
-      observers: [TrackingNavigatorObserver(tracker)],
+      observers: [ScreenTrailObserver(tracker)],
       navigatorKey: _navigatorKey,
       // No route needs a session up front: guests browse the public reports, and the
       // engine decides per card. Nothing here redirects to the login page.
