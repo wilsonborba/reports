@@ -1,593 +1,589 @@
 import 'package:flutter/material.dart';
-import 'package:asodya_tracking/asodya_tracking.dart';
-export 'package:asodya_tracking/asodya_tracking.dart';
+import 'package:screen_trail/screen_trail.dart';
+export 'package:screen_trail/screen_trail.dart';
 
-const reportScreens = <TrackingScreen>[
-  TrackingScreen(
-    name: 'overview',
-    route: '/v1/home',
-    label: 'Reports overview',
-  ),
-  TrackingScreen(
+const reportScreens = <TrailScreen>[
+  TrailScreen(name: 'overview', route: '/v1/home', label: 'Reports overview'),
+  TrailScreen(
     name: 'projects',
     route: '/v1/home/projects',
     label: 'Public projects',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'science',
     route: '/v1/home/science',
     label: 'Science topics',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'science',
     route: '/v1/home/science/:topic',
     label: 'Science topic',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'architecture',
     route: '/v1/home/architecture',
     label: 'Architecture',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'contact',
     route: '/v1/home/contact',
     label: 'Community contacts',
   ),
-  TrackingScreen(name: 'catalog', route: '/v1/menu', label: 'Projects catalog'),
-  TrackingScreen(
+  TrailScreen(name: 'catalog', route: '/v1/menu', label: 'Projects catalog'),
+  TrailScreen(
     name: 'report_catalog',
     route: '/v1/menu/:project',
     label: 'Project reports',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'report',
     route: '/v1/menu/:project/:report',
     label: 'Report board',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'dataset',
     route: '/v1/menu/:project/:report/:dataset',
     label: 'Dataset',
   ),
-  TrackingScreen(
+  TrailScreen(
     name: 'embed',
     route: '/v1/embed/:project/:report/:dataset',
     label: 'Embedded dataset',
   ),
-  TrackingScreen(name: 'sync', route: '/sync', label: 'Authentication return'),
+  TrailScreen(name: 'sync', route: '/sync', label: 'Authentication return'),
 ];
-const reportElements = <String, TrackingElement>{
-  'auth.message.home': TrackingElement(
+const reportElements = <String, TrailElement>{
+  'auth.message.home': TrailElement(
     id: 'auth.message.home',
     label: 'Auth message home',
     path: 'auth > message > home',
   ),
-  'auth.message.action': TrackingElement(
+  'auth.message.action': TrailElement(
     id: 'auth.message.action',
     label: 'Auth message action',
     path: 'auth > message > action',
   ),
-  'catalog.project_mode.select': TrackingElement(
+  'catalog.project_mode.select': TrailElement(
     id: 'catalog.project_mode.select',
     label: 'Catalog project mode select',
     path: 'catalog > project_mode > select',
   ),
-  'public.contact.community': TrackingElement(
+  'public.contact.community': TrailElement(
     id: 'public.contact.community',
     label: 'Public contact community',
     path: 'public > contact > community',
   ),
-  'public.overview.login': TrackingElement(
+  'public.overview.login': TrailElement(
     id: 'public.overview.login',
     label: 'Public overview login',
     path: 'public > overview > login',
   ),
-  'public.overview.reports': TrackingElement(
+  'public.overview.reports': TrailElement(
     id: 'public.overview.reports',
     label: 'Public overview reports',
     path: 'public > overview > reports',
   ),
-  'public.project.repository': TrackingElement(
+  'public.project.repository': TrailElement(
     id: 'public.project.repository',
     label: 'Public project repository',
     path: 'public > project > repository',
   ),
-  'public.project.website': TrackingElement(
+  'public.project.website': TrailElement(
     id: 'public.project.website',
     label: 'Public project website',
     path: 'public > project > website',
   ),
-  'public.project.reports': TrackingElement(
+  'public.project.reports': TrailElement(
     id: 'public.project.reports',
     label: 'Public project reports',
     path: 'public > project > reports',
   ),
-  'public.science.topic': TrackingElement(
+  'public.science.topic': TrailElement(
     id: 'public.science.topic',
     label: 'Public science topic',
     path: 'public > science > topic',
   ),
-  'catalog.report.search': TrackingElement(
+  'catalog.report.search': TrailElement(
     id: 'catalog.report.search',
     label: 'Catalog report search',
     path: 'catalog > report > search',
   ),
-  'catalog.session.login': TrackingElement(
+  'catalog.session.login': TrailElement(
     id: 'catalog.session.login',
     label: 'Catalog session login',
     path: 'catalog > session > login',
   ),
-  'catalog.error.retry': TrackingElement(
+  'catalog.error.retry': TrailElement(
     id: 'catalog.error.retry',
     label: 'Catalog error retry',
     path: 'catalog > error > retry',
   ),
-  'catalog.card.open': TrackingElement(
+  'catalog.card.open': TrailElement(
     id: 'catalog.card.open',
     label: 'Catalog card open',
     path: 'catalog > card > open',
   ),
-  'catalog.pagination.next': TrackingElement(
+  'catalog.pagination.next': TrailElement(
     id: 'catalog.pagination.next',
     label: 'Catalog pagination next',
     path: 'catalog > pagination > next',
   ),
-  'catalog.pagination.previous': TrackingElement(
+  'catalog.pagination.previous': TrailElement(
     id: 'catalog.pagination.previous',
     label: 'Catalog pagination previous',
     path: 'catalog > pagination > previous',
   ),
-  'catalog.view.select': TrackingElement(
+  'catalog.view.select': TrailElement(
     id: 'catalog.view.select',
     label: 'Catalog view select',
     path: 'catalog > view > select',
   ),
-  'catalog.tier.open': TrackingElement(
+  'catalog.tier.open': TrailElement(
     id: 'catalog.tier.open',
     label: 'Catalog tier open',
     path: 'catalog > tier > open',
   ),
-  'dataset.table.next': TrackingElement(
+  'dataset.table.next': TrailElement(
     id: 'dataset.table.next',
     label: 'Dataset table next',
     path: 'dataset > table > next',
   ),
-  'dataset.table.previous': TrackingElement(
+  'dataset.table.previous': TrailElement(
     id: 'dataset.table.previous',
     label: 'Dataset table previous',
     path: 'dataset > table > previous',
   ),
-  'dataset.table.sort': TrackingElement(
+  'dataset.table.sort': TrailElement(
     id: 'dataset.table.sort',
     label: 'Dataset table sort',
     path: 'dataset > table > sort',
   ),
-  'catalog.carousel.project': TrackingElement(
+  'catalog.carousel.project': TrailElement(
     id: 'catalog.carousel.project',
     label: 'Catalog carousel project',
     path: 'catalog > carousel > project',
   ),
-  'catalog.carousel.surface': TrackingElement(
+  'catalog.carousel.surface': TrailElement(
     id: 'catalog.carousel.surface',
     label: 'Catalog carousel surface',
     path: 'catalog > carousel > surface',
   ),
-  'catalog.carousel.arrow': TrackingElement(
+  'catalog.carousel.arrow': TrailElement(
     id: 'catalog.carousel.arrow',
     label: 'Catalog carousel arrow',
     path: 'catalog > carousel > arrow',
   ),
-  'catalog.project.website': TrackingElement(
+  'catalog.project.website': TrailElement(
     id: 'catalog.project.website',
     label: 'Catalog project website',
     path: 'catalog > project > website',
   ),
-  'catalog.project.reports': TrackingElement(
+  'catalog.project.reports': TrailElement(
     id: 'catalog.project.reports',
     label: 'Catalog project reports',
     path: 'catalog > project > reports',
   ),
-  'public.formula.open': TrackingElement(
+  'public.formula.open': TrailElement(
     id: 'public.formula.open',
     label: 'Public formula open',
     path: 'public > formula > open',
   ),
-  'public.card.open': TrackingElement(
+  'public.card.open': TrailElement(
     id: 'public.card.open',
     label: 'Public card open',
     path: 'public > card > open',
   ),
-  'public.link.open': TrackingElement(
+  'public.link.open': TrailElement(
     id: 'public.link.open',
     label: 'Public link open',
     path: 'public > link > open',
   ),
-  'public.feature.open': TrackingElement(
+  'public.feature.open': TrailElement(
     id: 'public.feature.open',
     label: 'Public feature open',
     path: 'public > feature > open',
   ),
-  'public.footer.open': TrackingElement(
+  'public.footer.open': TrailElement(
     id: 'public.footer.open',
     label: 'Public footer open',
     path: 'public > footer > open',
   ),
-  'report.export.format': TrackingElement(
+  'report.export.format': TrailElement(
     id: 'report.export.format',
     label: 'Report export format',
     path: 'report > export > format',
   ),
-  'report.export.open': TrackingElement(
+  'report.export.open': TrailElement(
     id: 'report.export.open',
     label: 'Report export open',
     path: 'report > export > open',
   ),
-  'report.layout.resize': TrackingElement(
+  'report.layout.resize': TrailElement(
     id: 'report.layout.resize',
     label: 'Report layout resize',
     path: 'report > layout > resize',
   ),
-  'report.layout.drag': TrackingElement(
+  'report.layout.drag': TrailElement(
     id: 'report.layout.drag',
     label: 'Report layout drag',
     path: 'report > layout > drag',
   ),
-  'dataset.filter.range.input': TrackingElement(
+  'dataset.filter.range.input': TrailElement(
     id: 'dataset.filter.range.input',
     label: 'Dataset filter range input',
     path: 'dataset > filter > range > input',
   ),
-  'dataset.filter.category.apply': TrackingElement(
+  'dataset.filter.category.apply': TrailElement(
     id: 'dataset.filter.category.apply',
     label: 'Dataset filter category apply',
     path: 'dataset > filter > category > apply',
   ),
-  'dataset.filter.category.all': TrackingElement(
+  'dataset.filter.category.all': TrailElement(
     id: 'dataset.filter.category.all',
     label: 'Dataset filter category all',
     path: 'dataset > filter > category > all',
   ),
-  'dataset.filter.category.toggle': TrackingElement(
+  'dataset.filter.category.toggle': TrailElement(
     id: 'dataset.filter.category.toggle',
     label: 'Dataset filter category toggle',
     path: 'dataset > filter > category > toggle',
   ),
-  'dataset.filter.category.search': TrackingElement(
+  'dataset.filter.category.search': TrailElement(
     id: 'dataset.filter.category.search',
     label: 'Dataset filter category search',
     path: 'dataset > filter > category > search',
   ),
-  'dataset.filter.category.open': TrackingElement(
+  'dataset.filter.category.open': TrailElement(
     id: 'dataset.filter.category.open',
     label: 'Dataset filter category open',
     path: 'dataset > filter > category > open',
   ),
-  'dataset.filter.category.option': TrackingElement(
+  'dataset.filter.category.option': TrailElement(
     id: 'dataset.filter.category.option',
     label: 'Dataset filter category option',
     path: 'dataset > filter > category > option',
   ),
-  'dataset.filter.reset': TrackingElement(
+  'dataset.filter.reset': TrailElement(
     id: 'dataset.filter.reset',
     label: 'Dataset filter reset',
     path: 'dataset > filter > reset',
   ),
-  'dataset.menu.open': TrackingElement(
+  'dataset.menu.open': TrailElement(
     id: 'dataset.menu.open',
     label: 'Dataset menu open',
     path: 'dataset > menu > open',
   ),
-  'dataset.info.close': TrackingElement(
+  'dataset.info.close': TrailElement(
     id: 'dataset.info.close',
     label: 'Dataset info close',
     path: 'dataset > info > close',
   ),
-  'dataset.error.retry': TrackingElement(
+  'dataset.error.retry': TrailElement(
     id: 'dataset.error.retry',
     label: 'Dataset error retry',
     path: 'dataset > error > retry',
   ),
-  'dataset.view.expand': TrackingElement(
+  'dataset.view.expand': TrailElement(
     id: 'dataset.view.expand',
     label: 'Dataset view expand',
     path: 'dataset > view > expand',
   ),
-  'report.layout.edit': TrackingElement(
+  'report.layout.edit': TrailElement(
     id: 'report.layout.edit',
     label: 'Report layout edit',
     path: 'report > layout > edit',
   ),
-  'report.layout.save': TrackingElement(
+  'report.layout.save': TrailElement(
     id: 'report.layout.save',
     label: 'Report layout save',
     path: 'report > layout > save',
   ),
-  'report.layout.cancel': TrackingElement(
+  'report.layout.cancel': TrailElement(
     id: 'report.layout.cancel',
     label: 'Report layout cancel',
     path: 'report > layout > cancel',
   ),
-  'report.layout.reset': TrackingElement(
+  'report.layout.reset': TrailElement(
     id: 'report.layout.reset',
     label: 'Report layout reset',
     path: 'report > layout > reset',
   ),
-  'report.section.cancel': TrackingElement(
+  'report.section.cancel': TrailElement(
     id: 'report.section.cancel',
     label: 'Report section cancel',
     path: 'report > section > cancel',
   ),
-  'report.section.save': TrackingElement(
+  'report.section.save': TrailElement(
     id: 'report.section.save',
     label: 'Report section save',
     path: 'report > section > save',
   ),
-  'report.section.name': TrackingElement(
+  'report.section.name': TrailElement(
     id: 'report.section.name',
     label: 'Report section name',
     path: 'report > section > name',
   ),
-  'report.section.rename': TrackingElement(
+  'report.section.rename': TrailElement(
     id: 'report.section.rename',
     label: 'Report section rename',
     path: 'report > section > rename',
   ),
-  'report.section.select': TrackingElement(
+  'report.section.select': TrailElement(
     id: 'report.section.select',
     label: 'Report section select',
     path: 'report > section > select',
   ),
-  'dataset.share.copy': TrackingElement(
+  'dataset.share.copy': TrailElement(
     id: 'dataset.share.copy',
     label: 'Dataset share copy',
     path: 'dataset > share > copy',
   ),
-  'dataset.share.close': TrackingElement(
+  'dataset.share.close': TrailElement(
     id: 'dataset.share.close',
     label: 'Dataset share close',
     path: 'dataset > share > close',
   ),
-  'dataset.share.mode': TrackingElement(
+  'dataset.share.mode': TrailElement(
     id: 'dataset.share.mode',
     label: 'Dataset share mode',
     path: 'dataset > share > mode',
   ),
-  'shell.breadcrumb.open': TrackingElement(
+  'shell.breadcrumb.open': TrailElement(
     id: 'shell.breadcrumb.open',
     label: 'Shell breadcrumb open',
     path: 'shell > breadcrumb > open',
   ),
-  'shell.guest.dismiss': TrackingElement(
+  'shell.guest.dismiss': TrailElement(
     id: 'shell.guest.dismiss',
     label: 'Shell guest dismiss',
     path: 'shell > guest > dismiss',
   ),
-  'shell.guest.signup': TrackingElement(
+  'shell.guest.signup': TrailElement(
     id: 'shell.guest.signup',
     label: 'Shell guest signup',
     path: 'shell > guest > signup',
   ),
-  'shell.guest.login': TrackingElement(
+  'shell.guest.login': TrailElement(
     id: 'shell.guest.login',
     label: 'Shell guest login',
     path: 'shell > guest > login',
   ),
-  'report.description.expand': TrackingElement(
+  'report.description.expand': TrailElement(
     id: 'report.description.expand',
     label: 'Report description expand',
     path: 'report > description > expand',
   ),
-  'shell.sidebar.icon': TrackingElement(
+  'shell.sidebar.icon': TrailElement(
     id: 'shell.sidebar.icon',
     label: 'Shell sidebar icon',
     path: 'shell > sidebar > icon',
   ),
-  'shell.sidebar.navigate': TrackingElement(
+  'shell.sidebar.navigate': TrailElement(
     id: 'shell.sidebar.navigate',
     label: 'Shell sidebar navigate',
     path: 'shell > sidebar > navigate',
   ),
-  'shell.sidebar.group': TrackingElement(
+  'shell.sidebar.group': TrailElement(
     id: 'shell.sidebar.group',
     label: 'Shell sidebar group',
     path: 'shell > sidebar > group',
   ),
-  'shell.sidebar.toggle': TrackingElement(
+  'shell.sidebar.toggle': TrailElement(
     id: 'shell.sidebar.toggle',
     label: 'Shell sidebar toggle',
     path: 'shell > sidebar > toggle',
   ),
-  'shell.account.logout': TrackingElement(
+  'shell.account.logout': TrailElement(
     id: 'shell.account.logout',
     label: 'Shell account logout',
     path: 'shell > account > logout',
   ),
-  'dataset.menu.move': TrackingElement(
+  'dataset.menu.move': TrailElement(
     id: 'dataset.menu.move',
     label: 'Dataset menu move',
     path: 'dataset > menu > move',
   ),
-  'dataset.menu.minimize': TrackingElement(
+  'dataset.menu.minimize': TrailElement(
     id: 'dataset.menu.minimize',
     label: 'Dataset menu minimize',
     path: 'dataset > menu > minimize',
   ),
-  'dataset.menu.share': TrackingElement(
+  'dataset.menu.share': TrailElement(
     id: 'dataset.menu.share',
     label: 'Dataset menu share',
     path: 'dataset > menu > share',
   ),
-  'dataset.menu.table': TrackingElement(
+  'dataset.menu.table': TrailElement(
     id: 'dataset.menu.table',
     label: 'Dataset menu table',
     path: 'dataset > menu > table',
   ),
-  'dataset.menu.info': TrackingElement(
+  'dataset.menu.info': TrailElement(
     id: 'dataset.menu.info',
     label: 'Dataset menu info',
     path: 'dataset > menu > info',
   ),
-  'dataset.chart.surface': TrackingElement(
+  'dataset.chart.surface': TrailElement(
     id: 'dataset.chart.surface',
     label: 'Dataset chart surface',
     path: 'dataset > chart > surface',
   ),
-  'shell.navigation.home': TrackingElement(
+  'shell.navigation.home': TrailElement(
     id: 'shell.navigation.home',
     label: 'Shell navigation home',
     path: 'shell > navigation > home',
   ),
-  'shell.navigation.overview': TrackingElement(
+  'shell.navigation.overview': TrailElement(
     id: 'shell.navigation.overview',
     label: 'Shell navigation overview',
     path: 'shell > navigation > overview',
   ),
-  'shell.navigation.projects': TrackingElement(
+  'shell.navigation.projects': TrailElement(
     id: 'shell.navigation.projects',
     label: 'Shell navigation projects',
     path: 'shell > navigation > projects',
   ),
-  'shell.navigation.reports': TrackingElement(
+  'shell.navigation.reports': TrailElement(
     id: 'shell.navigation.reports',
     label: 'Shell navigation reports',
     path: 'shell > navigation > reports',
   ),
-  'shell.navigation.science': TrackingElement(
+  'shell.navigation.science': TrailElement(
     id: 'shell.navigation.science',
     label: 'Shell navigation science',
     path: 'shell > navigation > science',
   ),
-  'shell.navigation.architecture': TrackingElement(
+  'shell.navigation.architecture': TrailElement(
     id: 'shell.navigation.architecture',
     label: 'Shell navigation architecture',
     path: 'shell > navigation > architecture',
   ),
-  'shell.navigation.contact': TrackingElement(
+  'shell.navigation.contact': TrailElement(
     id: 'shell.navigation.contact',
     label: 'Shell navigation contact',
     path: 'shell > navigation > contact',
   ),
-  'shell.navigation.menu': TrackingElement(
+  'shell.navigation.menu': TrailElement(
     id: 'shell.navigation.menu',
     label: 'Shell navigation menu',
     path: 'shell > navigation > menu',
   ),
-  'shell.navigation.close': TrackingElement(
+  'shell.navigation.close': TrailElement(
     id: 'shell.navigation.close',
     label: 'Shell navigation close',
     path: 'shell > navigation > close',
   ),
-  'shell.theme.toggle': TrackingElement(
+  'shell.theme.toggle': TrailElement(
     id: 'shell.theme.toggle',
     label: 'Shell theme toggle',
     path: 'shell > theme > toggle',
   ),
-  'shell.language.english': TrackingElement(
+  'shell.language.english': TrailElement(
     id: 'shell.language.english',
     label: 'Shell language english',
     path: 'shell > language > english',
   ),
-  'shell.language.portuguese': TrackingElement(
+  'shell.language.portuguese': TrailElement(
     id: 'shell.language.portuguese',
     label: 'Shell language portuguese',
     path: 'shell > language > portuguese',
   ),
-  'shell.language.thai': TrackingElement(
+  'shell.language.thai': TrailElement(
     id: 'shell.language.thai',
     label: 'Shell language thai',
     path: 'shell > language > thai',
   ),
-  'dataset.share.link': TrackingElement(
+  'dataset.share.link': TrailElement(
     id: 'dataset.share.link',
     label: 'Dataset share link',
     path: 'dataset > share > link',
   ),
-  'dataset.share.embed': TrackingElement(
+  'dataset.share.embed': TrailElement(
     id: 'dataset.share.embed',
     label: 'Dataset share embed',
     path: 'dataset > share > embed',
   ),
-  'report.export.pdf': TrackingElement(
+  'report.export.pdf': TrailElement(
     id: 'report.export.pdf',
     label: 'Report export pdf',
     path: 'report > export > pdf',
   ),
-  'report.export.markdown': TrackingElement(
+  'report.export.markdown': TrailElement(
     id: 'report.export.markdown',
     label: 'Report export markdown',
     path: 'report > export > markdown',
   ),
-  'report.export.csv': TrackingElement(
+  'report.export.csv': TrailElement(
     id: 'report.export.csv',
     label: 'Report export csv',
     path: 'report > export > csv',
   ),
-  'catalog.carousel.previous': TrackingElement(
+  'catalog.carousel.previous': TrailElement(
     id: 'catalog.carousel.previous',
     label: 'Catalog carousel previous',
     path: 'catalog > carousel > previous',
   ),
-  'catalog.carousel.next': TrackingElement(
+  'catalog.carousel.next': TrailElement(
     id: 'catalog.carousel.next',
     label: 'Catalog carousel next',
     path: 'catalog > carousel > next',
   ),
-  'catalog.tier.option': TrackingElement(
+  'catalog.tier.option': TrailElement(
     id: 'catalog.tier.option',
     label: 'Catalog tier option',
     path: 'catalog > tier > option',
   ),
-  'architecture.surface': TrackingElement(
+  'architecture.surface': TrailElement(
     id: 'architecture.surface',
     label: 'Architecture surface',
     path: 'architecture > surface',
   ),
-  'catalog.surface': TrackingElement(
+  'catalog.surface': TrailElement(
     id: 'catalog.surface',
     label: 'Catalog surface',
     path: 'catalog > surface',
   ),
-  'contact.surface': TrackingElement(
+  'contact.surface': TrailElement(
     id: 'contact.surface',
     label: 'Contact surface',
     path: 'contact > surface',
   ),
-  'dataset.surface': TrackingElement(
+  'dataset.surface': TrailElement(
     id: 'dataset.surface',
     label: 'Dataset surface',
     path: 'dataset > surface',
   ),
-  'embed.surface': TrackingElement(
+  'embed.surface': TrailElement(
     id: 'embed.surface',
     label: 'Embed surface',
     path: 'embed > surface',
   ),
-  'overview.surface': TrackingElement(
+  'overview.surface': TrailElement(
     id: 'overview.surface',
     label: 'Overview surface',
     path: 'overview > surface',
   ),
-  'projects.surface': TrackingElement(
+  'projects.surface': TrailElement(
     id: 'projects.surface',
     label: 'Projects surface',
     path: 'projects > surface',
   ),
-  'report.surface': TrackingElement(
+  'report.surface': TrailElement(
     id: 'report.surface',
     label: 'Report surface',
     path: 'report > surface',
   ),
-  'report_catalog.surface': TrackingElement(
+  'report_catalog.surface': TrailElement(
     id: 'report_catalog.surface',
     label: 'Report catalog surface',
     path: 'report_catalog > surface',
   ),
-  'science.surface': TrackingElement(
+  'science.surface': TrailElement(
     id: 'science.surface',
     label: 'Science surface',
     path: 'science > surface',
   ),
-  'sync.surface': TrackingElement(
+  'sync.surface': TrailElement(
     id: 'sync.surface',
     label: 'Sync surface',
     path: 'sync > surface',
@@ -607,12 +603,12 @@ Widget track(
         child: child,
       );
 void trackSubmit(BuildContext context, String id) =>
-    TrackingScope.maybeOf(context)?.event('submit', reportElements[id]!);
+    ScreenTrailScope.maybeOf(context)?.event('submit', reportElements[id]!);
 void trackInput(
   BuildContext context,
   String id,
   String? value, {
   bool sensitive = false,
-}) => TrackingScope.maybeOf(
+}) => ScreenTrailScope.maybeOf(
   context,
 )?.event('input', reportElements[id]!, value: value, sensitive: sensitive);

@@ -25,15 +25,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.5"
-  asodya_tracking:
-    dependency: "direct main"
-    description:
-      path: "."
-      ref: "48db2722b8e1017f33e5c5ae29475a4c6ef4ba3d"
-      resolved-ref: "48db2722b8e1017f33e5c5ae29475a4c6ef4ba3d"
-      url: "https://github.com/wilsonborba/asodya_tracking.git"
-    source: git
-    version: "0.1.0"
   async:
     dependency: transitive
     description:
@@ -425,6 +416,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.0"
+  screen_trail:
+    dependency: "direct main"
+    description:
+      name: screen_trail
+      sha256: d062cda7c1587b1a608de8f885c7810486bbd1a2393ebecd5a971b79745fac8b
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.0"
   shared_preferences:
     dependency: "direct main"
     description:

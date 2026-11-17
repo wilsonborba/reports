@@ -20,22 +20,34 @@ class ClientTelemetryService {
   final bool _autoFlush;
   final String endpoint, appVersion, environment;
   final String? Function() currentRoute;
-  AsodyaTracker? _tracker;
+  ScreenTrail? _tracker;
   final Map<String, DateTime> _recentErrors = {};
   static const duplicateThrottleWindow = Duration(seconds: 15);
   static String? _browserRoute() => kIsWeb ? Uri.base.path : null;
-  AsodyaTracker get tracker => _tracker ??= AsodyaTracker(
+  HttpTrailTransport? _transport;
+  ScreenTrail get tracker => _tracker ??= ScreenTrail(
     appId: 'reports',
-    baseUrl: Uri.parse(endpoint).origin,
     buildVersion: appVersion,
     screens: reportScreens,
-    client: _client,
+    transport: _transport = HttpTrailTransport(
+      eventsUri: Uri.parse(
+        '${Uri.parse(endpoint).origin}/apps/api/v1/telemetry/events',
+      ),
+      errorsUri: Uri.parse(
+        '${Uri.parse(endpoint).origin}/apps/api/v1/telemetry/errors',
+      ),
+      includeCredentials: true,
+      client: _client,
+    ),
+    recordTypedText: true,
     autoFlush: _autoFlush,
   );
   void init() => tracker.installErrorCapture();
-  void detach(AsodyaTracker current) {
+  void detach(ScreenTrail current) {
     if (identical(_tracker, current)) {
       _tracker = null;
+      _transport?.close();
+      _transport = null;
     }
     current.dispose();
   }
