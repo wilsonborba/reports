@@ -1127,3 +1127,94 @@ pub async fn operations(
         running_calculations: state.datasets.running_calculations(),
     }))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct DatasetMetaBody {
+    pub source: String,
+    #[serde(default)]
+    pub source_url: String,
+    #[serde(default)]
+    pub period_start: String,
+    #[serde(default)]
+    pub period_end: String,
+    #[serde(default = "default_utc_tz")]
+    pub timezone: String,
+    #[serde(default = "default_live_mode")]
+    pub freshness_mode: String,
+    #[serde(default = "default_refresh_mins")]
+    pub expected_refresh_minutes: i64,
+    #[serde(default)]
+    pub field_semantics: Vec<catalog::FieldSemantics>,
+}
+
+fn default_utc_tz() -> String {
+    "UTC".to_string()
+}
+
+fn default_live_mode() -> String {
+    "live".to_string()
+}
+
+fn default_refresh_mins() -> i64 {
+    60
+}
+
+pub async fn put_dataset_meta(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset)): Path<(String, String, String)>,
+    Json(body): Json<DatasetMetaBody>,
+) -> Result<Response, ReportError> {
+    require_admin(&scope, &project)?;
+    let ds = catalog::get_dataset(&state.stores.db, &project, &report, &dataset)
+        .await?
+        .ok_or_else(|| ReportError::NotFound("dataset not found".into()))?;
+    let meta = catalog::DatasetMeta {
+        source: body.source,
+        source_url: body.source_url,
+        period_start: body.period_start,
+        period_end: body.period_end,
+        timezone: body.timezone,
+        freshness_mode: body.freshness_mode,
+        expected_refresh_minutes: body.expected_refresh_minutes,
+        updated_at: chrono::Utc::now().timestamp(),
+        tier: catalog::tier_text(ds.data_tier).to_string(),
+    };
+    catalog::upsert_dataset_meta(&state.stores.db, &project, &report, &dataset, &meta).await?;
+    catalog::upsert_field_semantics(
+        &state.stores.db,
+        &project,
+        &report,
+        &dataset,
+        &body.field_semantics,
+    )
+    .await?;
+    state
+        .datasets
+        .invalidate_visibility_change(&project, &report)
+        .await;
+    Ok(private(json!({
+        "meta": meta,
+        "field_semantics": body.field_semantics,
+    })))
+}
+
+pub async fn get_dataset_meta(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset)): Path<(String, String, String)>,
+) -> Result<Response, ReportError> {
+    require_admin(&scope, &project)?;
+    let ds = catalog::get_dataset(&state.stores.db, &project, &report, &dataset)
+        .await?
+        .ok_or_else(|| ReportError::NotFound("dataset not found".into()))?;
+    let meta =
+        catalog::get_dataset_meta(&state.stores.db, &project, &report, &dataset, ds.data_tier)
+            .await?;
+    let semantics =
+        catalog::list_field_semantics(&state.stores.db, &project, &report, &dataset).await?;
+    Ok(private(json!({
+        "meta": meta,
+        "field_semantics": semantics.into_values().collect::<Vec<_>>(),
+    })))
+}

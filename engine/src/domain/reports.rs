@@ -313,6 +313,7 @@ fn skeleton_descriptor(d: &DatasetRecord, visibility: Visibility, lang: &str) ->
         filters: Vec::new(),
         can_view: false,
         visibility: visibility.as_str().to_string(),
+        meta: None,
     })
 }
 

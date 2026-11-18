@@ -4,6 +4,7 @@
 
 ### Features
 
+- *(datasets)* Add normalized `dataset_meta` and `dataset_field_semantics` tables, validation, `meta` block, and field semantics in dataset responses (#48)
 - *(owner-api)* Add owner APIs to create, replace dataset with If-Match/idempotency, change visibility, and delete user charts/diagrams with reuse warning (#42)
 - *(access)* Add per-user ownership, source app, control authority, audiences, user-scoped caches, and visibility cache invalidation (#41)
 - *(logs)* Stream redacted engine logs from the journald writer
