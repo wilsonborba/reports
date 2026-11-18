@@ -1,7 +1,7 @@
 //! SQL access for PostgreSQL `asodya_reports` (production) and SQLite (tests).
 //!
 //! Both use the same queries through the sqlx `Any` driver. The few dialect differences
-//! (JSONB and UUID casts, booleans, the current time) come from [`Db`] helper methods.
+//! (UUID casts, booleans, the current time) come from [`Db`] helper methods.
 //! The engine never runs DDL here: `scripts/migrate.sh` owns the PostgreSQL schema.
 
 use std::sync::Once;
@@ -29,38 +29,99 @@ pub const REQUIRED_SCHEMA: &[(&str, &[&str])] = &[
     (
         "catalog_projects",
         &[
-            "slug", "name", "tagline", "description", "theme", "is_active", "website_url", "repository_url",
-            "sort_order", "domain_project_id", "updated_at",
+            "slug",
+            "is_active",
+            "website_url",
+            "repository_url",
+            "sort_order",
+            "domain_project_id",
+            "updated_at",
         ],
     ),
     (
         "reports",
-        &["project_slug", "slug", "title", "description", "metadata", "visibility", "discoverable", "updated_at"],
+        &[
+            "project_slug",
+            "slug",
+            "sort_order",
+            "period_collection",
+            "period_field",
+            "visibility",
+            "discoverable",
+            "updated_at",
+        ],
     ),
     (
         "datasets",
-        &["project_slug", "report_slug", "dataset_id", "data_tier", "calculation_id", "calculation_version", "visibility", "discoverable"],
+        &[
+            "project_slug",
+            "report_slug",
+            "dataset_id",
+            "data_tier",
+            "calculation_id",
+            "calculation_version",
+            "visibility",
+            "discoverable",
+        ],
     ),
     (
         "calculation_versions",
         &[
-            "project_slug", "calculation_id", "version", "status", "input_schema", "input_schema_version", "inputs",
-            "definition", "needs_review", "created_at", "published_at",
+            "project_slug",
+            "calculation_id",
+            "version",
+            "status",
+            "input_schema",
+            "input_schema_version",
+            "needs_review",
+            "created_at",
+            "published_at",
         ],
     ),
-    ("user_project_roles", &["user_uuid", "app_name", "is_project_admin"]),
-    ("fixture_manifest", &["manifest_id", "entity_type", "entity_id", "created_at"]),
+    (
+        "user_project_roles",
+        &["user_uuid", "app_name", "is_project_admin"],
+    ),
+    (
+        "fixture_manifest",
+        &["manifest_id", "entity_type", "entity_id", "created_at"],
+    ),
     (
         "resource_grants",
-        &["id", "user_uuid", "resource_type", "project_slug", "report_slug", "card_id", "granted_by", "created_at"],
+        &[
+            "id",
+            "user_uuid",
+            "resource_type",
+            "project_slug",
+            "report_slug",
+            "card_id",
+            "granted_by",
+            "created_at",
+        ],
     ),
     (
         "schema_versions",
-        &["project_slug", "schema_name", "version", "status", "description", "created_at", "published_at"],
+        &[
+            "project_slug",
+            "schema_name",
+            "version",
+            "status",
+            "description",
+            "created_at",
+            "published_at",
+        ],
     ),
     (
         "schema_fields",
-        &["project_slug", "schema_name", "version", "field_path", "field_type", "is_required", "description"],
+        &[
+            "project_slug",
+            "schema_name",
+            "version",
+            "field_path",
+            "field_type",
+            "is_required",
+            "description",
+        ],
     ),
 ];
 
@@ -81,7 +142,9 @@ impl Db {
         let options = match dialect {
             Dialect::Sqlite => options.max_connections(1).after_connect(|conn, _| {
                 Box::pin(async move {
-                    sqlx::query("PRAGMA foreign_keys = ON").execute(conn).await?;
+                    sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(conn)
+                        .await?;
                     Ok(())
                 })
             }),
@@ -91,14 +154,6 @@ impl Db {
             .connect_lazy(url)
             .map_err(|e| ReportError::Unavailable(format!("database configuration: {e}")))?;
         Ok(Self { pool, dialect })
-    }
-
-    /// `$n` as JSON input.
-    pub fn json_in(&self, n: usize) -> String {
-        match self.dialect {
-            Dialect::Postgres => format!("CAST(${n} AS JSONB)"),
-            Dialect::Sqlite => format!("${n}"),
-        }
     }
 
     /// `$n` as UUID input.
@@ -161,7 +216,10 @@ impl Db {
     /// Fails when a required table or column is missing. It changes nothing.
     pub async fn check_schema(&self) -> Result<(), ReportError> {
         let mut missing = Vec::new();
-        for (table, columns) in REQUIRED_SCHEMA {
+        for (table, columns) in REQUIRED_SCHEMA
+            .iter()
+            .chain(super::calculation_shape::REQUIRED.iter())
+        {
             let present = self.columns(table).await?;
             for c in *columns {
                 if !present.iter().any(|p| p == c) {
@@ -205,22 +263,15 @@ impl Db {
     /// Creates the test schema in a SQLite database. Production never calls this.
     pub async fn create_sqlite_test_schema(&self) -> Result<(), ReportError> {
         if self.dialect != Dialect::Sqlite {
-            return Err(ReportError::Internal("the test schema is only for SQLite".into()));
+            return Err(ReportError::Internal(
+                "the test schema is only for SQLite".into(),
+            ));
         }
         sqlx::raw_sql(include_str!("../../migrations/sqlite/test_schema.sql"))
             .execute(&self.pool)
             .await?;
         Ok(())
     }
-}
-
-/// Reads a text column that holds JSON.
-pub fn json_col<T: serde::de::DeserializeOwned + Default>(row: &AnyRow, column: &str) -> Result<T, ReportError> {
-    let text: String = row.try_get(column)?;
-    if text.trim().is_empty() {
-        return Ok(T::default());
-    }
-    serde_json::from_str(&text).map_err(|e| ReportError::Database(format!("column {column} is not valid JSON: {e}")))
 }
 
 /// Bind value of an optional text: '' for None (read it with [`Db::opt_in`]).

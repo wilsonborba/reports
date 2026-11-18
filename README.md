@@ -42,10 +42,46 @@ scripts/migrate.sh --dry-run   # show the targets and the migration files
 scripts/migrate.sh --yes       # apply engine/migrations/*.sql and the CouchDB database/indexes
 ```
 
-Migrations hold structure only. Projects, reports and sample data are added through the
-admin API. The engine never runs DDL: at start it checks the required tables and columns
+Migration 007 converts existing catalog and calculation data into normalized rows.
+Stop engine writers before applying it. Each migration runs in one transaction.
+Applied migrations 001, 005 and 006 remain unchanged. For pre-006 databases
+with inline dataset definitions, the runner applies 007 before the historical
+006 drops those definitions. Later runs use the same idempotent migration path.
+Projects, reports and sample data are added through the admin API. The engine never runs DDL: at start it checks the required tables and columns
 and stops with a message that names `scripts/migrate.sh` when the schema is missing or
 outdated.
+
+Storage normalization replaces localized catalog fields, theme colors, report metadata,
+calculation inputs and definition components with constrained rows and parent foreign keys.
+Untyped legacy card/settings values and draft operands use scalar/property rows.
+No current PostgreSQL column stores JSON or an array. API models and cache keys stay unchanged.
+The SQLite test schema mirrors these tables. Historical schemas under test fixtures are
+prior-release evidence; they do not define the current schema.
+
+Rollback uses a separate empty database and the schema from the prior release containing
+migration 006. Keep the export private. Stop writers, then run:
+
+```bash
+# Set REPORTS_STORAGE_DATABASE_URL explicitly to the normalized source database.
+python3 scripts/storage_rollback.py --export storage-export.json
+# Set REPORTS_STORAGE_DATABASE_URL explicitly to a separate empty restoration database.
+python3 scripts/storage_rollback.py --restore storage-export.json --historical-schema prior-release-schema.sql
+```
+
+Verify the restored database before starting the prior engine against it. Preserve the
+normalized source database until verification succeeds. Restoring into a nonempty schema
+fails. The export includes current drafts and versions. Schema 005 cannot represent them,
+so it is supported as an upgrade source only. Older inline dataset specs become published
+calculation versions during upgrade. The engine does not run migrations at startup.
+
+To test historical upgrades, schema constraints, rollback and idempotence, set
+`REPORTS_NORMALIZED_TEST_DATABASE_URL` to an isolated PostgreSQL 16 database whose name
+ends with `_test`. The test resets that database's public schema:
+
+```bash
+python3 scripts/test_storage_migration.py --reset-test-schema
+cargo test --manifest-path engine/Cargo.toml --test normalized_storage_test
+```
 
 ## Install and run
 
