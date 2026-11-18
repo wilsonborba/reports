@@ -15,7 +15,7 @@
 
 ### Refactoring
 
-- *(storage)* Normalize legacy catalog and calculation data with tested migration and rollback (#40)
+- *(storage)* Normalize catalog and calculations with tested rollback while preserving applied migrations (#40)
 
 ### Other
 

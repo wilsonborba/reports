@@ -20,6 +20,15 @@ spec=importlib.util.spec_from_file_location('rollback',root/'scripts/storage_rol
 identity=sql('SELECT current_database()')
 if not identity.endswith('_test'):raise SystemExit('The database name must end with _test')
 print('Isolated migration test database:',identity)
+def apply_migrations():
+ result=subprocess.run([str(root/'scripts/migrate_postgres.sh')],env=dict(os.environ,DATABASE_URL=url),text=True,capture_output=True)
+ if result.returncode:raise RuntimeError(result.stderr)
+# A fresh database must work with the unchanged historical files as well.
+sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+apply_migrations()
+assert sql("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND data_type IN ('json','jsonb','ARRAY')")=='0'
+print('fresh schema passed')
+
 for version in [6,5]:
  sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
  sql((root/f'engine/tests/fixtures/legacy_{version}_schema.sql').read_text())
@@ -34,19 +43,19 @@ for version in [6,5]:
   seed+="INSERT INTO datasets(project_slug,report_slug,dataset_id,calculation_id,calculation_version) VALUES('legacy','report','dataset','calculation',1);"
  else:seed+="INSERT INTO datasets(project_slug,report_slug,dataset_id,spec) VALUES('legacy','report','dataset',"+q(json.dumps(definition))+');'
  sql(seed)
- for f in sorted((root/'engine/migrations').glob('*.sql')):sql('BEGIN;\n'+f.read_text()+'\nCOMMIT;')
+ apply_migrations()
  assert sql("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND (data_type IN ('json','jsonb','ARRAY') OR udt_name LIKE '\\_%')")=='0'
  snap=json.loads(sql(rollback.export_sql()))
  print('v'+str(version),'exported tables',len(snap['tables']))
  assert snap['tables']['catalog_projects'][0]['theme']=={'light':theme['light']}
  assert snap['tables']['report_cards'][0]['config']['list']==[None,True,1,1.5,'q',{},[]]
  assert snap['tables']['calculation_versions'][0]['definition']['where'][0]['value']==[1,2,None,True,'q']
- for f in sorted((root/'engine/migrations').glob('*.sql')):sql('BEGIN;\n'+f.read_text()+'\nCOMMIT;')
+ apply_migrations()
  assert json.loads(sql(rollback.export_sql()))==snap
  # Restore into historical006, then re-upgrade: canonical snapshot must be identical.
  sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
  sql(rollback.restore_sql(snap,(root/'engine/tests/fixtures/legacy_6_schema.sql').read_text()))
- for f in sorted((root/'engine/migrations').glob('*.sql')):sql('BEGIN;\n'+f.read_text()+'\nCOMMIT;')
+ apply_migrations()
  again=json.loads(sql(rollback.export_sql()))
  assert again==snap,(snap,again)
  print('v'+str(version),'roundtrip and idempotence passed')

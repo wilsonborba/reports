@@ -137,9 +137,22 @@ fn project_select(db: &Db) -> String {
 async fn project_from(db: &Db, row: &AnyRow) -> Result<ProjectRecord, ReportError> {
     Ok(ProjectRecord {
         slug: row.try_get("slug")?,
-        name: super::catalog_storage::texts(db, &row.try_get::<String, _>("slug")?, None, "name").await?,
-        tagline: super::catalog_storage::texts(db, &row.try_get::<String, _>("slug")?, None, "tagline").await?,
-        description: super::catalog_storage::texts(db, &row.try_get::<String, _>("slug")?, None, "description").await?,
+        name: super::catalog_storage::texts(db, &row.try_get::<String, _>("slug")?, None, "name")
+            .await?,
+        tagline: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("slug")?,
+            None,
+            "tagline",
+        )
+        .await?,
+        description: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("slug")?,
+            None,
+            "description",
+        )
+        .await?,
         theme: super::catalog_storage::theme(db, &row.try_get::<String, _>("slug")?).await?,
         is_active: flag_col(row, "is_active")?,
         website_url: opt_col(row, "website_url")?,
@@ -167,7 +180,10 @@ pub async fn list_projects(db: &Db, active_only: bool) -> Result<Vec<ProjectReco
 
 pub async fn get_project(db: &Db, slug: &str) -> Result<Option<ProjectRecord>, ReportError> {
     let sql = format!("{} WHERE slug = $1", project_select(db));
-    let row = sqlx::query(&sql).bind(slug).fetch_optional(&db.pool).await?;
+    let row = sqlx::query(&sql)
+        .bind(slug)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => Ok(Some(project_from(db, &r).await?)),
         None => Ok(None),
@@ -196,12 +212,18 @@ pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportErro
         .await;
     match result {
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            return Err(ReportError::Conflict("Domain project is already linked to another Reports project".into()))
+            return Err(ReportError::Conflict(
+                "Domain project is already linked to another Reports project".into(),
+            ))
         }
         Err(e) => return Err(e.into()),
         Ok(_) => {}
     }
-    for (kind, text) in [("name", &p.name), ("tagline", &p.tagline), ("description", &p.description)] {
+    for (kind, text) in [
+        ("name", &p.name),
+        ("tagline", &p.tagline),
+        ("description", &p.description),
+    ] {
         super::catalog_storage::write_texts(&mut tx, &p.slug, None, kind, text).await?;
     }
     super::catalog_storage::write_theme(&mut tx, &p.slug, &p.theme).await?;
@@ -256,19 +278,38 @@ async fn report_from(db: &Db, row: &AnyRow) -> Result<ReportRecord, ReportError>
 
 /// Reports of a project ordered by sort order, then slug.
 pub async fn list_reports(db: &Db, project: &str) -> Result<Vec<ReportRecord>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 ORDER BY slug", report_select(db));
+    let sql = format!(
+        "{} WHERE project_slug = $1 ORDER BY slug",
+        report_select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
     let mut out = Vec::new();
     for row in &rows {
         out.push(report_from(db, row).await?);
     }
-    out.sort_by(|a, b| a.metadata.sort_order.cmp(&b.metadata.sort_order).then(a.slug.cmp(&b.slug)));
+    out.sort_by(|a, b| {
+        a.metadata
+            .sort_order
+            .cmp(&b.metadata.sort_order)
+            .then(a.slug.cmp(&b.slug))
+    });
     Ok(out)
 }
 
-pub async fn get_report(db: &Db, project: &str, slug: &str) -> Result<Option<ReportRecord>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 AND slug = $2", report_select(db));
-    let row = sqlx::query(&sql).bind(project).bind(slug).fetch_optional(&db.pool).await?;
+pub async fn get_report(
+    db: &Db,
+    project: &str,
+    slug: &str,
+) -> Result<Option<ReportRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE project_slug = $1 AND slug = $2",
+        report_select(db)
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(slug)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => Ok(Some(report_from(db, &r).await?)),
         None => Ok(None),
@@ -284,12 +325,32 @@ pub async fn upsert_report(db: &Db, r: &ReportRecord) -> Result<(), ReportError>
         .bind(&r.visibility)
         .bind(r.discoverable)
         .bind(r.metadata.sort_order)
-        .bind(r.metadata.period_source.as_ref().map(|p| p.collection.as_str()).unwrap_or(""))
-        .bind(r.metadata.period_source.as_ref().map(|p| p.field.as_str()).unwrap_or(""))
+        .bind(
+            r.metadata
+                .period_source
+                .as_ref()
+                .map(|p| p.collection.as_str())
+                .unwrap_or(""),
+        )
+        .bind(
+            r.metadata
+                .period_source
+                .as_ref()
+                .map(|p| p.field.as_str())
+                .unwrap_or(""),
+        )
         .execute(&mut *tx)
         .await?;
-    super::catalog_storage::write_texts(&mut tx, &r.project, Some(&r.slug), "title", &r.title).await?;
-    super::catalog_storage::write_texts(&mut tx, &r.project, Some(&r.slug), "description", &r.description).await?;
+    super::catalog_storage::write_texts(&mut tx, &r.project, Some(&r.slug), "title", &r.title)
+        .await?;
+    super::catalog_storage::write_texts(
+        &mut tx,
+        &r.project,
+        Some(&r.slug),
+        "description",
+        &r.description,
+    )
+    .await?;
     super::catalog_storage::write_items(&mut tx, &r.project, &r.slug, &r.metadata).await?;
     tx.commit().await?;
     Ok(())
@@ -338,9 +399,20 @@ async fn dataset_from(db: &Db, row: &AnyRow) -> Result<DatasetRecord, ReportErro
     })
 }
 
-pub async fn list_datasets(db: &Db, project: &str, report: &str) -> Result<Vec<DatasetRecord>, ReportError> {
-    let sql = format!("{} WHERE d.project_slug = $1 AND d.report_slug = $2 ORDER BY d.dataset_id", dataset_select(db));
-    let rows = sqlx::query(&sql).bind(project).bind(report).fetch_all(&db.pool).await?;
+pub async fn list_datasets(
+    db: &Db,
+    project: &str,
+    report: &str,
+) -> Result<Vec<DatasetRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE d.project_slug = $1 AND d.report_slug = $2 ORDER BY d.dataset_id",
+        dataset_select(db)
+    );
+    let rows = sqlx::query(&sql)
+        .bind(project)
+        .bind(report)
+        .fetch_all(&db.pool)
+        .await?;
     let mut out = Vec::new();
     for r in &rows {
         out.push(dataset_from(db, r).await?);
@@ -349,8 +421,14 @@ pub async fn list_datasets(db: &Db, project: &str, report: &str) -> Result<Vec<D
 }
 
 /// Every dataset of a project (statistics and cache dependencies).
-pub async fn list_project_datasets(db: &Db, project: &str) -> Result<Vec<DatasetRecord>, ReportError> {
-    let sql = format!("{} WHERE d.project_slug = $1 ORDER BY d.report_slug, d.dataset_id", dataset_select(db));
+pub async fn list_project_datasets(
+    db: &Db,
+    project: &str,
+) -> Result<Vec<DatasetRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE d.project_slug = $1 ORDER BY d.report_slug, d.dataset_id",
+        dataset_select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
     let mut out = Vec::new();
     for r in &rows {
@@ -359,9 +437,22 @@ pub async fn list_project_datasets(db: &Db, project: &str) -> Result<Vec<Dataset
     Ok(out)
 }
 
-pub async fn get_dataset(db: &Db, project: &str, report: &str, id: &str) -> Result<Option<DatasetRecord>, ReportError> {
-    let sql = format!("{} WHERE d.project_slug = $1 AND d.report_slug = $2 AND d.dataset_id = $3", dataset_select(db));
-    let row = sqlx::query(&sql).bind(project).bind(report).bind(id).fetch_optional(&db.pool).await?;
+pub async fn get_dataset(
+    db: &Db,
+    project: &str,
+    report: &str,
+    id: &str,
+) -> Result<Option<DatasetRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE d.project_slug = $1 AND d.report_slug = $2 AND d.dataset_id = $3",
+        dataset_select(db)
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(report)
+        .bind(id)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => Ok(Some(dataset_from(db, &r).await?)),
         None => Ok(None),
@@ -389,26 +480,41 @@ pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportErro
     Ok(())
 }
 
-pub async fn delete_dataset(db: &Db, project: &str, report: &str, id: &str) -> Result<bool, ReportError> {
-    let done = sqlx::query("DELETE FROM datasets WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3")
-        .bind(project)
-        .bind(report)
-        .bind(id)
-        .execute(&db.pool)
-        .await?;
+pub async fn delete_dataset(
+    db: &Db,
+    project: &str,
+    report: &str,
+    id: &str,
+) -> Result<bool, ReportError> {
+    let done = sqlx::query(
+        "DELETE FROM datasets WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(id)
+    .execute(&db.pool)
+    .await?;
     Ok(done.rows_affected() > 0)
 }
 
 // --- roles ------------------------------------------------------------------
 
 /// True when `user_project_roles` marks the user as admin of the project.
-pub async fn is_project_admin(db: &Db, user_uuid: &str, project: &str) -> Result<bool, ReportError> {
+pub async fn is_project_admin(
+    db: &Db,
+    user_uuid: &str,
+    project: &str,
+) -> Result<bool, ReportError> {
     let sql = format!(
         "SELECT {} AS is_admin FROM user_project_roles WHERE {} = $1 AND app_name = $2",
         db.flag("is_project_admin"),
         db.text("user_uuid"),
     );
-    let row = sqlx::query(&sql).bind(user_uuid).bind(project).fetch_optional(&db.pool).await?;
+    let row = sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => flag_col(&r, "is_admin"),
         None => Ok(false),
@@ -421,8 +527,16 @@ pub async fn admin_projects(db: &Db, user_uuid: &str) -> Result<Vec<String>, Rep
         "SELECT app_name FROM user_project_roles WHERE {} = $1 AND is_project_admin = TRUE ORDER BY app_name",
         db.text("user_uuid"),
     );
-    let rows = sqlx::query(&sql).bind(user_uuid).fetch_all(&db.pool).await?;
-    rows.iter().map(|r| r.try_get::<String, _>("app_name").map_err(ReportError::from)).collect()
+    let rows = sqlx::query(&sql)
+        .bind(user_uuid)
+        .fetch_all(&db.pool)
+        .await?;
+    rows.iter()
+        .map(|r| {
+            r.try_get::<String, _>("app_name")
+                .map_err(ReportError::from)
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
@@ -435,7 +549,10 @@ pub struct ProjectRole {
 /// Stores the theme tokens of a project.
 pub async fn set_theme(db: &Db, slug: &str, theme: &ProjectTheme) -> Result<bool, ReportError> {
     let mut tx = db.pool.begin().await?;
-    let sql = format!("UPDATE catalog_projects SET updated_at={} WHERE slug=$1", db.now());
+    let sql = format!(
+        "UPDATE catalog_projects SET updated_at={} WHERE slug=$1",
+        db.now()
+    );
     let done = sqlx::query(&sql).bind(slug).execute(&mut *tx).await?;
     if done.rows_affected() > 0 {
         super::catalog_storage::write_theme(&mut tx, slug, theme).await?;
@@ -445,19 +562,36 @@ pub async fn set_theme(db: &Db, slug: &str, theme: &ProjectTheme) -> Result<bool
 }
 
 /// Sets or clears the project admin role of a user.
-pub async fn set_project_admin(db: &Db, user_uuid: &str, project: &str, is_admin: bool) -> Result<(), ReportError> {
+pub async fn set_project_admin(
+    db: &Db,
+    user_uuid: &str,
+    project: &str,
+    is_admin: bool,
+) -> Result<(), ReportError> {
     let sql = format!(
         "INSERT INTO user_project_roles (user_uuid, app_name, is_project_admin) VALUES ({}, $2, $3) \
          ON CONFLICT (user_uuid, app_name) DO UPDATE SET is_project_admin = EXCLUDED.is_project_admin",
         db.uuid_in(1)
     );
-    sqlx::query(&sql).bind(user_uuid).bind(project).bind(is_admin).execute(&db.pool).await?;
+    sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .bind(is_admin)
+        .execute(&db.pool)
+        .await?;
     Ok(())
 }
 
 pub async fn delete_role(db: &Db, user_uuid: &str, project: &str) -> Result<bool, ReportError> {
-    let sql = format!("DELETE FROM user_project_roles WHERE {} = $1 AND app_name = $2", db.text("user_uuid"));
-    let done = sqlx::query(&sql).bind(user_uuid).bind(project).execute(&db.pool).await?;
+    let sql = format!(
+        "DELETE FROM user_project_roles WHERE {} = $1 AND app_name = $2",
+        db.text("user_uuid")
+    );
+    let done = sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .execute(&db.pool)
+        .await?;
     Ok(done.rows_affected() > 0)
 }
 

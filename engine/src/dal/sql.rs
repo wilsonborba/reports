@@ -28,7 +28,15 @@ pub struct Db {
 pub const REQUIRED_SCHEMA: &[(&str, &[&str])] = &[
     (
         "catalog_projects",
-        &["slug", "is_active", "website_url", "repository_url", "sort_order", "domain_project_id", "updated_at"],
+        &[
+            "slug",
+            "is_active",
+            "website_url",
+            "repository_url",
+            "sort_order",
+            "domain_project_id",
+            "updated_at",
+        ],
     ),
     (
         "reports",
@@ -70,19 +78,50 @@ pub const REQUIRED_SCHEMA: &[(&str, &[&str])] = &[
             "published_at",
         ],
     ),
-    ("user_project_roles", &["user_uuid", "app_name", "is_project_admin"]),
-    ("fixture_manifest", &["manifest_id", "entity_type", "entity_id", "created_at"]),
+    (
+        "user_project_roles",
+        &["user_uuid", "app_name", "is_project_admin"],
+    ),
+    (
+        "fixture_manifest",
+        &["manifest_id", "entity_type", "entity_id", "created_at"],
+    ),
     (
         "resource_grants",
-        &["id", "user_uuid", "resource_type", "project_slug", "report_slug", "card_id", "granted_by", "created_at"],
+        &[
+            "id",
+            "user_uuid",
+            "resource_type",
+            "project_slug",
+            "report_slug",
+            "card_id",
+            "granted_by",
+            "created_at",
+        ],
     ),
     (
         "schema_versions",
-        &["project_slug", "schema_name", "version", "status", "description", "created_at", "published_at"],
+        &[
+            "project_slug",
+            "schema_name",
+            "version",
+            "status",
+            "description",
+            "created_at",
+            "published_at",
+        ],
     ),
     (
         "schema_fields",
-        &["project_slug", "schema_name", "version", "field_path", "field_type", "is_required", "description"],
+        &[
+            "project_slug",
+            "schema_name",
+            "version",
+            "field_path",
+            "field_type",
+            "is_required",
+            "description",
+        ],
     ),
 ];
 
@@ -93,20 +132,27 @@ impl Db {
     /// [`Db::check_schema`] reports it.
     pub fn connect(url: &str) -> Result<Self, ReportError> {
         DRIVERS.call_once(sqlx::any::install_default_drivers);
-        let dialect = if url.starts_with("sqlite:") { Dialect::Sqlite } else { Dialect::Postgres };
+        let dialect = if url.starts_with("sqlite:") {
+            Dialect::Sqlite
+        } else {
+            Dialect::Postgres
+        };
         let options = AnyPoolOptions::new().acquire_timeout(Duration::from_secs(5));
         // One SQLite connection keeps every test query on the same database file.
         let options = match dialect {
             Dialect::Sqlite => options.max_connections(1).after_connect(|conn, _| {
                 Box::pin(async move {
-                    sqlx::query("PRAGMA foreign_keys = ON").execute(conn).await?;
+                    sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(conn)
+                        .await?;
                     Ok(())
                 })
             }),
             Dialect::Postgres => options.max_connections(16),
         };
-        let pool =
-            options.connect_lazy(url).map_err(|e| ReportError::Unavailable(format!("database configuration: {e}")))?;
+        let pool = options
+            .connect_lazy(url)
+            .map_err(|e| ReportError::Unavailable(format!("database configuration: {e}")))?;
         Ok(Self { pool, dialect })
     }
 
@@ -170,7 +216,10 @@ impl Db {
     /// Fails when a required table or column is missing. It changes nothing.
     pub async fn check_schema(&self) -> Result<(), ReportError> {
         let mut missing = Vec::new();
-        for (table, columns) in REQUIRED_SCHEMA.iter().chain(super::calculation_shape::REQUIRED.iter()) {
+        for (table, columns) in REQUIRED_SCHEMA
+            .iter()
+            .chain(super::calculation_shape::REQUIRED.iter())
+        {
             let present = self.columns(table).await?;
             for c in *columns {
                 if !present.iter().any(|p| p == c) {
@@ -200,18 +249,27 @@ impl Db {
                 .await?
             }
             Dialect::Sqlite => {
-                sqlx::query("SELECT name FROM pragma_table_info($1)").bind(table).fetch_all(&self.pool).await?
+                sqlx::query("SELECT name FROM pragma_table_info($1)")
+                    .bind(table)
+                    .fetch_all(&self.pool)
+                    .await?
             }
         };
-        rows.iter().map(|r| r.try_get::<String, _>("name").map_err(ReportError::from)).collect()
+        rows.iter()
+            .map(|r| r.try_get::<String, _>("name").map_err(ReportError::from))
+            .collect()
     }
 
     /// Creates the test schema in a SQLite database. Production never calls this.
     pub async fn create_sqlite_test_schema(&self) -> Result<(), ReportError> {
         if self.dialect != Dialect::Sqlite {
-            return Err(ReportError::Internal("the test schema is only for SQLite".into()));
+            return Err(ReportError::Internal(
+                "the test schema is only for SQLite".into(),
+            ));
         }
-        sqlx::raw_sql(include_str!("../../migrations/sqlite/test_schema.sql")).execute(&self.pool).await?;
+        sqlx::raw_sql(include_str!("../../migrations/sqlite/test_schema.sql"))
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }

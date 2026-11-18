@@ -19,7 +19,9 @@ use std::sync::Arc;
 
 pub use cache::{CacheStore, LockState, MemoryCache, RedisCache};
 pub use calculations::{CalculationVersion, InputRef};
-pub use catalog::{DatasetRecord, PeriodSource, ProjectRecord, ProjectRole, ReportMetadata, ReportRecord};
+pub use catalog::{
+    DatasetRecord, PeriodSource, ProjectRecord, ProjectRole, ReportMetadata, ReportRecord,
+};
 pub use documents::{CouchDocuments, DocumentStore, InsertOutcome, MemoryDocuments, RecordDoc};
 pub use grants::Grant;
 pub use schemas::SchemaVersion;

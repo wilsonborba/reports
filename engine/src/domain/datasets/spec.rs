@@ -395,12 +395,30 @@ mod tests {
         // Empty defaults to sample
         assert_eq!(DataTier::aggregate(vec![]), DataTier::Sample);
         // All agree -> common tier
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Real]), DataTier::Real);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Sample, DataTier::Sample]), DataTier::Sample);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Hybrid, DataTier::Hybrid]), DataTier::Hybrid);
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Real]),
+            DataTier::Real
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Sample, DataTier::Sample]),
+            DataTier::Sample
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Hybrid, DataTier::Hybrid]),
+            DataTier::Hybrid
+        );
         // Mixed -> Hybrid regardless of order
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Sample]), DataTier::Hybrid);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Sample, DataTier::Real]), DataTier::Hybrid);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Hybrid]), DataTier::Hybrid);
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Sample]),
+            DataTier::Hybrid
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Sample, DataTier::Real]),
+            DataTier::Hybrid
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Hybrid]),
+            DataTier::Hybrid
+        );
     }
 }

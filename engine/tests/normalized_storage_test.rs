@@ -12,13 +12,22 @@ use serde_json::json;
 #[tokio::test]
 async fn nested_definition_roundtrip_and_atomic_parent_constraints() {
     let dir = tempfile::tempdir().unwrap();
-    let url = std::env::var("REPORTS_NORMALIZED_TEST_DATABASE_URL")
-        .unwrap_or_else(|_| format!("sqlite://{}?mode=rwc", dir.path().join("normalized.db").display()));
+    let url = std::env::var("REPORTS_NORMALIZED_TEST_DATABASE_URL").unwrap_or_else(|_| {
+        format!(
+            "sqlite://{}?mode=rwc",
+            dir.path().join("normalized.db").display()
+        )
+    });
     let db = Db::connect(&url).unwrap();
     if !url.starts_with("sqlite:") {
-        let identity: String =
-            sqlx::query_scalar("SELECT CAST(current_database() AS TEXT)").fetch_one(&db.pool).await.unwrap();
-        assert!(identity.ends_with("_test"), "PostgreSQL test requires a database name ending with _test");
+        let identity: String = sqlx::query_scalar("SELECT CAST(current_database() AS TEXT)")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert!(
+            identity.ends_with("_test"),
+            "PostgreSQL test requires a database name ending with _test"
+        );
     }
     if url.starts_with("sqlite:") {
         db.create_sqlite_test_schema().await.unwrap();
@@ -26,7 +35,11 @@ async fn nested_definition_roundtrip_and_atomic_parent_constraints() {
     db.check_schema().await.unwrap();
     let project = ProjectRecord {
         slug: "normalized-test".into(),
-        name: [("en".into(), "__reports_sql_null__".into()), ("th".into(), "ข้อมูล".into())].into(),
+        name: [
+            ("en".into(), "__reports_sql_null__".into()),
+            ("th".into(), "ข้อมูล".into()),
+        ]
+        .into(),
         tagline: Default::default(),
         description: Default::default(),
         theme: asodya_theme("normalized-test"),
@@ -38,7 +51,10 @@ async fn nested_definition_roundtrip_and_atomic_parent_constraints() {
         updated_at: String::new(),
     };
     catalog::upsert_project(&db, &project).await.unwrap();
-    let p = catalog::get_project(&db, &project.slug).await.unwrap().unwrap();
+    let p = catalog::get_project(&db, &project.slug)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(p.name, project.name);
     assert_eq!(p.theme, project.theme);
     let definition = json!({
@@ -69,18 +85,34 @@ async fn nested_definition_roundtrip_and_atomic_parent_constraints() {
         published_at: None,
     };
     calculations::save_draft(&db, &c).await.unwrap();
-    let got = calculations::get(&db, &c.project, &c.calculation_id, 1).await.unwrap().unwrap();
-    assert_eq!(serde_json::to_value(&got.definition).unwrap(), serde_json::to_value(&c.definition).unwrap());
+    let got = calculations::get(&db, &c.project, &c.calculation_id, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&got.definition).unwrap(),
+        serde_json::to_value(&c.definition).unwrap()
+    );
     c.definition.union.clear();
     c.definition.value_labels.clear();
     c.definition.calculator = None;
     calculations::save_draft(&db, &c).await.unwrap();
-    let got = calculations::get(&db, &c.project, &c.calculation_id, 1).await.unwrap().unwrap();
-    assert_eq!(serde_json::to_value(&got.definition).unwrap(), serde_json::to_value(&c.definition).unwrap());
+    let got = calculations::get(&db, &c.project, &c.calculation_id, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&got.definition).unwrap(),
+        serde_json::to_value(&c.definition).unwrap()
+    );
     assert!(sqlx::query("INSERT INTO calculation_unions(project_slug,calculation_id,version,row_key,parent_key,position,map_key,value) VALUES('normalized-test','everything',1,'orphan','absent',0,'','x')").execute(&db.pool).await.is_err());
     assert!(calculations::publish(&db, &c).await.unwrap());
     assert!(calculations::save_draft(&db, &c).await.is_err());
-    assert!(calculations::delete_version(&db, &c.project, &c.calculation_id, 1).await.unwrap());
+    assert!(
+        calculations::delete_version(&db, &c.project, &c.calculation_id, 1)
+            .await
+            .unwrap()
+    );
     let count: i64 = sqlx::query_scalar(
         "SELECT CAST(COUNT(*) AS BIGINT) FROM calculation_definitions WHERE project_slug='normalized-test'",
     )
@@ -88,5 +120,8 @@ async fn nested_definition_roundtrip_and_atomic_parent_constraints() {
     .await
     .unwrap();
     assert_eq!(count, 0);
-    sqlx::query("DELETE FROM catalog_projects WHERE slug='normalized-test'").execute(&db.pool).await.unwrap();
+    sqlx::query("DELETE FROM catalog_projects WHERE slug='normalized-test'")
+        .execute(&db.pool)
+        .await
+        .unwrap();
 }

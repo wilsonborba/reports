@@ -6,7 +6,12 @@ pub const DEFINITION: Shape = Shape {
     scalar: false,
     dynamic: false,
     optional: false,
-    fields: &[("equation", "s?"), ("source", "s?"), ("limit", "n?"), ("warm", "b")],
+    fields: &[
+        ("equation", "s?"),
+        ("source", "s?"),
+        ("limit", "n?"),
+        ("warm", "b"),
+    ],
     children: &[
         (
             "title",
@@ -101,7 +106,12 @@ pub const DEFINITION: Shape = Shape {
                 scalar: false,
                 dynamic: false,
                 optional: false,
-                fields: &[("field", "s"), ("unit", "s"), ("name", "s"), ("utc_offset_minutes", "n?")],
+                fields: &[
+                    ("field", "s"),
+                    ("unit", "s"),
+                    ("name", "s"),
+                    ("utc_offset_minutes", "n?"),
+                ],
                 children: &[],
             },
         ),
@@ -205,7 +215,13 @@ pub const DEFINITION: Shape = Shape {
                             scalar: false,
                             dynamic: false,
                             optional: false,
-                            fields: &[("name", "s"), ("agg", "s"), ("field", "s?"), ("by", "s?"), ("n", "n?")],
+                            fields: &[
+                                ("name", "s"),
+                                ("agg", "s"),
+                                ("field", "s?"),
+                                ("by", "s?"),
+                                ("n", "n?"),
+                            ],
                             children: &[
                                 (
                                     "fields",
@@ -288,7 +304,13 @@ pub const DEFINITION: Shape = Shape {
                             scalar: false,
                             dynamic: false,
                             optional: false,
-                            fields: &[("name", "s"), ("agg", "s"), ("field", "s"), ("size", "n"), ("order_by", "s")],
+                            fields: &[
+                                ("name", "s"),
+                                ("agg", "s"),
+                                ("field", "s"),
+                                ("size", "n"),
+                                ("order_by", "s"),
+                            ],
                             children: &[(
                                 "partition_by",
                                 Shape {
@@ -397,7 +419,13 @@ pub const DEFINITION: Shape = Shape {
                 scalar: false,
                 dynamic: false,
                 optional: false,
-                fields: &[("name", "s"), ("type", "s"), ("role", "s"), ("unit", "s?"), ("decimals", "n?")],
+                fields: &[
+                    ("name", "s"),
+                    ("type", "s"),
+                    ("role", "s"),
+                    ("unit", "s?"),
+                    ("decimals", "n?"),
+                ],
                 children: &[(
                     "label",
                     Shape {
@@ -468,15 +496,42 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_titles",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_descriptions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_unions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_lookups",
@@ -494,15 +549,42 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_lookup_keys",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_lookup_matches",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_lookup_fields",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_buckets",
@@ -537,7 +619,17 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_conditions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "field", "op"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "field",
+            "op",
+        ],
     ),
     (
         "calculation_conditions_values",
@@ -571,19 +663,54 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_filter_labels",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_stages",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+        ],
     ),
     (
         "calculation_stage_groups",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_stage_partitions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_measures",
@@ -604,11 +731,30 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_measure_fields",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_measure_conditions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "field", "op"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "field",
+            "op",
+        ],
     ),
     (
         "calculation_measure_conditions_values",
@@ -642,7 +788,17 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_stage_having",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "field", "op"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "field",
+            "op",
+        ],
     ),
     (
         "calculation_stage_having_values",
@@ -678,7 +834,16 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_window_partitions",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_derived",
@@ -697,7 +862,17 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_having",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "field", "op"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "field",
+            "op",
+        ],
     ),
     (
         "calculation_having_values",
@@ -731,7 +906,16 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_parameters",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_references",
@@ -749,7 +933,17 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_sort",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "field", "desc"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "field",
+            "desc",
+        ],
     ),
     (
         "calculation_fields",
@@ -770,26 +964,82 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
     ),
     (
         "calculation_field_labels",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
     (
         "calculation_value_fields",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+        ],
     ),
     (
         "calculation_value_labels",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+        ],
     ),
     (
         "calculation_value_texts",
-        &["project_slug", "calculation_id", "version", "row_key", "parent_key", "position", "map_key", "value"],
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "value",
+        ],
     ),
-    ("project_texts", &["project_slug", "text_key", "lang", "text"]),
-    ("report_texts", &["project_slug", "report_slug", "text_key", "lang", "text"]),
+    (
+        "project_texts",
+        &["project_slug", "text_key", "lang", "text"],
+    ),
+    (
+        "report_texts",
+        &["project_slug", "report_slug", "text_key", "lang", "text"],
+    ),
     ("project_theme_modes", &["project_slug", "mode"]),
-    ("project_theme_colors", &["project_slug", "mode", "token", "position", "color"]),
-    ("report_ordered_items", &["project_slug", "report_slug", "kind", "position", "value"]),
-    ("calculation_inputs", &["project_slug", "calculation_id", "version", "position", "schema_name", "schema_version"]),
+    (
+        "project_theme_colors",
+        &["project_slug", "mode", "token", "position", "color"],
+    ),
+    (
+        "report_ordered_items",
+        &["project_slug", "report_slug", "kind", "position", "value"],
+    ),
+    (
+        "calculation_inputs",
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "position",
+            "schema_name",
+            "schema_version",
+        ],
+    ),
     (
         "card_properties",
         &[
@@ -804,5 +1054,16 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
             "scalar_value",
         ],
     ),
-    ("setting_properties", &["key", "node_id", "parent_id", "position", "property_name", "value_kind", "scalar_value"]),
+    (
+        "setting_properties",
+        &[
+            "key",
+            "node_id",
+            "parent_id",
+            "position",
+            "property_name",
+            "value_kind",
+            "scalar_value",
+        ],
+    ),
 ];

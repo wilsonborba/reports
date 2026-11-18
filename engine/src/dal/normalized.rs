@@ -27,16 +27,24 @@ fn scalar_text(v: &Value) -> Result<Option<String>, ReportError> {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
         Value::Bool(b) => Some(b.to_string()),
-        _ => return Err(ReportError::Internal("expected a scalar relational value".into())),
+        _ => {
+            return Err(ReportError::Internal(
+                "expected a scalar relational value".into(),
+            ))
+        }
     })
 }
 fn scalar_value(v: &str, kind: &str) -> Result<Value, ReportError> {
     match kind.trim_end_matches('?') {
         "s" | "string" => Ok(Value::String(v.into())),
-        "n" | "number" | "b" | "bool" => serde_json::from_str(v).map_err(|e| ReportError::Database(e.to_string())),
+        "n" | "number" | "b" | "bool" => {
+            serde_json::from_str(v).map_err(|e| ReportError::Database(e.to_string()))
+        }
         _ => Ok(Value::Null),
     }
 }
+// A normalized child row carries its parent, order and map key at this boundary.
+#[allow(clippy::too_many_arguments)]
 fn insert<'a>(
     conn: &'a mut AnyConnection,
     key: &'a Key<'a>,
@@ -60,7 +68,11 @@ fn insert<'a>(
         let mut values = Vec::new();
         for (field, _) in shape.fields {
             names.push(format!("\"{field}\""));
-            values.push(scalar_text(if shape.scalar { value } else { &value[*field] })?);
+            values.push(scalar_text(if shape.scalar {
+                value
+            } else {
+                &value[*field]
+            })?);
         }
         let slots = (1..=names.len())
             .map(|i| {
@@ -78,7 +90,11 @@ fn insert<'a>(
             })
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!("INSERT INTO {} ({}) VALUES ({slots})", shape.table, names.join(","));
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES ({slots})",
+            shape.table,
+            names.join(",")
+        );
         let mut q = sqlx::query(&sql)
             .bind(key.project)
             .bind(key.calculation)
@@ -119,19 +135,50 @@ fn save<'a>(
             "list" => {
                 if let Some(a) = value.as_array() {
                     for (i, v) in a.iter().enumerate() {
-                        insert(conn, key, shape, format!("{base}/{i}"), parent.into(), i as i64, String::new(), v)
-                            .await?;
+                        insert(
+                            conn,
+                            key,
+                            shape,
+                            format!("{base}/{i}"),
+                            parent.into(),
+                            i as i64,
+                            String::new(),
+                            v,
+                        )
+                        .await?;
                     }
                 }
             }
             "map" => {
                 if let Some(m) = value.as_object() {
                     for (i, (k, v)) in m.iter().enumerate() {
-                        insert(conn, key, shape, format!("{base}/{i}"), parent.into(), i as i64, k.clone(), v).await?;
+                        insert(
+                            conn,
+                            key,
+                            shape,
+                            format!("{base}/{i}"),
+                            parent.into(),
+                            i as i64,
+                            k.clone(),
+                            v,
+                        )
+                        .await?;
                     }
                 }
             }
-            _ => insert(conn, key, shape, base, parent.into(), 0, String::new(), value).await?,
+            _ => {
+                insert(
+                    conn,
+                    key,
+                    shape,
+                    base,
+                    parent.into(),
+                    0,
+                    String::new(),
+                    value,
+                )
+                .await?
+            }
         }
         Ok(())
     })
@@ -158,7 +205,11 @@ fn save_dynamic<'a>(
                 Value::Bool(_) => "bool",
             };
             let sql=format!("INSERT INTO {} (project_slug,calculation_id,version,row_key,parent_key,position,map_key,node_kind,scalar_value,node_parent_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $11 THEN NULL ELSE $9 END,NULLIF($10,''))",shape.table);
-            let text = if v.is_object() || v.is_array() { None } else { scalar_text(v)? };
+            let text = if v.is_object() || v.is_array() {
+                None
+            } else {
+                scalar_text(v)?
+            };
             sqlx::query(&sql)
                 .bind(key.project)
                 .bind(key.calculation)
@@ -176,7 +227,13 @@ fn save_dynamic<'a>(
             match v {
                 Value::Array(a) => {
                     for (i, v) in a.iter().enumerate().rev() {
-                        pending.push((format!("{path}/{i}"), path.clone(), i as i64, String::new(), v));
+                        pending.push((
+                            format!("{path}/{i}"),
+                            path.clone(),
+                            i as i64,
+                            String::new(),
+                            v,
+                        ));
                     }
                 }
                 Value::Object(m) => {
@@ -191,11 +248,23 @@ fn save_dynamic<'a>(
     })
 }
 
-pub async fn write(tx: &mut Transaction<'_, Any>, key: &Key<'_>, value: &Value) -> Result<(), ReportError> {
+pub async fn write(
+    tx: &mut Transaction<'_, Any>,
+    key: &Key<'_>,
+    value: &Value,
+) -> Result<(), ReportError> {
     let shape = &super::calculation_shape::DEFINITION;
-    let sql = format!("DELETE FROM {} WHERE project_slug=$1 AND calculation_id=$2 AND version=$3", shape.table);
-    sqlx::query(&sql).bind(key.project).bind(key.calculation).bind(key.version).execute(&mut **tx).await?;
-    save(&mut **tx, key, shape, "root".into(), "", value).await
+    let sql = format!(
+        "DELETE FROM {} WHERE project_slug=$1 AND calculation_id=$2 AND version=$3",
+        shape.table
+    );
+    sqlx::query(&sql)
+        .bind(key.project)
+        .bind(key.calculation)
+        .bind(key.version)
+        .execute(&mut **tx)
+        .await?;
+    save(tx, key, shape, "root".into(), "", value).await
 }
 
 #[derive(Clone)]
@@ -221,14 +290,25 @@ fn load<'a>(
             shape.fields.iter().map(|(f,_)|format!(",COALESCE(CAST(\"{f}\" AS TEXT),'') AS \"{f}\",CASE WHEN \"{f}\" IS NULL THEN 1 ELSE 0 END AS \"{f}_null\" ")).collect::<String>()
         };
         let sql=format!("SELECT row_key,parent_key,CAST(position AS BIGINT) AS position,map_key{extra} FROM {} WHERE project_slug=$1 AND calculation_id=$2 AND version=$3 ORDER BY position",shape.table);
-        let rows =
-            sqlx::query(&sql).bind(key.project).bind(key.calculation).bind(key.version).fetch_all(&mut *conn).await?;
+        let rows = sqlx::query(&sql)
+            .bind(key.project)
+            .bind(key.calculation)
+            .bind(key.version)
+            .fetch_all(&mut *conn)
+            .await?;
         let mut stored = Vec::new();
         for r in rows {
             let mut fields = HashMap::new();
             for (f, _) in shape.fields {
                 let missing: i64 = r.try_get(format!("{f}_null").as_str())?;
-                fields.insert(f.to_string(), if missing == 1 { None } else { Some(r.try_get(*f)?) });
+                fields.insert(
+                    f.to_string(),
+                    if missing == 1 {
+                        None
+                    } else {
+                        Some(r.try_get(*f)?)
+                    },
+                );
             }
             if shape.dynamic {
                 fields.insert("value".into(), Some(r.try_get("scalar_value")?));
@@ -239,8 +319,16 @@ fn load<'a>(
                 position: r.try_get("position")?,
                 name: r.try_get("map_key")?,
                 fields,
-                kind: if shape.dynamic { r.try_get("node_kind")? } else { String::new() },
-                node_parent: if shape.dynamic { r.try_get("node_parent_key")? } else { String::new() },
+                kind: if shape.dynamic {
+                    r.try_get("node_kind")?
+                } else {
+                    String::new()
+                },
+                node_parent: if shape.dynamic {
+                    r.try_get("node_parent_key")?
+                } else {
+                    String::new()
+                },
             });
         }
         let mut all = HashMap::from([(shape.table, stored)]);
@@ -251,7 +339,10 @@ fn load<'a>(
     })
 }
 fn dynamic(rows: &[Stored], row: &Stored) -> Result<Value, ReportError> {
-    let mut children = rows.iter().filter(|r| r.node_parent == row.key).collect::<Vec<_>>();
+    let mut children = rows
+        .iter()
+        .filter(|r| r.node_parent == row.key)
+        .collect::<Vec<_>>();
     children.sort_by_key(|r| r.position);
     Ok(match row.kind.as_str() {
         "object" => Value::Object(
@@ -260,12 +351,21 @@ fn dynamic(rows: &[Stored], row: &Stored) -> Result<Value, ReportError> {
                 .map(|r| Ok((r.name.clone(), dynamic(rows, r)?)))
                 .collect::<Result<Map<_, _>, ReportError>>()?,
         ),
-        "array" => Value::Array(children.into_iter().map(|r| dynamic(rows, r)).collect::<Result<_, _>>()?),
+        "array" => Value::Array(
+            children
+                .into_iter()
+                .map(|r| dynamic(rows, r))
+                .collect::<Result<_, _>>()?,
+        ),
         "null" => Value::Null,
         k => scalar_value(row.fields["value"].as_deref().unwrap_or(""), k)?,
     })
 }
-fn decode(shape: &'static Shape, all: &HashMap<&'static str, Vec<Stored>>, parent: &str) -> Result<Value, ReportError> {
+fn decode(
+    shape: &'static Shape,
+    all: &HashMap<&'static str, Vec<Stored>>,
+    parent: &str,
+) -> Result<Value, ReportError> {
     let rows = &all[shape.table];
     if shape.dynamic {
         return rows
@@ -275,7 +375,10 @@ fn decode(shape: &'static Shape, all: &HashMap<&'static str, Vec<Stored>>, paren
             .transpose()
             .map(|v| v.unwrap_or(Value::Null));
     }
-    let selected = rows.iter().filter(|r| r.parent == parent).collect::<Vec<_>>();
+    let selected = rows
+        .iter()
+        .filter(|r| r.parent == parent)
+        .collect::<Vec<_>>();
     let object = |row: &Stored| -> Result<Value, ReportError> {
         if shape.scalar {
             return row.fields["value"]
@@ -288,7 +391,11 @@ fn decode(shape: &'static Shape, all: &HashMap<&'static str, Vec<Stored>>, paren
         for (f, k) in shape.fields {
             value.insert(
                 (*f).into(),
-                row.fields[*f].as_deref().map(|s| scalar_value(s, k)).transpose()?.unwrap_or(Value::Null),
+                row.fields[*f]
+                    .as_deref()
+                    .map(|s| scalar_value(s, k))
+                    .transpose()?
+                    .unwrap_or(Value::Null),
             );
         }
         for (f, child) in shape.children {
@@ -301,19 +408,29 @@ fn decode(shape: &'static Shape, all: &HashMap<&'static str, Vec<Stored>>, paren
         Ok(Value::Object(value))
     };
     match shape.mode {
-        "list" => selected.into_iter().map(object).collect::<Result<Vec<_>, _>>().map(Value::Array),
+        "list" => selected
+            .into_iter()
+            .map(object)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
         "map" => selected
             .into_iter()
             .map(|r| Ok((r.name.clone(), object(r)?)))
             .collect::<Result<Map<_, _>, ReportError>>()
             .map(Value::Object),
-        _ => selected.first().map(|r| object(r)).transpose().map(|v| v.unwrap_or(Value::Null)),
+        _ => selected
+            .first()
+            .map(|r| object(r))
+            .transpose()
+            .map(|v| v.unwrap_or(Value::Null)),
     }
 }
 pub async fn read(db: &super::sql::Db, key: &Key<'_>) -> Result<Value, ReportError> {
     let mut tx = db.pool.begin().await?;
     if db.dialect == super::sql::Dialect::Postgres {
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY").execute(&mut *tx).await?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await?;
     }
     let shape = &super::calculation_shape::DEFINITION;
     let all = load(&mut tx, key, shape).await?;

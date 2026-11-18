@@ -7,7 +7,12 @@ use crate::{
 use serde_json::{Map, Value};
 use sqlx::{Any, AnyConnection, Row, Transaction};
 
-pub async fn texts(db: &Db, project: &str, report: Option<&str>, kind: &str) -> Result<I18nText, ReportError> {
+pub async fn texts(
+    db: &Db,
+    project: &str,
+    report: Option<&str>,
+    kind: &str,
+) -> Result<I18nText, ReportError> {
     let rows = match report {
         Some(r) => {
             sqlx::query("SELECT lang,text FROM report_texts WHERE project_slug=$1 AND report_slug=$2 AND text_key=$3")
@@ -25,7 +30,9 @@ pub async fn texts(db: &Db, project: &str, report: Option<&str>, kind: &str) -> 
                 .await?
         }
     };
-    rows.iter().map(|r| Ok((r.try_get("lang")?, r.try_get("text")?))).collect()
+    rows.iter()
+        .map(|r| Ok((r.try_get("lang")?, r.try_get("text")?)))
+        .collect()
 }
 pub async fn write_texts(
     tx: &mut Transaction<'_, Any>,
@@ -36,12 +43,14 @@ pub async fn write_texts(
 ) -> Result<(), ReportError> {
     match report {
         Some(r) => {
-            sqlx::query("DELETE FROM report_texts WHERE project_slug=$1 AND report_slug=$2 AND text_key=$3")
-                .bind(project)
-                .bind(r)
-                .bind(kind)
-                .execute(&mut **tx)
-                .await?;
+            sqlx::query(
+                "DELETE FROM report_texts WHERE project_slug=$1 AND report_slug=$2 AND text_key=$3",
+            )
+            .bind(project)
+            .bind(r)
+            .bind(kind)
+            .execute(&mut **tx)
+            .await?;
             for (lang, value) in text {
                 sqlx::query(
                     "INSERT INTO report_texts(project_slug,report_slug,text_key,lang,text) VALUES($1,$2,$3,$4,$5)",
@@ -75,10 +84,11 @@ pub async fn write_texts(
     Ok(())
 }
 pub async fn theme(db: &Db, project: &str) -> Result<ProjectTheme, ReportError> {
-    let modes = sqlx::query("SELECT mode FROM project_theme_modes WHERE project_slug=$1 ORDER BY mode")
-        .bind(project)
-        .fetch_all(&db.pool)
-        .await?;
+    let modes =
+        sqlx::query("SELECT mode FROM project_theme_modes WHERE project_slug=$1 ORDER BY mode")
+            .bind(project)
+            .fetch_all(&db.pool)
+            .await?;
     let rows=sqlx::query("SELECT mode,token,CAST(position AS BIGINT) AS position,color FROM project_theme_colors WHERE project_slug=$1 ORDER BY position").bind(project).fetch_all(&db.pool).await?;
     let mut theme = Map::new();
     for mode in modes {
@@ -107,7 +117,10 @@ pub async fn write_theme(
     project: &str,
     theme: &ProjectTheme,
 ) -> Result<(), ReportError> {
-    sqlx::query("DELETE FROM project_theme_modes WHERE project_slug=$1").bind(project).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM project_theme_modes WHERE project_slug=$1")
+        .bind(project)
+        .execute(&mut **tx)
+        .await?;
     let v = serde_json::to_value(theme).map_err(|e| ReportError::Internal(e.to_string()))?;
     for mode in ["light", "dark"] {
         let Some(tokens) = v[mode].as_object() else {
@@ -119,7 +132,11 @@ pub async fn write_theme(
             .execute(&mut **tx)
             .await?;
         for (token, v) in tokens {
-            let colors = if let Some(a) = v.as_array() { a.clone() } else { vec![v.clone()] };
+            let colors = if let Some(a) = v.as_array() {
+                a.clone()
+            } else {
+                vec![v.clone()]
+            };
             for (i, color) in colors.iter().enumerate() {
                 sqlx::query(
                     "INSERT INTO project_theme_colors(project_slug,mode,token,position,color) VALUES($1,$2,$3,$4,$5)",

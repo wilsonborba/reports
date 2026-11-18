@@ -1,4 +1,33 @@
 -- Stop engine writers before this explicit migration. Each migration runs atomically.
+-- Historical 006 remains unchanged. For pre-006 databases, this replacement
+-- creates its relational version registry before converting inline definitions.
+CREATE TABLE IF NOT EXISTS calculation_versions (
+    project_slug TEXT NOT NULL REFERENCES catalog_projects(slug) ON DELETE CASCADE,
+    calculation_id TEXT NOT NULL,
+    version BIGINT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    input_schema TEXT,
+    input_schema_version BIGINT,
+    needs_review BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at TIMESTAMPTZ,
+    PRIMARY KEY (project_slug, calculation_id, version),
+    CONSTRAINT calculation_versions_status_check CHECK (status IN ('draft', 'published', 'retired')),
+    CONSTRAINT calculation_versions_version_check CHECK (version > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_calculation_versions_input
+    ON calculation_versions(project_slug, input_schema, status);
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS calculation_id TEXT;
+ALTER TABLE datasets ADD COLUMN IF NOT EXISTS calculation_version BIGINT;
+-- A pre-006 inline definition becomes normalized rows, not a new JSONB value.
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema=current_schema() AND table_name='calculation_versions'
+                 AND column_name='definition') THEN
+        ALTER TABLE calculation_versions ALTER COLUMN definition DROP NOT NULL;
+    END IF;
+END $$;
+
 LOCK TABLE catalog_projects,reports,datasets,calculation_versions,report_cards,site_settings IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS sort_order BIGINT NOT NULL DEFAULT 0;

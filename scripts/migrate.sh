@@ -51,10 +51,7 @@ if [[ "$MODE" == "--dry-run" ]]; then
   exit 0
 fi
 
-for m in "${MIGRATIONS[@]}"; do
-  echo "Applying $(basename "$m") ..."
-  psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$m"
-done
+"$ROOT_DIR/scripts/migrate_postgres.sh"
 
 COUCH_AUTH=()
 if [[ -n "${COUCHDB_USER:-}" && -n "${COUCHDB_PASSWORD:-}" ]]; then

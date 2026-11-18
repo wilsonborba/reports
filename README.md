@@ -44,6 +44,9 @@ scripts/migrate.sh --yes       # apply engine/migrations/*.sql and the CouchDB d
 
 Migration 007 converts existing catalog and calculation data into normalized rows.
 Stop engine writers before applying it. Each migration runs in one transaction.
+Applied migrations 001, 005 and 006 remain unchanged. For pre-006 databases
+with inline dataset definitions, the runner applies 007 before the historical
+006 drops those definitions. Later runs use the same idempotent migration path.
 Projects, reports and sample data are added through the admin API. The engine never runs DDL: at start it checks the required tables and columns
 and stops with a message that names `scripts/migrate.sh` when the schema is missing or
 outdated.
