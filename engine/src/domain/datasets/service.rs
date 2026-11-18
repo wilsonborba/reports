@@ -46,6 +46,16 @@ pub struct FieldInfo {
     pub unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
+    #[serde(default = "default_missing_means")]
+    pub missing_means: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub denominator_field: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub denominator_text: Option<String>,
+}
+
+fn default_missing_means() -> String {
+    "no_data".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -84,6 +94,8 @@ pub struct DatasetDescriptor {
     pub filters: Vec<FilterInfo>,
     pub can_view: bool,
     pub visibility: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<crate::dal::catalog::DatasetMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -660,6 +672,14 @@ impl DatasetService {
                     self.result_ttl,
                 )
                 .await;
+            self.stores
+                .cache
+                .tag(
+                    &format!("report:{}:{}", record.project, record.report_slug),
+                    &key,
+                    self.result_ttl,
+                )
+                .await;
         }
         Ok(built)
     }
@@ -670,16 +690,49 @@ impl DatasetService {
         lang: &str,
     ) -> Result<DatasetDescriptor, ReportError> {
         let spec = &record.spec;
+        let semantics = crate::dal::catalog::list_field_semantics(
+            &self.stores.db,
+            &record.project,
+            &record.report_slug,
+            &record.dataset_id,
+        )
+        .await?;
+        let meta = crate::dal::catalog::get_dataset_meta(
+            &self.stores.db,
+            &record.project,
+            &record.report_slug,
+            &record.dataset_id,
+            record.data_tier,
+        )
+        .await?;
         let fields = spec
             .fields
             .iter()
-            .map(|f| FieldInfo {
-                name: f.name.clone(),
-                label: resolve_text(&f.label, lang),
-                field_type: f.field_type.clone(),
-                role: f.role.clone(),
-                unit: f.unit.clone(),
-                decimals: f.decimals,
+            .map(|f| {
+                let sem = semantics.get(&f.name);
+                FieldInfo {
+                    name: f.name.clone(),
+                    label: resolve_text(&f.label, lang),
+                    field_type: f.field_type.clone(),
+                    role: f.role.clone(),
+                    unit: f.unit.clone(),
+                    decimals: f.decimals,
+                    missing_means: sem.map(|s| s.missing_means.clone()).unwrap_or_else(|| {
+                        if f.missing_means.is_empty() {
+                            "no_data".to_string()
+                        } else {
+                            f.missing_means.clone()
+                        }
+                    }),
+                    denominator_field: sem
+                        .map(|s| s.denominator_field.clone())
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| f.denominator_field.clone()),
+                    denominator_text: sem
+                        .map(|s| s.denominator_text.clone())
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| f.denominator_text.clone()),
+                }
             })
             .collect();
         let mut filters = Vec::new();
@@ -744,6 +797,7 @@ impl DatasetService {
             filters,
             can_view: true,
             visibility: record.visibility.clone(),
+            meta: Some(meta),
         })
     }
 

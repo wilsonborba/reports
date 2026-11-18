@@ -137,6 +137,10 @@ fn admin_routes(with_reads: bool) -> Router<Arc<AppState>> {
             post(admin::retire_calculation),
         )
         .route("/reports/:report/datasets/:dataset/snapshots", snapshots)
+        .route(
+            "/reports/:report/datasets/:dataset/meta",
+            get(admin::get_dataset_meta).put(admin::put_dataset_meta),
+        )
         .route("/grants", grants)
         .route("/grants/:grant", axum::routing::delete(admin::delete_grant))
         .route(

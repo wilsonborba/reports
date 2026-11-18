@@ -272,6 +272,16 @@ pub struct FieldSpec {
     pub unit: Option<String>,
     #[serde(default)]
     pub decimals: Option<u32>,
+    #[serde(default = "default_missing_means")]
+    pub missing_means: String,
+    #[serde(default)]
+    pub denominator_field: Option<String>,
+    #[serde(default)]
+    pub denominator_text: Option<String>,
+}
+
+fn default_missing_means() -> String {
+    "no_data".to_string()
 }
 
 fn default_role() -> String {

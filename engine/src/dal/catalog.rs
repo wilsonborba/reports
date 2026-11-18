@@ -669,6 +669,203 @@ pub async fn set_project_admin(
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct DatasetMeta {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub period_start: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub period_end: String,
+    pub timezone: String,
+    pub freshness_mode: String,
+    pub expected_refresh_minutes: i64,
+    pub updated_at: i64,
+    pub tier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct FieldSemantics {
+    pub field_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub denominator_field: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub denominator_text: String,
+    pub missing_means: String,
+}
+
+pub async fn upsert_dataset_meta(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    meta: &DatasetMeta,
+) -> Result<(), ReportError> {
+    if !matches!(meta.freshness_mode.as_str(), "live" | "snapshot") {
+        return Err(ReportError::BadRequest(
+            "invalid_freshness_mode: freshness_mode must be live or snapshot".into(),
+        ));
+    }
+    if meta.expected_refresh_minutes < 0 {
+        return Err(ReportError::BadRequest(
+            "invalid_refresh: expected_refresh_minutes must be >= 0".into(),
+        ));
+    }
+    let tz = meta.timezone.trim();
+    if tz.is_empty() || (tz != "UTC" && !tz.contains('/')) {
+        return Err(ReportError::BadRequest(
+            "invalid_timezone: bucket_timezone must be UTC or an IANA timezone like Asia/Bangkok"
+                .into(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO dataset_meta(
+            project_slug, report_slug, dataset_id, source_label, source_url,
+            period_start, period_end, bucket_timezone, freshness_mode, expected_refresh_minutes, updated_at
+         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT(project_slug, report_slug, dataset_id) DO UPDATE SET
+            source_label = EXCLUDED.source_label,
+            source_url = EXCLUDED.source_url,
+            period_start = EXCLUDED.period_start,
+            period_end = EXCLUDED.period_end,
+            bucket_timezone = EXCLUDED.bucket_timezone,
+            freshness_mode = EXCLUDED.freshness_mode,
+            expected_refresh_minutes = EXCLUDED.expected_refresh_minutes,
+            updated_at = EXCLUDED.updated_at",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .bind(meta.source.trim())
+    .bind(meta.source_url.trim())
+    .bind(meta.period_start.trim())
+    .bind(meta.period_end.trim())
+    .bind(tz)
+    .bind(&meta.freshness_mode)
+    .bind(meta.expected_refresh_minutes)
+    .bind(meta.updated_at)
+    .execute(&db.pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_dataset_meta(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    tier: DataTier,
+) -> Result<DatasetMeta, ReportError> {
+    let row = sqlx::query(
+        "SELECT source_label, source_url, period_start, period_end, bucket_timezone,
+                freshness_mode, CAST(expected_refresh_minutes AS BIGINT) AS expected_refresh_minutes, updated_at
+         FROM dataset_meta
+         WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_optional(&db.pool)
+    .await?;
+    match row {
+        Some(r) => Ok(DatasetMeta {
+            source: r.try_get("source_label")?,
+            source_url: r.try_get("source_url")?,
+            period_start: r.try_get("period_start")?,
+            period_end: r.try_get("period_end")?,
+            timezone: r.try_get("bucket_timezone")?,
+            freshness_mode: r.try_get("freshness_mode")?,
+            expected_refresh_minutes: r.try_get("expected_refresh_minutes")?,
+            updated_at: r.try_get("updated_at")?,
+            tier: tier_text(tier).to_string(),
+        }),
+        None => Ok(DatasetMeta {
+            source: String::new(),
+            source_url: String::new(),
+            period_start: String::new(),
+            period_end: String::new(),
+            timezone: "UTC".to_string(),
+            freshness_mode: "live".to_string(),
+            expected_refresh_minutes: 60,
+            updated_at: 0,
+            tier: tier_text(tier).to_string(),
+        }),
+    }
+}
+
+pub async fn upsert_field_semantics(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    items: &[FieldSemantics],
+) -> Result<(), ReportError> {
+    for item in items {
+        if item.field_name.trim().is_empty() {
+            return Err(ReportError::BadRequest(
+                "invalid_field_name: field_name must be non-empty".into(),
+            ));
+        }
+        if !matches!(item.missing_means.as_str(), "no_data" | "zero") {
+            return Err(ReportError::BadRequest(
+                "invalid_missing_means: missing_means must be no_data or zero".into(),
+            ));
+        }
+        sqlx::query(
+            "INSERT INTO dataset_field_semantics(
+                project_slug, report_slug, dataset_id, field_name, denominator_field, denominator_text, missing_means
+             ) VALUES($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT(project_slug, report_slug, dataset_id, field_name) DO UPDATE SET
+                denominator_field = EXCLUDED.denominator_field,
+                denominator_text = EXCLUDED.denominator_text,
+                missing_means = EXCLUDED.missing_means",
+        )
+        .bind(project)
+        .bind(report)
+        .bind(dataset)
+        .bind(item.field_name.trim())
+        .bind(item.denominator_field.trim())
+        .bind(item.denominator_text.trim())
+        .bind(&item.missing_means)
+        .execute(&db.pool)
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn list_field_semantics(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+) -> Result<std::collections::HashMap<String, FieldSemantics>, ReportError> {
+    let rows = sqlx::query(
+        "SELECT field_name, denominator_field, denominator_text, missing_means
+         FROM dataset_field_semantics
+         WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_all(&db.pool)
+    .await?;
+    let mut map = std::collections::HashMap::new();
+    for r in rows {
+        let name: String = r.try_get("field_name")?;
+        map.insert(
+            name.clone(),
+            FieldSemantics {
+                field_name: name,
+                denominator_field: r.try_get("denominator_field")?,
+                denominator_text: r.try_get("denominator_text")?,
+                missing_means: r.try_get("missing_means")?,
+            },
+        );
+    }
+    Ok(map)
+}
+
 pub async fn delete_role(db: &Db, user_uuid: &str, project: &str) -> Result<bool, ReportError> {
     let sql = format!(
         "DELETE FROM user_project_roles WHERE {} = $1 AND app_name = $2",
