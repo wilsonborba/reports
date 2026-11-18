@@ -67,6 +67,18 @@ pub struct ReportMetadata {
     pub card_order: Vec<String>,
 }
 
+fn default_source_app() -> String {
+    "reports".to_string()
+}
+
+fn default_control_authority() -> String {
+    "user_owned".to_string()
+}
+
+fn default_audience() -> String {
+    "personal".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub struct ReportRecord {
     pub project: String,
@@ -84,6 +96,14 @@ pub struct ReportRecord {
     pub discoverable: bool,
     #[serde(default)]
     pub updated_at: String,
+    #[serde(default = "default_source_app")]
+    pub source_app: String,
+    #[serde(default)]
+    pub owner_id: String,
+    #[serde(default = "default_control_authority")]
+    pub control_authority: String,
+    #[serde(default = "default_audience")]
+    pub audience: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +121,14 @@ pub struct DatasetRecord {
     pub visibility: String,
     /// A gated dataset that guests may see as a skeleton (no data).
     pub discoverable: bool,
+    #[serde(default = "default_source_app")]
+    pub source_app: String,
+    #[serde(default)]
+    pub owner_id: String,
+    #[serde(default = "default_control_authority")]
+    pub control_authority: String,
+    #[serde(default = "default_audience")]
+    pub audience: String,
 }
 
 fn tier_from(text: &str) -> DataTier {
@@ -235,7 +263,7 @@ pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportErro
 
 fn report_select(db: &Db) -> String {
     format!(
-        "SELECT project_slug, slug, CAST(sort_order AS BIGINT) AS sort_order, {} AS period_collection, {} AS period_field, visibility, {} AS discoverable, {} AS updated_at FROM reports",
+        "SELECT project_slug, slug, CAST(sort_order AS BIGINT) AS sort_order, {} AS period_collection, {} AS period_field, visibility, {} AS discoverable, {} AS updated_at, source_app, owner_id, control_authority, audience FROM reports",
         db.opt_text("period_collection"),
         db.opt_text("period_field"),
         db.flag("discoverable"),
@@ -273,6 +301,10 @@ async fn report_from(db: &Db, row: &AnyRow) -> Result<ReportRecord, ReportError>
         visibility: row.try_get("visibility")?,
         discoverable: flag_col(row, "discoverable")?,
         updated_at: row.try_get("updated_at")?,
+        source_app: row.try_get("source_app")?,
+        owner_id: row.try_get("owner_id")?,
+        control_authority: row.try_get("control_authority")?,
+        audience: row.try_get("audience")?,
     })
 }
 
@@ -318,7 +350,30 @@ pub async fn get_report(
 
 pub async fn upsert_report(db: &Db, r: &ReportRecord) -> Result<(), ReportError> {
     let mut tx = db.pool.begin().await?;
-    let sql=format!("INSERT INTO reports(project_slug,slug,visibility,discoverable,sort_order,period_collection,period_field,updated_at) VALUES($1,$2,$3,$4,$5,{}, {},{}) ON CONFLICT(project_slug,slug) DO UPDATE SET visibility=EXCLUDED.visibility,discoverable=EXCLUDED.discoverable,sort_order=EXCLUDED.sort_order,period_collection=EXCLUDED.period_collection,period_field=EXCLUDED.period_field,updated_at=EXCLUDED.updated_at",db.opt_in(6),db.opt_in(7),db.now());
+    let source_app = if r.source_app.is_empty() {
+        "reports"
+    } else {
+        r.source_app.as_str()
+    };
+    let authority = if r.control_authority.is_empty() {
+        "user_owned"
+    } else {
+        r.control_authority.as_str()
+    };
+    let audience = if r.audience.is_empty() {
+        crate::domain::auth::Audience::from_visibility(crate::domain::auth::Visibility::parse(
+            &r.visibility,
+        ))
+        .as_str()
+    } else {
+        r.audience.as_str()
+    };
+    let sql = format!(
+        "INSERT INTO reports(project_slug,slug,visibility,discoverable,sort_order,period_collection,period_field,source_app,owner_id,control_authority,audience,updated_at) VALUES($1,$2,$3,$4,$5,{}, {},$8,$9,$10,$11,{}) ON CONFLICT(project_slug,slug) DO UPDATE SET visibility=EXCLUDED.visibility,discoverable=EXCLUDED.discoverable,sort_order=EXCLUDED.sort_order,period_collection=EXCLUDED.period_collection,period_field=EXCLUDED.period_field,source_app=EXCLUDED.source_app,owner_id=EXCLUDED.owner_id,control_authority=EXCLUDED.control_authority,audience=EXCLUDED.audience,updated_at=EXCLUDED.updated_at",
+        db.opt_in(6),
+        db.opt_in(7),
+        db.now()
+    );
     sqlx::query(&sql)
         .bind(&r.project)
         .bind(&r.slug)
@@ -339,6 +394,10 @@ pub async fn upsert_report(db: &Db, r: &ReportRecord) -> Result<(), ReportError>
                 .map(|p| p.field.as_str())
                 .unwrap_or(""),
         )
+        .bind(source_app)
+        .bind(&r.owner_id)
+        .bind(authority)
+        .bind(audience)
         .execute(&mut *tx)
         .await?;
     super::catalog_storage::write_texts(&mut tx, &r.project, Some(&r.slug), "title", &r.title)
@@ -373,6 +432,7 @@ fn dataset_select(db: &Db) -> String {
         "SELECT d.project_slug AS project_slug, d.report_slug AS report_slug, d.dataset_id AS dataset_id, \
          d.data_tier AS data_tier, d.visibility AS visibility, {} AS discoverable, \
          {} AS calculation_id, CAST(COALESCE(d.calculation_version, 0) AS BIGINT) AS calculation_version, \
+         d.source_app AS source_app, d.owner_id AS owner_id, d.control_authority AS control_authority, d.audience AS audience, \
          1 AS unused FROM datasets d",
         db.flag("d.discoverable"),
         db.opt_text("d.calculation_id"),
@@ -396,6 +456,10 @@ async fn dataset_from(db: &Db, row: &AnyRow) -> Result<DatasetRecord, ReportErro
         .await?,
         visibility: row.try_get("visibility")?,
         discoverable: flag_col(row, "discoverable")?,
+        source_app: row.try_get("source_app")?,
+        owner_id: row.try_get("owner_id")?,
+        control_authority: row.try_get("control_authority")?,
+        audience: row.try_get("audience")?,
     })
 }
 
@@ -460,12 +524,31 @@ pub async fn get_dataset(
 }
 
 pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportError> {
-    let sql = "INSERT INTO datasets (project_slug, report_slug, dataset_id, data_tier, calculation_id, calculation_version, visibility, discoverable) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+    let source_app = if d.source_app.is_empty() {
+        "reports"
+    } else {
+        d.source_app.as_str()
+    };
+    let authority = if d.control_authority.is_empty() {
+        "user_owned"
+    } else {
+        d.control_authority.as_str()
+    };
+    let audience = if d.audience.is_empty() {
+        crate::domain::auth::Audience::from_visibility(crate::domain::auth::Visibility::parse(
+            &d.visibility,
+        ))
+        .as_str()
+    } else {
+        d.audience.as_str()
+    };
+    let sql = "INSERT INTO datasets (project_slug, report_slug, dataset_id, data_tier, calculation_id, calculation_version, visibility, discoverable, source_app, owner_id, control_authority, audience) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
          ON CONFLICT (project_slug, report_slug, dataset_id) DO UPDATE SET \
          data_tier = EXCLUDED.data_tier, calculation_id = EXCLUDED.calculation_id, \
          calculation_version = EXCLUDED.calculation_version, visibility = EXCLUDED.visibility, \
-         discoverable = EXCLUDED.discoverable";
+         discoverable = EXCLUDED.discoverable, source_app = EXCLUDED.source_app, \
+         owner_id = EXCLUDED.owner_id, control_authority = EXCLUDED.control_authority, audience = EXCLUDED.audience";
     sqlx::query(sql)
         .bind(&d.project)
         .bind(&d.report_slug)
@@ -475,6 +558,10 @@ pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportErro
         .bind(d.calculation_version)
         .bind(&d.visibility)
         .bind(d.discoverable)
+        .bind(source_app)
+        .bind(&d.owner_id)
+        .bind(authority)
+        .bind(audience)
         .execute(&db.pool)
         .await?;
     Ok(())

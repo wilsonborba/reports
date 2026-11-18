@@ -4,6 +4,7 @@
 
 ### Features
 
+- *(access)* Add per-user ownership, source app, control authority, audiences, user-scoped caches, and visibility cache invalidation (#41)
 - *(logs)* Stream redacted engine logs from the journald writer
 - *(telemetry)* Track mapped Reports controls through shared SQL telemetry
 

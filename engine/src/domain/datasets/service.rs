@@ -782,6 +782,24 @@ impl DatasetService {
         })
     }
 
+    pub async fn invalidate_visibility_change(&self, project: &str, report: &str) {
+        self.stores
+            .cache
+            .invalidate_tag(&format!("report:{project}:{report}"))
+            .await;
+        self.stores
+            .cache
+            .invalidate_tag(&format!("catalog:{project}"))
+            .await;
+    }
+
+    pub async fn invalidate_template_publish(&self, project: &str) {
+        self.stores
+            .cache
+            .invalidate_tag(&format!("catalog:{project}"))
+            .await;
+    }
+
     /// Published versions never change, so the calculation version identifies the definition.
     fn result_key(
         record: &DatasetRecord,
@@ -790,8 +808,13 @@ impl DatasetService {
         class: AccessClass,
     ) -> String {
         let filters = serde_json::to_string(filters).unwrap_or_default();
+        let owner_scope = if record.audience == "personal" || record.visibility == "restricted" {
+            record.owner_id.as_str()
+        } else {
+            ""
+        };
         format!(
-            "result:v2:{}:{}:{}:{}:{}:{}:{}:{}",
+            "result:v3:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             record.project,
             record.report_slug,
             record.dataset_id,
@@ -799,7 +822,9 @@ impl DatasetService {
             record.calculation_version,
             lang,
             hash_of(&filters),
-            class.tag()
+            class.tag(),
+            record.audience,
+            owner_scope,
         )
     }
 
@@ -934,6 +959,14 @@ impl DatasetService {
                         "dataset:{}:{}:{}",
                         record.project, record.report_slug, record.dataset_id
                     ),
+                    key,
+                    self.result_ttl,
+                )
+                .await;
+            self.stores
+                .cache
+                .tag(
+                    &format!("report:{}:{}", record.project, record.report_slug),
                     key,
                     self.result_ttl,
                 )
