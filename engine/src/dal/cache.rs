@@ -201,7 +201,10 @@ impl CacheStore for RedisCache {
 
     async fn health(&self) -> bool {
         match self.connection().await {
-            Some(mut c) => redis::cmd("PING").query_async::<String>(&mut c).await.is_ok(),
+            Some(mut c) => redis::cmd("PING")
+                .query_async::<String>(&mut c)
+                .await
+                .is_ok(),
             None => false,
         }
     }
@@ -260,10 +263,13 @@ impl CacheStore for MemoryCache {
 
     async fn set(&self, key: &str, value: &str, ttl_secs: u64) {
         if self.online() {
-            self.values
-                .lock()
-                .unwrap()
-                .insert(key.to_string(), (value.to_string(), Instant::now() + Duration::from_secs(ttl_secs)));
+            self.values.lock().unwrap().insert(
+                key.to_string(),
+                (
+                    value.to_string(),
+                    Instant::now() + Duration::from_secs(ttl_secs),
+                ),
+            );
         }
     }
 
@@ -273,7 +279,12 @@ impl CacheStore for MemoryCache {
 
     async fn tag(&self, tag: &str, key: &str, _ttl_secs: u64) {
         if self.online() {
-            self.tags.lock().unwrap().entry(tag.to_string()).or_default().insert(key.to_string());
+            self.tags
+                .lock()
+                .unwrap()
+                .entry(tag.to_string())
+                .or_default()
+                .insert(key.to_string());
         }
     }
 
@@ -297,7 +308,13 @@ impl CacheStore for MemoryCache {
         match locks.get(key) {
             Some((_, until)) if Instant::now() < *until => LockState::Busy,
             _ => {
-                locks.insert(key.to_string(), (token.to_string(), Instant::now() + Duration::from_secs(ttl_secs)));
+                locks.insert(
+                    key.to_string(),
+                    (
+                        token.to_string(),
+                        Instant::now() + Duration::from_secs(ttl_secs),
+                    ),
+                );
                 LockState::Acquired
             }
         }

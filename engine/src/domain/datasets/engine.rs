@@ -14,19 +14,40 @@ use evalexpr::{
 use serde_json::{Map, Number, Value};
 
 use super::spec::{
-    BucketSpec, Condition, DatasetSpec, DerivedSpec, FilterParam, LookupSpec, MeasureSpec, StageSpec,
-    WindowSpec,
+    BucketSpec, Condition, DatasetSpec, DerivedSpec, FilterParam, LookupSpec, MeasureSpec,
+    StageSpec, WindowSpec,
 };
 
 /// Aggregations of a measure.
 pub const AGGREGATIONS: &[&str] = &[
-    "sum", "avg", "min", "max", "count", "count_distinct", "argmax", "argmin", "top", "top_share", "first", "sum_top",
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "count",
+    "count_distinct",
+    "argmax",
+    "argmin",
+    "top",
+    "top_share",
+    "first",
+    "sum_top",
 ];
 /// Aggregations that need a numeric field.
 pub const NUMERIC_AGGREGATIONS: &[&str] = &["sum", "avg", "min", "max", "sum_top"];
 /// Condition operators.
 pub const OPERATORS: &[&str] = &[
-    "eq", "ne", "in", "not_in", "between", "gt", "gte", "lt", "lte", "ends_with", "starts_with",
+    "eq",
+    "ne",
+    "in",
+    "not_in",
+    "between",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "ends_with",
+    "starts_with",
 ];
 pub const BUCKET_UNITS: &[&str] = &["hour", "day", "week", "month"];
 pub const WINDOW_AGGREGATIONS: &[&str] = &["avg", "sum", "min", "max"];
@@ -752,7 +773,10 @@ pub fn bucket_of(v: &Value, unit: &str, utc_offset_minutes: Option<i32>) -> Opti
             };
             (t.date_naive(), Some(t.hour()))
         }
-        Err(_) => (NaiveDate::parse_from_str(text.get(..10)?, "%Y-%m-%d").ok()?, None),
+        Err(_) => (
+            NaiveDate::parse_from_str(text.get(..10)?, "%Y-%m-%d").ok()?,
+            None,
+        ),
     };
     Some(match unit {
         "hour" => format!("{}T{:02}:00", date.format("%Y-%m-%d"), hour?),
@@ -767,11 +791,19 @@ pub fn bucket_of(v: &Value, unit: &str, utc_offset_minutes: Option<i32>) -> Opti
 
 pub fn apply_bucket(rows: &mut [Row], b: &BucketSpec) -> Result<(), EngineError> {
     if !BUCKET_UNITS.contains(&b.unit.as_str()) {
-        return Err(EngineError::Spec(format!("unknown bucket unit '{}'", b.unit)));
+        return Err(EngineError::Spec(format!(
+            "unknown bucket unit '{}'",
+            b.unit
+        )));
     }
     for r in rows.iter_mut() {
-        let label = r.get(&b.field).and_then(|v| bucket_of(v, &b.unit, b.utc_offset_minutes));
-        r.insert(b.name.clone(), label.map(Value::String).unwrap_or(Value::Null));
+        let label = r
+            .get(&b.field)
+            .and_then(|v| bucket_of(v, &b.unit, b.utc_offset_minutes));
+        r.insert(
+            b.name.clone(),
+            label.map(Value::String).unwrap_or(Value::Null),
+        );
     }
     Ok(())
 }
@@ -779,16 +811,23 @@ pub fn apply_bucket(rows: &mut [Row], b: &BucketSpec) -> Result<(), EngineError>
 /// Trailing window per partition. Rows keep their order; nulls do not enter the window.
 pub fn apply_window(rows: &mut [Row], w: &WindowSpec) -> Result<(), EngineError> {
     if !WINDOW_AGGREGATIONS.contains(&w.agg.as_str()) {
-        return Err(EngineError::Spec(format!("unknown window aggregation '{}'", w.agg)));
+        return Err(EngineError::Spec(format!(
+            "unknown window aggregation '{}'",
+            w.agg
+        )));
     }
     if w.size == 0 || w.size > MAX_WINDOW {
-        return Err(EngineError::Spec(format!("window size must be 1 to {MAX_WINDOW}")));
+        return Err(EngineError::Spec(format!(
+            "window size must be 1 to {MAX_WINDOW}"
+        )));
     }
     let mut order: Vec<usize> = (0..rows.len()).collect();
     order.sort_by(|&a, &b| {
         partition_key(&rows[a], &w.partition_by)
             .cmp(&partition_key(&rows[b], &w.partition_by))
-            .then_with(|| compare_values(field(&rows[a], &w.order_by), field(&rows[b], &w.order_by)))
+            .then_with(|| {
+                compare_values(field(&rows[a], &w.order_by), field(&rows[b], &w.order_by))
+            })
     });
     let mut results = vec![Value::Null; rows.len()];
     let mut start = 0;
@@ -799,8 +838,15 @@ pub fn apply_window(rows: &mut [Row], w: &WindowSpec) -> Result<(), EngineError>
             end += 1;
         }
         for i in start..end {
-            let from = if i + 1 >= start + w.size { i + 1 - w.size } else { start };
-            let values: Vec<f64> = order[from..=i].iter().filter_map(|&r| as_f64(field(&rows[r], &w.field))).collect();
+            let from = if i + 1 >= start + w.size {
+                i + 1 - w.size
+            } else {
+                start
+            };
+            let values: Vec<f64> = order[from..=i]
+                .iter()
+                .filter_map(|&r| as_f64(field(&rows[r], &w.field)))
+                .collect();
             let v = if values.is_empty() {
                 f64::NAN
             } else {
@@ -1050,7 +1096,9 @@ mod tests {
     #[test]
     fn lookups_row_derived_refs_and_expr_field() {
         let mut base = sample();
-        let tiers = rows(json!([{"provider": "ollama", "tier": "local"}, {"provider": "openai", "tier": "cloud"}]));
+        let tiers = rows(
+            json!([{"provider": "ollama", "tier": "local"}, {"provider": "openai", "tier": "cloud"}]),
+        );
         let l: LookupSpec =
             serde_json::from_value(json!({"collection": "c", "key": ["provider"]})).unwrap();
         apply_lookup(&mut base, &l, &tiers);
@@ -1068,7 +1116,9 @@ mod tests {
         apply_derived(&mut b2, &s.row_derived, &[], &HashMap::new()).unwrap();
         assert_eq!(b2[3]["period"], json!("pm"));
 
-        let m = rows(json!([{"model": "u", "f": "rate * base / math::exp(1)", "rate": 60, "base": 30}]));
+        let m = rows(
+            json!([{"model": "u", "f": "rate * base / math::exp(1)", "rate": 60, "base": 30}]),
+        );
         let mut mm = m.clone();
         let d: Vec<DerivedSpec> =
             serde_json::from_value(json!([{"name": "q", "expr_field": "f"}])).unwrap();
@@ -1119,16 +1169,35 @@ mod tests {
     #[test]
     fn time_buckets_keep_or_shift_the_offset() {
         let t = json!("2026-10-20T23:30:00+07:00");
-        assert_eq!(bucket_of(&t, "hour", None).as_deref(), Some("2026-10-20T23:00"));
+        assert_eq!(
+            bucket_of(&t, "hour", None).as_deref(),
+            Some("2026-10-20T23:00")
+        );
         assert_eq!(bucket_of(&t, "day", None).as_deref(), Some("2026-10-20"));
         // The same instant in UTC is still the 20th, 16:30.
-        assert_eq!(bucket_of(&t, "hour", Some(0)).as_deref(), Some("2026-10-20T16:00"));
+        assert_eq!(
+            bucket_of(&t, "hour", Some(0)).as_deref(),
+            Some("2026-10-20T16:00")
+        );
         // 23:30 at +07:00 is the next day at +09:00.
-        assert_eq!(bucket_of(&t, "day", Some(540)).as_deref(), Some("2026-10-21"));
+        assert_eq!(
+            bucket_of(&t, "day", Some(540)).as_deref(),
+            Some("2026-10-21")
+        );
         // ISO week starts on Monday (2026-10-19); a plain date works for day, week and month.
-        assert_eq!(bucket_of(&json!("2026-10-25"), "week", None).as_deref(), Some("2026-10-19"));
-        assert_eq!(bucket_of(&json!("2026-10-25"), "month", None).as_deref(), Some("2026-10"));
-        assert_eq!(bucket_of(&json!("2026-10-25"), "hour", None), None, "a date has no hour");
+        assert_eq!(
+            bucket_of(&json!("2026-10-25"), "week", None).as_deref(),
+            Some("2026-10-19")
+        );
+        assert_eq!(
+            bucket_of(&json!("2026-10-25"), "month", None).as_deref(),
+            Some("2026-10")
+        );
+        assert_eq!(
+            bucket_of(&json!("2026-10-25"), "hour", None),
+            None,
+            "a date has no hour"
+        );
         assert_eq!(bucket_of(&json!("yesterday"), "day", None), None);
     }
 
@@ -1145,7 +1214,10 @@ mod tests {
         assert_eq!(r[1]["m"], json!(10.0));
         assert_eq!(r[2]["m"], json!(10.0));
         assert_eq!(r[3]["m"], json!(5.0));
-        let bad: WindowSpec = serde_json::from_value(json!({"name": "m", "agg": "median", "field": "v", "size": 2, "order_by": "d"})).unwrap();
+        let bad: WindowSpec = serde_json::from_value(
+            json!({"name": "m", "agg": "median", "field": "v", "size": 2, "order_by": "d"}),
+        )
+        .unwrap();
         assert!(apply_window(&mut r, &bad).is_err());
     }
 
@@ -1160,4 +1232,3 @@ mod tests {
         assert_eq!(out[0]["rate"], Value::Null, "0 / 0 is null");
     }
 }
-

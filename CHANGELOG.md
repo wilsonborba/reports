@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- Format the existing Rust engine and tests with rustfmt (#67).
+
 ### Features
 
 - *(logs)* Stream redacted engine logs from the journald writer

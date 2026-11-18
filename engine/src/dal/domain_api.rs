@@ -90,7 +90,11 @@ pub fn normalize_detail(data: &Value) -> DomainProjectDetail {
     fn list<T: serde::de::DeserializeOwned>(v: &Value, key: &str) -> Vec<T> {
         v.get(key)
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| serde_json::from_value(x.clone()).ok())
+                    .collect()
+            })
             .unwrap_or_default()
     }
     DomainProjectDetail {
@@ -131,7 +135,11 @@ impl HttpDomain {
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Normalizes one item of `GET /projects` (`MyResponse.data.items[]`).
@@ -162,33 +170,40 @@ pub fn normalize(item: &Value, public_base: &str) -> Option<DomainProject> {
 impl DomainSource for HttpDomain {
     async fn list_projects(&self) -> Result<Vec<DomainProject>, ReportError> {
         let url = format!("{}/projects?limit=100", self.base_url);
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ReportError::Unavailable(format!("domain_api: {}", e.without_url())))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                ReportError::Unavailable(format!("domain_api: {}", e.without_url()))
+            })?;
         if !response.status().is_success() {
-            return Err(ReportError::Unavailable(format!("domain_api returned {}", response.status())));
+            return Err(ReportError::Unavailable(format!(
+                "domain_api returned {}",
+                response.status()
+            )));
         }
         let body: Value = response
             .json()
             .await
             .map_err(|e| ReportError::Unavailable(format!("domain_api body: {e}")))?;
-        let items = body["data"]["items"].as_array().cloned().unwrap_or_default();
-        Ok(items.iter().filter_map(|i| normalize(i, &self.public_base)).collect())
+        let items = body["data"]["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        Ok(items
+            .iter()
+            .filter_map(|i| normalize(i, &self.public_base))
+            .collect())
     }
 
     async fn project_detail(&self, slug: &str) -> Result<DomainProjectDetail, ReportError> {
         let url = format!("{}/projects/{}", self.base_url, urlencoding::encode(slug));
-        let response = self
-            .detail_client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ReportError::Unavailable(format!("domain_api detail: {}", e.without_url())))?;
+        let response = self.detail_client.get(&url).send().await.map_err(|e| {
+            ReportError::Unavailable(format!("domain_api detail: {}", e.without_url()))
+        })?;
         if !response.status().is_success() {
-            return Err(ReportError::Unavailable(format!("domain_api detail returned {}", response.status())));
+            return Err(ReportError::Unavailable(format!(
+                "domain_api detail returned {}",
+                response.status()
+            )));
         }
         let body: Value = response
             .json()
@@ -220,7 +235,8 @@ impl DomainSource for StaticDomain {
     }
 
     async fn project_detail(&self, slug: &str) -> Result<DomainProjectDetail, ReportError> {
-        self.detail_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.detail_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.details
             .lock()
             .unwrap()
@@ -244,10 +260,19 @@ mod tests {
             "image_url": "c0600e27da65492bad1de3a421ce6a44", "status": "on development"
         });
         let p = normalize(&item, "https://api.asodya.com/apps/domain/v1").unwrap();
-        assert_eq!(p.repository_url.as_deref(), Some("https://github.com/wilsonborba/cortex"));
-        assert_eq!(p.cover_url.as_deref(), Some("https://api.asodya.com/apps/domain/v1/projects/cortex/cover"));
+        assert_eq!(
+            p.repository_url.as_deref(),
+            Some("https://github.com/wilsonborba/cortex")
+        );
+        assert_eq!(
+            p.cover_url.as_deref(),
+            Some("https://api.asodya.com/apps/domain/v1/projects/cortex/cover")
+        );
         assert_eq!(p.description, None, "empty text is absent");
-        assert!(normalize(&json!({"slug": "x"}), "").is_none(), "an item needs an id");
+        assert!(
+            normalize(&json!({"slug": "x"}), "").is_none(),
+            "an item needs an id"
+        );
     }
 
     #[test]
@@ -262,7 +287,9 @@ mod tests {
         let d = normalize_detail(&data);
         assert_eq!(d.links.len(), 1, "malformed entries are skipped");
         assert_eq!(d.statistics[0].value, "26 commits");
-        assert_eq!(d.collaborators[0].github_username.as_deref(), Some("wilsonborba"));
+        assert_eq!(
+            d.collaborators[0].github_username.as_deref(),
+            Some("wilsonborba")
+        );
     }
 }
-

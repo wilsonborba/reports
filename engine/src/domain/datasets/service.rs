@@ -267,15 +267,34 @@ impl DatasetService {
     /// drops the in-process copy and every cached result that reads this schema.
     pub async fn records_changed(&self, project: &str, schema: &str) {
         let key = format!("{project}/{schema}");
-        *self.generations.lock().unwrap().entry(key.clone()).or_insert(0) += 1;
+        *self
+            .generations
+            .lock()
+            .unwrap()
+            .entry(key.clone())
+            .or_insert(0) += 1;
         self.collections.lock().unwrap().remove(&key);
-        let removed = self.stores.cache.invalidate_tag(&schema_tag(project, schema)).await;
-        tracing::info!(project, schema, removed, "cache invalidated after a records change");
+        let removed = self
+            .stores
+            .cache
+            .invalidate_tag(&schema_tag(project, schema))
+            .await;
+        tracing::info!(
+            project,
+            schema,
+            removed,
+            "cache invalidated after a records change"
+        );
     }
 
     /// New records were stored: appends them to the loaded copy (no CouchDB reload) and
     /// invalidates only the cached entries that read this schema.
-    pub async fn records_appended(&self, project: &str, schema: &str, new_docs: &[crate::dal::RecordDoc]) {
+    pub async fn records_appended(
+        &self,
+        project: &str,
+        schema: &str,
+        new_docs: &[crate::dal::RecordDoc],
+    ) {
         let key = format!("{project}/{schema}");
         // A new generation: a CouchDB load that started before this ingestion cannot store
         // its older copy any more.
@@ -291,7 +310,11 @@ impl DatasetService {
                 Some(entry) => {
                     entry.generation = generation;
                     let mut rows = entry.rows.as_ref().clone();
-                    rows.extend(new_docs.iter().filter_map(|d| d.payload.as_object().cloned()));
+                    rows.extend(
+                        new_docs
+                            .iter()
+                            .filter_map(|d| d.payload.as_object().cloned()),
+                    );
                     entry.watermark.records = rows.len();
                     entry.watermark.last_received_at = entry
                         .watermark
@@ -307,13 +330,27 @@ impl DatasetService {
                 None => false,
             }
         };
-        let removed = self.stores.cache.invalidate_tag(&schema_tag(project, schema)).await;
-        tracing::info!(project, schema, added = new_docs.len(), appended, removed, "records stored; dependent cache invalidated");
+        let removed = self
+            .stores
+            .cache
+            .invalidate_tag(&schema_tag(project, schema))
+            .await;
+        tracing::info!(
+            project,
+            schema,
+            added = new_docs.len(),
+            appended,
+            removed,
+            "records stored; dependent cache invalidated"
+        );
     }
 
     /// Called after a catalog change of a project (visibility, cards): drops its cached statistics.
     pub async fn catalog_changed(&self, project: &str) {
-        self.stores.cache.invalidate_tag(&format!("catalog:{project}")).await;
+        self.stores
+            .cache
+            .invalidate_tag(&format!("catalog:{project}"))
+            .await;
     }
 
     /// Loaded collections with their size and watermark (admin operations view).
@@ -323,7 +360,12 @@ impl DatasetService {
             .iter()
             .map(|(k, e)| {
                 let (project, schema) = k.split_once('/').unwrap_or((k, ""));
-                LoadedCollection { project: project.into(), schema: schema.into(), rows: e.rows.len(), watermark: e.watermark.clone() }
+                LoadedCollection {
+                    project: project.into(),
+                    schema: schema.into(),
+                    rows: e.rows.len(),
+                    watermark: e.watermark.clone(),
+                }
             })
             .collect();
         out.sort_by(|a, b| a.project.cmp(&b.project).then(a.schema.cmp(&b.schema)));
@@ -345,19 +387,37 @@ impl DatasetService {
     }
 
     /// Payload rows of one schema, from the in-process copy or the document store.
-    pub async fn collection(&self, project: &str, schema: &str) -> Result<Arc<Vec<Row>>, ReportError> {
+    pub async fn collection(
+        &self,
+        project: &str,
+        schema: &str,
+    ) -> Result<Arc<Vec<Row>>, ReportError> {
         Ok(self.collection_with_watermark(project, schema).await?.0)
     }
 
-    async fn collection_with_watermark(&self, project: &str, schema: &str) -> Result<(Arc<Vec<Row>>, Watermark), ReportError> {
+    async fn collection_with_watermark(
+        &self,
+        project: &str,
+        schema: &str,
+    ) -> Result<(Arc<Vec<Row>>, Watermark), ReportError> {
         let key = format!("{project}/{schema}");
-        let generation = self.generations.lock().unwrap().get(&key).copied().unwrap_or(0);
+        let generation = self
+            .generations
+            .lock()
+            .unwrap()
+            .get(&key)
+            .copied()
+            .unwrap_or(0);
         if let Some(entry) = self.collections.lock().unwrap().get(&key) {
             if entry.generation == generation {
                 return Ok((entry.rows.clone(), entry.watermark.clone()));
             }
         }
-        let records = self.stores.docs.load_records(project, schema, self.max_scan_rows).await?;
+        let records = self
+            .stores
+            .docs
+            .load_records(project, schema, self.max_scan_rows)
+            .await?;
         let watermark = Watermark {
             records: records.len(),
             last_received_at: records.iter().map(|r| r.received_at.clone()).max(),
@@ -368,7 +428,15 @@ impl DatasetService {
             .collect();
         let rows = Arc::new(rows);
         let mut cache = self.collections.lock().unwrap();
-        if self.generations.lock().unwrap().get(&key).copied().unwrap_or(0) != generation {
+        if self
+            .generations
+            .lock()
+            .unwrap()
+            .get(&key)
+            .copied()
+            .unwrap_or(0)
+            != generation
+        {
             // Records arrived while this copy loaded: use it once, do not keep it.
             return Ok((rows, watermark));
         }
@@ -376,15 +444,30 @@ impl DatasetService {
         if used + rows.len() > self.max_cached_rows {
             cache.clear();
         }
-        cache.insert(key, CollectionEntry { generation, rows: rows.clone(), watermark: watermark.clone(), periods: HashMap::new() });
+        cache.insert(
+            key,
+            CollectionEntry {
+                generation,
+                rows: rows.clone(),
+                watermark: watermark.clone(),
+                periods: HashMap::new(),
+            },
+        );
         Ok((rows, watermark))
     }
 
     /// Watermarks of every schema that a definition reads.
-    async fn watermarks(&self, project: &str, spec: &DatasetSpec) -> Result<BTreeMap<String, Watermark>, ReportError> {
+    async fn watermarks(
+        &self,
+        project: &str,
+        spec: &DatasetSpec,
+    ) -> Result<BTreeMap<String, Watermark>, ReportError> {
         let mut out = BTreeMap::new();
         for s in dependencies(spec) {
-            out.insert(s.clone(), self.collection_with_watermark(project, &s).await?.1);
+            out.insert(
+                s.clone(),
+                self.collection_with_watermark(project, &s).await?.1,
+            );
         }
         Ok(out)
     }
@@ -404,7 +487,10 @@ impl DatasetService {
         let mut lookups: HashMap<String, Arc<Vec<Row>>> = HashMap::new();
         for l in &spec.lookups {
             if !lookups.contains_key(&l.collection) {
-                lookups.insert(l.collection.clone(), self.collection(project, &l.collection).await?);
+                lookups.insert(
+                    l.collection.clone(),
+                    self.collection(project, &l.collection).await?,
+                );
             }
         }
         let spec = spec.clone();
@@ -424,7 +510,10 @@ impl DatasetService {
     }
 
     /// Checks that every client filter targets a declared filter field.
-    pub fn validate_filters(spec: &DatasetSpec, filters: &[FilterParam]) -> Result<(), ReportError> {
+    pub fn validate_filters(
+        spec: &DatasetSpec,
+        filters: &[FilterParam],
+    ) -> Result<(), ReportError> {
         for f in filters {
             if !spec.filters.iter().any(|s| s.field == f.field()) {
                 return Err(ReportError::BadRequest(format!(
@@ -451,18 +540,24 @@ impl DatasetService {
                 return Ok(out);
             }
             if depth >= MAX_REF_DEPTH {
-                return Err(ReportError::BadRequest("dataset references are too deep".into()));
+                return Err(ReportError::BadRequest(
+                    "dataset references are too deep".into(),
+                ));
             }
             for (var, r) in &spec.refs {
                 let target = catalog::get_dataset(&self.stores.db, project, report, &r.dataset)
                     .await?
-                    .ok_or_else(|| ReportError::not_found(format!("referenced dataset '{}'", r.dataset)))?;
+                    .ok_or_else(|| {
+                        ReportError::not_found(format!("referenced dataset '{}'", r.dataset))
+                    })?;
                 let usable: Vec<FilterParam> = filters
                     .iter()
                     .filter(|f| target.spec.filters.iter().any(|s| s.field == f.field()))
                     .cloned()
                     .collect();
-                let rows = self.rows(project, report, &target.spec, &usable, depth + 1).await?;
+                let rows = self
+                    .rows(project, report, &target.spec, &usable, depth + 1)
+                    .await?;
                 let value = rows
                     .first()
                     .and_then(|row| row.get(&r.field))
@@ -488,14 +583,25 @@ impl DatasetService {
             let base = self.base(project, spec).await?;
             let own: Vec<FilterParam> = filters
                 .iter()
-                .filter(|f| spec.filters.iter().any(|s| s.field == f.field() && !s.refs_only()))
+                .filter(|f| {
+                    spec.filters
+                        .iter()
+                        .any(|s| s.field == f.field() && !s.refs_only())
+                })
                 .cloned()
                 .collect();
             let spec = spec.clone();
-            let work = tokio::task::spawn_blocking(move || engine::compute_rows(&base, &spec, &own, &scalars));
+            let work = tokio::task::spawn_blocking(move || {
+                engine::compute_rows(&base, &spec, &own, &scalars)
+            });
             let rows = tokio::time::timeout(CALCULATION_TIMEOUT, work)
                 .await
-                .map_err(|_| ReportError::BadRequest(format!("the calculation took more than {}s; narrow the filters", CALCULATION_TIMEOUT.as_secs())))?
+                .map_err(|_| {
+                    ReportError::BadRequest(format!(
+                        "the calculation took more than {}s; narrow the filters",
+                        CALCULATION_TIMEOUT.as_secs()
+                    ))
+                })?
                 .map_err(|e| ReportError::Internal(e.to_string()))?
                 .map_err(engine_err)?;
             if rows.len() > crate::domain::calculations::MAX_RESULT_ROWS {
@@ -511,29 +617,58 @@ impl DatasetService {
 
     /// Localized description with filter options. Gated callers get the same descriptor;
     /// the access layer removes protected parts before it leaves the engine.
-    pub async fn describe(&self, record: &DatasetRecord, lang: &str) -> Result<DatasetDescriptor, ReportError> {
+    pub async fn describe(
+        &self,
+        record: &DatasetRecord,
+        lang: &str,
+    ) -> Result<DatasetDescriptor, ReportError> {
         let key = format!(
             "desc:v1:{}:{}:{}:{}:{}:{}",
-            record.project, record.report_slug, record.dataset_id, record.calculation_id, record.calculation_version, lang
+            record.project,
+            record.report_slug,
+            record.dataset_id,
+            record.calculation_id,
+            record.calculation_version,
+            lang
         );
-        if let Some(hit) = self.stores.cache.get(&key).await.and_then(|t| serde_json::from_str::<DatasetDescriptor>(&t).ok()) {
+        if let Some(hit) = self
+            .stores
+            .cache
+            .get(&key)
+            .await
+            .and_then(|t| serde_json::from_str::<DatasetDescriptor>(&t).ok())
+        {
             return Ok(hit);
         }
         let built = self.build_descriptor(record, lang).await?;
         if let Ok(text) = serde_json::to_string(&built) {
             self.stores.cache.set(&key, &text, self.result_ttl).await;
             for schema in dependencies(&record.spec) {
-                self.stores.cache.tag(&schema_tag(&record.project, &schema), &key, self.result_ttl).await;
+                self.stores
+                    .cache
+                    .tag(&schema_tag(&record.project, &schema), &key, self.result_ttl)
+                    .await;
             }
             self.stores
                 .cache
-                .tag(&format!("dataset:{}:{}:{}", record.project, record.report_slug, record.dataset_id), &key, self.result_ttl)
+                .tag(
+                    &format!(
+                        "dataset:{}:{}:{}",
+                        record.project, record.report_slug, record.dataset_id
+                    ),
+                    &key,
+                    self.result_ttl,
+                )
                 .await;
         }
         Ok(built)
     }
 
-    async fn build_descriptor(&self, record: &DatasetRecord, lang: &str) -> Result<DatasetDescriptor, ReportError> {
+    async fn build_descriptor(
+        &self,
+        record: &DatasetRecord,
+        lang: &str,
+    ) -> Result<DatasetDescriptor, ReportError> {
         let spec = &record.spec;
         let fields = spec
             .fields
@@ -579,11 +714,22 @@ impl DatasetService {
                     opts.sort_by(compare_values);
                     info.options = opts
                         .into_iter()
-                        .map(|v| FilterOption { label: value_label(spec, &fs.field, &v, lang), value: v })
+                        .map(|v| FilterOption {
+                            label: value_label(spec, &fs.field, &v, lang),
+                            value: v,
+                        })
                         .collect();
                 } else {
-                    info.min = values.iter().copied().min_by(|a, b| compare_values(a, b)).cloned();
-                    info.max = values.iter().copied().max_by(|a, b| compare_values(a, b)).cloned();
+                    info.min = values
+                        .iter()
+                        .copied()
+                        .min_by(|a, b| compare_values(a, b))
+                        .cloned();
+                    info.max = values
+                        .iter()
+                        .copied()
+                        .max_by(|a, b| compare_values(a, b))
+                        .cloned();
                 }
                 filters.push(info);
             }
@@ -637,7 +783,12 @@ impl DatasetService {
     }
 
     /// Published versions never change, so the calculation version identifies the definition.
-    fn result_key(record: &DatasetRecord, filters: &[FilterParam], lang: &str, class: AccessClass) -> String {
+    fn result_key(
+        record: &DatasetRecord,
+        filters: &[FilterParam],
+        lang: &str,
+        class: AccessClass,
+    ) -> String {
         let filters = serde_json::to_string(filters).unwrap_or_default();
         format!(
             "result:v2:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -678,14 +829,22 @@ impl DatasetService {
         }
         // Cross-process gate: wait briefly for another engine that computes the same key.
         let token = uuid::Uuid::new_v4().to_string();
-        let mut state = self.stores.cache.try_lock(&key, &token, self.gate_ttl).await;
+        let mut state = self
+            .stores
+            .cache
+            .try_lock(&key, &token, self.gate_ttl)
+            .await;
         let started = Instant::now();
         while state == LockState::Busy && started.elapsed() < LOCK_WAIT {
             tokio::time::sleep(Duration::from_millis(200)).await;
             if let Some(rows) = self.read_cache(&key).await {
                 return Ok(rows);
             }
-            state = self.stores.cache.try_lock(&key, &token, self.gate_ttl).await;
+            state = self
+                .stores
+                .cache
+                .try_lock(&key, &token, self.gate_ttl)
+                .await;
         }
         let result = self.calculate_and_store(record, filters, lang, &key).await;
         if state == LockState::Acquired {
@@ -721,12 +880,25 @@ impl DatasetService {
     ) -> Result<CachedResult, ReportError> {
         let started = Instant::now();
         let source_watermark = self.watermarks(&record.project, &record.spec).await?;
-        let calculated = self.rows(&record.project, &record.report_slug, &record.spec, filters, 0).await?;
+        let calculated = self
+            .rows(
+                &record.project,
+                &record.report_slug,
+                &record.spec,
+                filters,
+                0,
+            )
+            .await?;
         let projected = project_rows(&record.spec, calculated, lang);
-        let inputs = crate::dal::calculations::get(&self.stores.db, &record.project, &record.calculation_id, record.calculation_version)
-            .await?
-            .map(|c| c.inputs)
-            .unwrap_or_default();
+        let inputs = crate::dal::calculations::get(
+            &self.stores.db,
+            &record.project,
+            &record.calculation_id,
+            record.calculation_version,
+        )
+        .await?
+        .map(|c| c.inputs)
+        .unwrap_or_default();
         let result = CachedResult {
             rows: projected,
             lineage: Lineage {
@@ -750,12 +922,18 @@ impl DatasetService {
         if let Ok(text) = serde_json::to_string(&result) {
             self.stores.cache.set(key, &text, self.result_ttl).await;
             for schema in dependencies(&record.spec) {
-                self.stores.cache.tag(&schema_tag(&record.project, &schema), key, self.result_ttl).await;
+                self.stores
+                    .cache
+                    .tag(&schema_tag(&record.project, &schema), key, self.result_ttl)
+                    .await;
             }
             self.stores
                 .cache
                 .tag(
-                    &format!("dataset:{}:{}:{}", record.project, record.report_slug, record.dataset_id),
+                    &format!(
+                        "dataset:{}:{}:{}",
+                        record.project, record.report_slug, record.dataset_id
+                    ),
                     key,
                     self.result_ttl,
                 )
@@ -765,10 +943,21 @@ impl DatasetService {
     }
 
     /// First and last value of a field in one schema.
-    pub async fn period(&self, project: &str, schema: &str, field: &str) -> Result<Option<(Value, Value)>, ReportError> {
+    pub async fn period(
+        &self,
+        project: &str,
+        schema: &str,
+        field: &str,
+    ) -> Result<Option<(Value, Value)>, ReportError> {
         let rows = self.collection(project, schema).await?;
         let key = format!("{project}/{schema}");
-        if let Some(hit) = self.collections.lock().unwrap().get(&key).and_then(|e| e.periods.get(field).cloned()) {
+        if let Some(hit) = self
+            .collections
+            .lock()
+            .unwrap()
+            .get(&key)
+            .and_then(|e| e.periods.get(field).cloned())
+        {
             return Ok(hit);
         }
         let found = Self::scan_period(&rows, field);

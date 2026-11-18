@@ -5,9 +5,9 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::domain::auth::Visibility;
+use crate::domain::composition::{DomainDetails, DomainStatus};
 use crate::domain::datasets::spec::DataTier;
 use crate::domain::datasets::DatasetDescriptor;
-use crate::domain::composition::{DomainDetails, DomainStatus};
 use crate::domain::themes::ProjectTheme;
 
 /// First and last value of the report period field.
@@ -106,10 +106,27 @@ pub struct Paged<T> {
 pub const DEFAULT_PAGE_SIZE: usize = 12;
 pub const MAX_PAGE_SIZE: usize = 100;
 
-pub fn paginate<T>(items: Vec<T>, page: Option<usize>, page_size: Option<usize>, lang: &str) -> Paged<T> {
-    let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
+pub fn paginate<T>(
+    items: Vec<T>,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    lang: &str,
+) -> Paged<T> {
+    let page_size = page_size
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .clamp(1, MAX_PAGE_SIZE);
     let page = page.unwrap_or(1).max(1);
     let total = items.len();
-    let items = items.into_iter().skip((page - 1) * page_size).take(page_size).collect();
-    Paged { items, page, page_size, total, language: lang.to_string() }
+    let items = items
+        .into_iter()
+        .skip((page - 1) * page_size)
+        .take(page_size)
+        .collect();
+    Paged {
+        items,
+        page,
+        page_size,
+        total,
+        language: lang.to_string(),
+    }
 }

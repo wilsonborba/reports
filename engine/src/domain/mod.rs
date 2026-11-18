@@ -1,9 +1,9 @@
-pub mod embeds;
 pub mod auth;
 pub mod calculations;
 pub mod catalog;
 pub mod composition;
 pub mod datasets;
+pub mod embeds;
 pub mod guardrail;
 pub mod ingest;
 pub mod models;
