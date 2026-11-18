@@ -63,17 +63,29 @@ fn day_of(v: &Value) -> Option<String> {
     let s = v.as_str()?;
     let d = s.get(..10)?;
     let b = d.as_bytes();
-    (b[4] == b'-' && b[7] == b'-' && d.chars().filter(|c| c.is_ascii_digit()).count() == 8).then(|| d.to_string())
+    (b[4] == b'-' && b[7] == b'-' && d.chars().filter(|c| c.is_ascii_digit()).count() == 8)
+        .then(|| d.to_string())
 }
 
 /// Statistics of what guests can read, cached in Redis until the records of a used schema or
 /// the catalog of the project change.
-pub async fn project_stats(svc: &DatasetService, project: &str, lang: &str, scope: &ViewerScope) -> Result<ProjectStats, ReportError> {
+pub async fn project_stats(
+    svc: &DatasetService,
+    project: &str,
+    lang: &str,
+    scope: &ViewerScope,
+) -> Result<ProjectStats, ReportError> {
     catalog::active_project(&svc.stores().db, project).await?;
     let cacheable = !scope.is_authenticated();
     let key = format!("stats:v1:{project}:{lang}");
     if cacheable {
-        if let Some(hit) = svc.stores().cache.get(&key).await.and_then(|t| serde_json::from_str::<ProjectStats>(&t).ok()) {
+        if let Some(hit) = svc
+            .stores()
+            .cache
+            .get(&key)
+            .await
+            .and_then(|t| serde_json::from_str::<ProjectStats>(&t).ok())
+        {
             return Ok(hit);
         }
     }
@@ -82,16 +94,29 @@ pub async fn project_stats(svc: &DatasetService, project: &str, lang: &str, scop
         if let Ok(text) = serde_json::to_string(&stats) {
             let cache = &svc.stores().cache;
             cache.set(&key, &text, svc.result_ttl()).await;
-            cache.tag(&format!("catalog:{project}"), &key, svc.result_ttl()).await;
+            cache
+                .tag(&format!("catalog:{project}"), &key, svc.result_ttl())
+                .await;
             for s in &used {
-                cache.tag(&crate::domain::datasets::service::schema_tag(project, s), &key, svc.result_ttl()).await;
+                cache
+                    .tag(
+                        &crate::domain::datasets::service::schema_tag(project, s),
+                        &key,
+                        svc.result_ttl(),
+                    )
+                    .await;
             }
         }
     }
     Ok(stats)
 }
 
-async fn compute(svc: &DatasetService, project: &str, lang: &str, scope: &ViewerScope) -> Result<(ProjectStats, BTreeSet<String>), ReportError> {
+async fn compute(
+    svc: &DatasetService,
+    project: &str,
+    lang: &str,
+    scope: &ViewerScope,
+) -> Result<(ProjectStats, BTreeSet<String>), ReportError> {
     let db = &svc.stores().db;
     let reports: Vec<_> = catalog::list_reports(db, project)
         .await?
@@ -150,14 +175,19 @@ async fn compute(svc: &DatasetService, project: &str, lang: &str, scope: &Viewer
         .map(|(slug, title, main)| ReportCount {
             report: slug.clone(),
             title: title.clone(),
-            value: main.as_ref().and_then(|m| counts.get(m)).copied().unwrap_or(0),
+            value: main
+                .as_ref()
+                .and_then(|m| counts.get(m))
+                .copied()
+                .unwrap_or(0),
         })
         .collect();
     let mut by_day: BTreeMap<String, u64> = BTreeMap::new();
     let mut seen = BTreeSet::new();
     for r in &reports {
         if let Some(p) = &r.metadata.period_source {
-            if used.contains(&p.collection) && seen.insert((p.collection.clone(), p.field.clone())) {
+            if used.contains(&p.collection) && seen.insert((p.collection.clone(), p.field.clone()))
+            {
                 for doc in svc.collection(project, &p.collection).await?.iter() {
                     if let Some(day) = doc.get(&p.field).and_then(day_of) {
                         *by_day.entry(day).or_default() += 1;
@@ -178,12 +208,19 @@ async fn compute(svc: &DatasetService, project: &str, lang: &str, scope: &Viewer
         period_end: by_day.keys().next_back().cloned(),
         rows_by_report,
         charts_by_report,
-        rows_by_day: by_day.into_iter().map(|(date, rows)| DayCount { date, rows }).collect(),
+        rows_by_day: by_day
+            .into_iter()
+            .map(|(date, rows)| DayCount { date, rows })
+            .collect(),
     };
     Ok((stats, used))
 }
 
-pub async fn global_stats(svc: &DatasetService, lang: &str, scope: &ViewerScope) -> Result<GlobalStats, ReportError> {
+pub async fn global_stats(
+    svc: &DatasetService,
+    lang: &str,
+    scope: &ViewerScope,
+) -> Result<GlobalStats, ReportError> {
     let mut items = Vec::new();
     for p in catalog::list_projects(&svc.stores().db, true).await? {
         items.push(project_stats(svc, &p.slug, lang, scope).await?);
@@ -206,7 +243,10 @@ mod tests {
     #[test]
     fn day_of_reads_iso_dates_only() {
         assert_eq!(day_of(&json!("2026-09-26")), Some("2026-09-26".into()));
-        assert_eq!(day_of(&json!("2026-09-26T07:00:00+07:00")), Some("2026-09-26".into()));
+        assert_eq!(
+            day_of(&json!("2026-09-26T07:00:00+07:00")),
+            Some("2026-09-26".into())
+        );
         assert_eq!(day_of(&json!("26/09/2026")), None);
         assert_eq!(day_of(&json!(20260926)), None);
     }

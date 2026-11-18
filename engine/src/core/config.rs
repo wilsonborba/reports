@@ -55,7 +55,9 @@ impl Default for Settings {
             environment: env_or("APP_ENV", "development"),
             database_url: first_env(&["DATABASE_URL"])
                 .map(|u| u.replace("\\/", "/"))
-                .unwrap_or_else(|| "postgres://reports_user@192.168.1.107:5432/asodya_reports".into()),
+                .unwrap_or_else(|| {
+                    "postgres://reports_user@192.168.1.107:5432/asodya_reports".into()
+                }),
             couchdb_url: env_or("COUCHDB_URL", "http://192.168.1.107:5984"),
             couchdb_database: env_or("COUCHDB_DATABASE", "reports_documents"),
             couchdb_user: first_env(&["COUCHDB_USER"]),
@@ -78,9 +80,14 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn development(&self) -> bool { !self.is_production() }
+    pub fn development(&self) -> bool {
+        !self.is_production()
+    }
     pub fn is_production(&self) -> bool {
-        !matches!(self.environment.as_str(), "development" | "dev" | "local" | "test")
+        !matches!(
+            self.environment.as_str(),
+            "development" | "dev" | "local" | "test"
+        )
     }
 }
 
@@ -131,12 +138,18 @@ mod tests {
             normalize_redis_url("redis://default:pw@10.0.0.1:6379/6".into()),
             "redis://:pw@10.0.0.1:6379/6"
         );
-        assert_eq!(normalize_redis_url("redis:\\/\\/h:6379".into()), "redis://h:6379");
+        assert_eq!(
+            normalize_redis_url("redis:\\/\\/h:6379".into()),
+            "redis://h:6379"
+        );
     }
 
     #[test]
     fn production_flag() {
-        let mut s = Settings { environment: "production".into(), ..Default::default() };
+        let mut s = Settings {
+            environment: "production".into(),
+            ..Default::default()
+        };
         assert!(s.is_production());
         s.environment = "test".into();
         assert!(!s.is_production());

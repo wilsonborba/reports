@@ -76,9 +76,22 @@ async fn load_fields(db: &Db, s: &mut SchemaVersion) -> Result<(), ReportError> 
     Ok(())
 }
 
-pub async fn get(db: &Db, project: &str, name: &str, version: i64) -> Result<Option<SchemaVersion>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 AND schema_name = $2 AND version = $3", head_select(db));
-    let row = sqlx::query(&sql).bind(project).bind(name).bind(version).fetch_optional(&db.pool).await?;
+pub async fn get(
+    db: &Db,
+    project: &str,
+    name: &str,
+    version: i64,
+) -> Result<Option<SchemaVersion>, ReportError> {
+    let sql = format!(
+        "{} WHERE project_slug = $1 AND schema_name = $2 AND version = $3",
+        head_select(db)
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(name)
+        .bind(version)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => {
             let mut s = head_from(&r)?;
@@ -91,7 +104,10 @@ pub async fn get(db: &Db, project: &str, name: &str, version: i64) -> Result<Opt
 
 /// Every version of every schema of a project, with fields.
 pub async fn list(db: &Db, project: &str) -> Result<Vec<SchemaVersion>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 ORDER BY schema_name, version", head_select(db));
+    let sql = format!(
+        "{} WHERE project_slug = $1 ORDER BY schema_name, version",
+        head_select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
     let mut out = Vec::with_capacity(rows.len());
     for r in &rows {
@@ -103,7 +119,11 @@ pub async fn list(db: &Db, project: &str) -> Result<Vec<SchemaVersion>, ReportEr
 }
 
 /// Highest version number of a schema (published or not).
-pub async fn latest_version(db: &Db, project: &str, name: &str) -> Result<Option<i64>, ReportError> {
+pub async fn latest_version(
+    db: &Db,
+    project: &str,
+    name: &str,
+) -> Result<Option<i64>, ReportError> {
     let row = sqlx::query(
         "SELECT CAST(COALESCE(MAX(version), 0) AS BIGINT) AS v FROM schema_versions WHERE project_slug = $1 AND schema_name = $2",
     )
@@ -144,12 +164,14 @@ pub async fn save_draft(db: &Db, s: &SchemaVersion) -> Result<(), ReportError> {
         .bind(opt(&s.description))
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM schema_fields WHERE project_slug = $1 AND schema_name = $2 AND version = $3")
-        .bind(&s.project)
-        .bind(&s.schema_name)
-        .bind(s.version)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "DELETE FROM schema_fields WHERE project_slug = $1 AND schema_name = $2 AND version = $3",
+    )
+    .bind(&s.project)
+    .bind(&s.schema_name)
+    .bind(s.version)
+    .execute(&mut *tx)
+    .await?;
     let insert_field = format!(
         "INSERT INTO schema_fields (project_slug, schema_name, version, field_path, field_type, is_required, description) \
          VALUES ($1, $2, $3, $4, $5, $6, {})",
@@ -172,7 +194,14 @@ pub async fn save_draft(db: &Db, s: &SchemaVersion) -> Result<(), ReportError> {
 }
 
 /// Changes the status of a version: draft to published, or published to retired.
-pub async fn set_status(db: &Db, project: &str, name: &str, version: i64, from: &str, to: &str) -> Result<bool, ReportError> {
+pub async fn set_status(
+    db: &Db,
+    project: &str,
+    name: &str,
+    version: i64,
+    from: &str,
+    to: &str,
+) -> Result<bool, ReportError> {
     let published = if to == "published" {
         format!(", published_at = {}", db.now())
     } else {
@@ -194,7 +223,12 @@ pub async fn set_status(db: &Db, project: &str, name: &str, version: i64, from: 
 }
 
 /// Deletes a draft version. Published versions stay for historical records.
-pub async fn delete_draft(db: &Db, project: &str, name: &str, version: i64) -> Result<bool, ReportError> {
+pub async fn delete_draft(
+    db: &Db,
+    project: &str,
+    name: &str,
+    version: i64,
+) -> Result<bool, ReportError> {
     let done = sqlx::query(
         "DELETE FROM schema_versions WHERE project_slug = $1 AND schema_name = $2 AND version = $3 AND status = 'draft'",
     )
@@ -208,12 +242,19 @@ pub async fn delete_draft(db: &Db, project: &str, name: &str, version: i64) -> R
 
 /// Deletes a version of any status (fixture removal only; records stay in CouchDB until
 /// their own fixture delete).
-pub async fn delete_version(db: &Db, project: &str, name: &str, version: i64) -> Result<bool, ReportError> {
-    let done = sqlx::query("DELETE FROM schema_versions WHERE project_slug = $1 AND schema_name = $2 AND version = $3")
-        .bind(project)
-        .bind(name)
-        .bind(version)
-        .execute(&db.pool)
-        .await?;
+pub async fn delete_version(
+    db: &Db,
+    project: &str,
+    name: &str,
+    version: i64,
+) -> Result<bool, ReportError> {
+    let done = sqlx::query(
+        "DELETE FROM schema_versions WHERE project_slug = $1 AND schema_name = $2 AND version = $3",
+    )
+    .bind(project)
+    .bind(name)
+    .bind(version)
+    .execute(&db.pool)
+    .await?;
     Ok(done.rows_affected() > 0)
 }

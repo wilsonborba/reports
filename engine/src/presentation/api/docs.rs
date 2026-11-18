@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use super::{admin, public, server, viewer, embeds};
+use super::{admin, embeds, public, server, viewer};
 
 #[derive(OpenApi)]
 #[openapi(

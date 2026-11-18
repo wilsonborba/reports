@@ -59,13 +59,20 @@ pub fn check_fields(fields: &[SchemaField]) -> Vec<ValidationError> {
     let mut errors = Vec::new();
     let mut seen: BTreeMap<&str, &str> = BTreeMap::new();
     if fields.is_empty() {
-        errors.push(ValidationError::definition("$", "a schema needs at least one field"));
+        errors.push(ValidationError::definition(
+            "$",
+            "a schema needs at least one field",
+        ));
     }
     for f in fields {
         if !FIELD_TYPES.contains(&f.field_type.as_str()) {
             errors.push(ValidationError::definition(
                 &f.path,
-                format!("unknown type '{}' (use {})", f.field_type, FIELD_TYPES.join(", ")),
+                format!(
+                    "unknown type '{}' (use {})",
+                    f.field_type,
+                    FIELD_TYPES.join(", ")
+                ),
             ));
         }
         let valid_path = !f.path.is_empty()
@@ -76,7 +83,10 @@ pub fn check_fields(fields: &[SchemaField]) -> Vec<ValidationError> {
         if !valid_path {
             errors.push(ValidationError::definition(&f.path, "invalid field path"));
         }
-        if seen.insert(f.path.as_str(), f.field_type.as_str()).is_some() {
+        if seen
+            .insert(f.path.as_str(), f.field_type.as_str())
+            .is_some()
+        {
             errors.push(ValidationError::definition(&f.path, "duplicate field path"));
         }
     }
@@ -98,7 +108,10 @@ pub fn check_fields(fields: &[SchemaField]) -> Vec<ValidationError> {
 }
 
 /// Validates one payload against a published field list.
-pub fn validate_payload(fields: &[SchemaField], payload: &Value) -> Result<(), Vec<ValidationError>> {
+pub fn validate_payload(
+    fields: &[SchemaField],
+    payload: &Value,
+) -> Result<(), Vec<ValidationError>> {
     let Some(root) = payload.as_object() else {
         return Err(vec![ValidationError {
             field_path: "$".into(),
@@ -126,7 +139,12 @@ fn children<'a>(fields: &'a [SchemaField], prefix: &str) -> Vec<(&'a str, &'a Sc
         .collect()
 }
 
-fn validate_object(obj: &Map<String, Value>, prefix: &str, fields: &[SchemaField], errors: &mut Vec<ValidationError>) {
+fn validate_object(
+    obj: &Map<String, Value>,
+    prefix: &str,
+    fields: &[SchemaField],
+    errors: &mut Vec<ValidationError>,
+) {
     let expected = children(fields, prefix);
     for (name, f) in &expected {
         let missing = obj.get(*name).map(Value::is_null).unwrap_or(true);
@@ -154,7 +172,12 @@ fn validate_object(obj: &Map<String, Value>, prefix: &str, fields: &[SchemaField
     }
 }
 
-fn validate_value(value: &Value, f: &SchemaField, fields: &[SchemaField], errors: &mut Vec<ValidationError>) {
+fn validate_value(
+    value: &Value,
+    f: &SchemaField,
+    fields: &[SchemaField],
+    errors: &mut Vec<ValidationError>,
+) {
     let ok = match f.field_type.as_str() {
         "string" => value.is_string(),
         "integer" => value.is_i64() || value.is_u64(),
@@ -276,32 +299,79 @@ mod tests {
         bad["latency_ms"] = json!("slow");
         bad["camera_id"] = json!("x");
         let errors = validate_payload(&telemetry_fields(), &bad).unwrap_err();
-        let kinds: Vec<_> = errors.iter().map(|e| (&e.field_path[..], &e.error_type)).collect();
+        let kinds: Vec<_> = errors
+            .iter()
+            .map(|e| (&e.field_path[..], &e.error_type))
+            .collect();
         assert!(kinds.contains(&("model", &ValidationViolationType::MissingRequiredField)));
-        assert!(kinds.iter().any(|(p, t)| *p == "latency_ms" && matches!(t, ValidationViolationType::TypeMismatch { .. })));
+        assert!(kinds.iter().any(|(p, t)| *p == "latency_ms"
+            && matches!(t, ValidationViolationType::TypeMismatch { .. })));
         assert!(kinds.contains(&("camera_id", &ValidationViolationType::UnknownField)));
     }
 
     #[test]
     fn nested_objects_and_arrays() {
         let fields = vec![
-            SchemaField { path: "job".into(), field_type: "object".into(), required: true, description: None },
-            SchemaField { path: "job.status".into(), field_type: "string".into(), required: true, description: None },
-            SchemaField { path: "attempts".into(), field_type: "array".into(), required: false, description: None },
-            SchemaField { path: "attempts[].at".into(), field_type: "datetime".into(), required: true, description: None },
+            SchemaField {
+                path: "job".into(),
+                field_type: "object".into(),
+                required: true,
+                description: None,
+            },
+            SchemaField {
+                path: "job.status".into(),
+                field_type: "string".into(),
+                required: true,
+                description: None,
+            },
+            SchemaField {
+                path: "attempts".into(),
+                field_type: "array".into(),
+                required: false,
+                description: None,
+            },
+            SchemaField {
+                path: "attempts[].at".into(),
+                field_type: "datetime".into(),
+                required: true,
+                description: None,
+            },
         ];
         assert!(check_fields(&fields).is_empty());
-        assert!(validate_payload(&fields, &json!({"job": {"status": "done"}, "attempts": [{"at": "2026-10-20T00:00:00Z"}]})).is_ok());
-        let errors = validate_payload(&fields, &json!({"job": {}, "attempts": [{"at": "yesterday"}]})).unwrap_err();
+        assert!(validate_payload(
+            &fields,
+            &json!({"job": {"status": "done"}, "attempts": [{"at": "2026-10-20T00:00:00Z"}]})
+        )
+        .is_ok());
+        let errors = validate_payload(
+            &fields,
+            &json!({"job": {}, "attempts": [{"at": "yesterday"}]}),
+        )
+        .unwrap_err();
         assert_eq!(errors.len(), 2, "{errors:?}");
     }
 
     #[test]
     fn definition_rules() {
         let bad = vec![
-            SchemaField { path: "a.b".into(), field_type: "string".into(), required: false, description: None },
-            SchemaField { path: "c".into(), field_type: "money".into(), required: false, description: None },
-            SchemaField { path: "c".into(), field_type: "string".into(), required: false, description: None },
+            SchemaField {
+                path: "a.b".into(),
+                field_type: "string".into(),
+                required: false,
+                description: None,
+            },
+            SchemaField {
+                path: "c".into(),
+                field_type: "money".into(),
+                required: false,
+                description: None,
+            },
+            SchemaField {
+                path: "c".into(),
+                field_type: "string".into(),
+                required: false,
+                description: None,
+            },
         ];
         assert_eq!(check_fields(&bad).len(), 3);
     }

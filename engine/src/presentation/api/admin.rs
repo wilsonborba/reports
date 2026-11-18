@@ -20,11 +20,14 @@ use super::identity::{fixture_of, require_admin, require_super_admin, Caller};
 use super::server::AppState;
 use super::viewer::private;
 use crate::core::error::ReportError;
-use crate::dal::{calculations, catalog, fixtures, grants, schemas, DatasetRecord, Grant, ProjectRecord, ProjectRole, ReportMetadata, ReportRecord, SchemaVersion};
+use crate::dal::{
+    calculations, catalog, fixtures, grants, schemas, DatasetRecord, Grant, ProjectRecord,
+    ProjectRole, ReportMetadata, ReportRecord, SchemaVersion,
+};
 use crate::domain::catalog::{validate_dataset, validate_project, validate_report};
+use crate::domain::composition::refresh_index;
 use crate::domain::datasets::spec::{DataTier, I18nText};
 use crate::domain::ingest::{self, IngestRequest, IngestResponse, SchemaDraftRequest};
-use crate::domain::composition::refresh_index;
 use crate::domain::themes::{validate_theme, ProjectTheme, ThemeRecord};
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -106,13 +109,19 @@ pub async fn put_project(
 ) -> Result<Response, ReportError> {
     require_super_admin(&scope)?;
     let existing = catalog::get_project(&state.stores.db, &project).await?;
-    let domain_project_id = body.domain_project_id.map(|id| id.trim().to_lowercase()).filter(|id| !id.is_empty());
+    let domain_project_id = body
+        .domain_project_id
+        .map(|id| id.trim().to_lowercase())
+        .filter(|id| !id.is_empty());
     let record = ProjectRecord {
         slug: project.clone(),
         name: body.name,
         tagline: body.tagline,
         description: body.description,
-        theme: existing.as_ref().map(|p| p.theme.clone()).unwrap_or_default(),
+        theme: existing
+            .as_ref()
+            .map(|p| p.theme.clone())
+            .unwrap_or_default(),
         is_active: body.is_active.unwrap_or(true),
         website_url: body.website_url,
         repository_url: body.repository_url,
@@ -122,7 +131,10 @@ pub async fn put_project(
     };
     validate_project(&record)?;
     if let Some(id) = &record.domain_project_id {
-        let unchanged = existing.as_ref().and_then(|p| p.domain_project_id.as_deref()) == Some(id.as_str());
+        let unchanged = existing
+            .as_ref()
+            .and_then(|p| p.domain_project_id.as_deref())
+            == Some(id.as_str());
         if !unchanged {
             // A new link must resolve in domain_api now.
             let index = refresh_index(&state.stores, state.settings.domain_cache_ttl_secs).await?;
@@ -177,7 +189,13 @@ pub async fn put_report(
     validate_report(&record)?;
     catalog::upsert_report(&state.stores.db, &record).await?;
     state.datasets.catalog_changed(&project).await;
-    fixtures::track(&state.stores.db, fixture.as_deref(), "report", &fixtures::report_id(&project, &report)).await?;
+    fixtures::track(
+        &state.stores.db,
+        fixture.as_deref(),
+        "report",
+        &fixtures::report_id(&project, &report),
+    )
+    .await?;
     let saved = catalog::get_report(&state.stores.db, &project, &report)
         .await?
         .ok_or_else(|| ReportError::Internal("saved report is missing".into()))?;
@@ -199,14 +217,19 @@ pub async fn delete_report(
 ) -> Result<StatusCode, ReportError> {
     require_admin(&scope, &project)?;
     for d in catalog::list_datasets(&state.stores.db, &project, &report).await? {
-        state.datasets.definition_changed(&project, &report, &d.dataset_id).await;
+        state
+            .datasets
+            .definition_changed(&project, &report, &d.dataset_id)
+            .await;
     }
     if catalog::delete_report(&state.stores.db, &project, &report).await? {
         grants::delete_for_resource(&state.stores.db, &project, &report, None).await?;
         state.datasets.catalog_changed(&project).await;
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ReportError::not_found(format!("report '{project}/{report}'")))
+        Err(ReportError::not_found(format!(
+            "report '{project}/{report}'"
+        )))
     }
 }
 
@@ -229,12 +252,27 @@ pub async fn put_dataset(
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
     let fixture = fixture_of(&scope, &headers)?;
-    if catalog::get_report(&state.stores.db, &project, &report).await?.is_none() {
-        return Err(ReportError::not_found(format!("report '{project}/{report}'")));
-    }
-    let calc = calculations::get(&state.stores.db, &project, &body.calculation_id, body.calculation_version)
+    if catalog::get_report(&state.stores.db, &project, &report)
         .await?
-        .ok_or_else(|| ReportError::not_found(format!("calculation {project}:{} v{}", body.calculation_id, body.calculation_version)))?;
+        .is_none()
+    {
+        return Err(ReportError::not_found(format!(
+            "report '{project}/{report}'"
+        )));
+    }
+    let calc = calculations::get(
+        &state.stores.db,
+        &project,
+        &body.calculation_id,
+        body.calculation_version,
+    )
+    .await?
+    .ok_or_else(|| {
+        ReportError::not_found(format!(
+            "calculation {project}:{} v{}",
+            body.calculation_id, body.calculation_version
+        ))
+    })?;
     if calc.status != "published" {
         return Err(ReportError::Conflict(format!(
             "calculation {} v{} is {}; a card shows only a published version",
@@ -254,22 +292,47 @@ pub async fn put_dataset(
     };
     validate_dataset(&record)?;
     // Dataset references stay inside the report and form no cycle.
-    let mut graph: std::collections::HashMap<String, Vec<String>> = catalog::list_datasets(&state.stores.db, &project, &report)
-        .await?
-        .into_iter()
-        .map(|d| (d.dataset_id, d.spec.refs.values().map(|r| r.dataset.clone()).collect()))
-        .collect();
-    graph.insert(dataset.clone(), record.spec.refs.values().map(|r| r.dataset.clone()).collect());
+    let mut graph: std::collections::HashMap<String, Vec<String>> =
+        catalog::list_datasets(&state.stores.db, &project, &report)
+            .await?
+            .into_iter()
+            .map(|d| {
+                (
+                    d.dataset_id,
+                    d.spec.refs.values().map(|r| r.dataset.clone()).collect(),
+                )
+            })
+            .collect();
+    graph.insert(
+        dataset.clone(),
+        record
+            .spec
+            .refs
+            .values()
+            .map(|r| r.dataset.clone())
+            .collect(),
+    );
     for target in record.spec.refs.values().map(|r| &r.dataset) {
         if !graph.contains_key(target) {
-            return Err(ReportError::not_found(format!("referenced dataset '{target}' in report '{report}'")));
+            return Err(ReportError::not_found(format!(
+                "referenced dataset '{target}' in report '{report}'"
+            )));
         }
     }
     crate::domain::calculations::check_ref_cycles(&graph)?;
     catalog::upsert_dataset(&state.stores.db, &record).await?;
     state.datasets.catalog_changed(&project).await;
-    fixtures::track(&state.stores.db, fixture.as_deref(), "dataset", &fixtures::dataset_id(&project, &report, &dataset)).await?;
-    state.datasets.definition_changed(&project, &report, &dataset).await;
+    fixtures::track(
+        &state.stores.db,
+        fixture.as_deref(),
+        "dataset",
+        &fixtures::dataset_id(&project, &report, &dataset),
+    )
+    .await?;
+    state
+        .datasets
+        .definition_changed(&project, &report, &dataset)
+        .await;
     Ok(private(json!({
         "project": project, "report": report, "dataset_id": dataset,
         "data_tier": record.data_tier, "visibility": record.visibility,
@@ -292,13 +355,18 @@ pub async fn delete_dataset(
     Path((project, report, dataset)): Path<(String, String, String)>,
 ) -> Result<StatusCode, ReportError> {
     require_admin(&scope, &project)?;
-    state.datasets.definition_changed(&project, &report, &dataset).await;
+    state
+        .datasets
+        .definition_changed(&project, &report, &dataset)
+        .await;
     if catalog::delete_dataset(&state.stores.db, &project, &report, &dataset).await? {
         grants::delete_for_resource(&state.stores.db, &project, &report, Some(&dataset)).await?;
         state.datasets.catalog_changed(&project).await;
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ReportError::not_found(format!("dataset '{project}/{report}/{dataset}'")))
+        Err(ReportError::not_found(format!(
+            "dataset '{project}/{report}/{dataset}'"
+        )))
     }
 }
 
@@ -339,7 +407,13 @@ pub async fn post_schema(
     require_admin(&scope, &project)?;
     let fixture = fixture_of(&scope, &headers)?;
     let saved = ingest::save_schema_draft(&state.datasets, &project, body).await?;
-    fixtures::track(&state.stores.db, fixture.as_deref(), "schema", &fixtures::version_id(&project, &saved.schema_name, saved.version)).await?;
+    fixtures::track(
+        &state.stores.db,
+        fixture.as_deref(),
+        "schema",
+        &fixtures::version_id(&project, &saved.schema_name, saved.version),
+    )
+    .await?;
     Ok((StatusCode::CREATED, private(saved)).into_response())
 }
 
@@ -357,7 +431,9 @@ pub async fn publish_schema(
     Path((project, schema, version)): Path<(String, String, i64)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(ingest::publish_schema(&state.datasets, &project, &schema, version).await?))
+    Ok(private(
+        ingest::publish_schema(&state.datasets, &project, &schema, version).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -374,7 +450,9 @@ pub async fn retire_schema(
     Path((project, schema, version)): Path<(String, String, i64)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(ingest::retire_schema(&state.datasets, &project, &schema, version).await?))
+    Ok(private(
+        ingest::retire_schema(&state.datasets, &project, &schema, version).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -446,7 +524,11 @@ pub async fn put_role(
     check_uuid(&user)?;
     catalog::active_project(&state.stores.db, &project).await?;
     catalog::set_project_admin(&state.stores.db, &user, &project, body.is_project_admin).await?;
-    Ok(private(ProjectRole { user_uuid: user, project, is_project_admin: body.is_project_admin }))
+    Ok(private(ProjectRole {
+        user_uuid: user,
+        project,
+        is_project_admin: body.is_project_admin,
+    }))
 }
 
 #[utoipa::path(
@@ -466,7 +548,9 @@ pub async fn delete_role(
     if catalog::delete_role(&state.stores.db, &user, &project).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ReportError::not_found(format!("role of {user} in '{project}'")))
+        Err(ReportError::not_found(format!(
+            "role of {user} in '{project}'"
+        )))
     }
 }
 
@@ -484,7 +568,9 @@ pub async fn list_roles(
     Path(project): Path<String>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(catalog::list_roles(&state.stores.db, &project).await?))
+    Ok(private(
+        catalog::list_roles(&state.stores.db, &project).await?,
+    ))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -516,12 +602,24 @@ pub async fn post_grant(
     require_admin(&scope, &project)?;
     check_uuid(&body.user_uuid)?;
     let db = &state.stores.db;
-    if catalog::get_report(db, &project, &body.report).await?.is_none() {
-        return Err(ReportError::not_found(format!("report '{project}/{}'", body.report)));
+    if catalog::get_report(db, &project, &body.report)
+        .await?
+        .is_none()
+    {
+        return Err(ReportError::not_found(format!(
+            "report '{project}/{}'",
+            body.report
+        )));
     }
     if let Some(card) = &body.card_id {
-        if catalog::get_dataset(db, &project, &body.report, card).await?.is_none() {
-            return Err(ReportError::not_found(format!("card '{project}/{}/{card}'", body.report)));
+        if catalog::get_dataset(db, &project, &body.report, card)
+            .await?
+            .is_none()
+        {
+            return Err(ReportError::not_found(format!(
+                "card '{project}/{}/{card}'",
+                body.report
+            )));
         }
     }
     let granted_by = match &scope.viewer {
@@ -529,7 +627,15 @@ pub async fn post_grant(
         crate::domain::auth::Viewer::Service { app } => format!("service:{app}"),
         crate::domain::auth::Viewer::Guest => String::new(),
     };
-    let grant = grants::create(db, &body.user_uuid, &project, &body.report, body.card_id.as_deref(), Some(&granted_by)).await?;
+    let grant = grants::create(
+        db,
+        &body.user_uuid,
+        &project,
+        &body.report,
+        body.card_id.as_deref(),
+        Some(&granted_by),
+    )
+    .await?;
     Ok((StatusCode::CREATED, private(grant)).into_response())
 }
 
@@ -554,7 +660,9 @@ pub async fn list_grants(
     axum::extract::Query(q): axum::extract::Query<GrantQuery>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(grants::for_project(&state.stores.db, &project, q.user_uuid.as_deref()).await?))
+    Ok(private(
+        grants::for_project(&state.stores.db, &project, q.user_uuid.as_deref()).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -576,12 +684,17 @@ pub async fn delete_grant(
     if grants::delete(db, &project, &grant).await? {
         return Ok(StatusCode::NO_CONTENT);
     }
-    let elsewhere = sqlx::query(&format!("SELECT project_slug FROM resource_grants WHERE {} = $1", db.text("id")))
-        .bind(&grant)
-        .fetch_optional(&db.pool)
-        .await?;
+    let elsewhere = sqlx::query(&format!(
+        "SELECT project_slug FROM resource_grants WHERE {} = $1",
+        db.text("id")
+    ))
+    .bind(&grant)
+    .fetch_optional(&db.pool)
+    .await?;
     if elsewhere.is_some() {
-        Err(ReportError::Forbidden("the grant belongs to another project".into()))
+        Err(ReportError::Forbidden(
+            "the grant belongs to another project".into(),
+        ))
     } else {
         Err(ReportError::not_found(format!("grant '{grant}'")))
     }
@@ -615,15 +728,25 @@ pub async fn put_theme(
                 tokens: tokens.clone(),
                 updated_at: String::new(),
             });
-            errors.extend(check.errors.into_iter().map(|e| crate::domain::guardrail::ValidationError::definition(mode, e)));
+            errors.extend(
+                check
+                    .errors
+                    .into_iter()
+                    .map(|e| crate::domain::guardrail::ValidationError::definition(mode, e)),
+            );
             warnings.extend(check.warnings.into_iter().map(|w| format!("{mode}: {w}")));
         }
     }
     if !errors.is_empty() {
-        return Err(ReportError::Validation { message: "invalid theme".into(), violations: errors });
+        return Err(ReportError::Validation {
+            message: "invalid theme".into(),
+            violations: errors,
+        });
     }
     catalog::set_theme(&state.stores.db, &project, &theme).await?;
-    Ok(private(json!({"project": project, "theme": theme, "warnings": warnings})))
+    Ok(private(
+        json!({"project": project, "theme": theme, "warnings": warnings}),
+    ))
 }
 
 // --- calculations -----------------------------------------------------------
@@ -648,7 +771,13 @@ pub async fn post_calculation(
     require_admin(&scope, &project)?;
     let fixture = fixture_of(&scope, &headers)?;
     let saved = crate::domain::calculations::save_draft(&state.datasets, &project, body).await?;
-    fixtures::track(&state.stores.db, fixture.as_deref(), "calculation", &fixtures::version_id(&project, &saved.calculation_id, saved.version)).await?;
+    fixtures::track(
+        &state.stores.db,
+        fixture.as_deref(),
+        "calculation",
+        &fixtures::version_id(&project, &saved.calculation_id, saved.version),
+    )
+    .await?;
     Ok((StatusCode::CREATED, private(saved)).into_response())
 }
 
@@ -666,7 +795,9 @@ pub async fn validate_calculation(
     Path((project, calc, version)): Path<(String, String, i64)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(crate::domain::calculations::validate(&state.datasets, &project, &calc, version).await?))
+    Ok(private(
+        crate::domain::calculations::validate(&state.datasets, &project, &calc, version).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -683,7 +814,9 @@ pub async fn publish_calculation(
     Path((project, calc, version)): Path<(String, String, i64)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(crate::domain::calculations::publish(&state.datasets, &project, &calc, version).await?))
+    Ok(private(
+        crate::domain::calculations::publish(&state.datasets, &project, &calc, version).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -700,7 +833,9 @@ pub async fn retire_calculation(
     Path((project, calc, version)): Path<(String, String, i64)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(crate::domain::calculations::retire(&state.datasets, &project, &calc, version).await?))
+    Ok(private(
+        crate::domain::calculations::retire(&state.datasets, &project, &calc, version).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -717,7 +852,9 @@ pub async fn list_calculations(
     Path(project): Path<String>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(calculations::list(&state.stores.db, &project).await?))
+    Ok(private(
+        calculations::list(&state.stores.db, &project).await?,
+    ))
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -744,7 +881,15 @@ pub async fn post_snapshot(
     require_admin(&scope, &project)?;
     let lang = q.lang.unwrap_or_else(|| "en".into());
     let page = crate::domain::reports::dataset_page(
-        &state.datasets, &project, &report, &dataset, &[], &lang, 0, crate::presentation::api::viewer::MAX_ROW_LIMIT, &scope,
+        &state.datasets,
+        &project,
+        &report,
+        &dataset,
+        &[],
+        &lang,
+        0,
+        crate::presentation::api::viewer::MAX_ROW_LIMIT,
+        &scope,
     )
     .await?;
     let now = chrono::Utc::now().to_rfc3339();
@@ -756,7 +901,11 @@ pub async fn post_snapshot(
         "lineage": page.lineage, "total_rows": page.total_rows, "rows": page.rows,
     });
     state.stores.docs.put_snapshot(&snapshot).await?;
-    Ok((StatusCode::CREATED, private(json!({"id": snapshot["_id"], "created_at": now, "lineage": snapshot["lineage"]}))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        private(json!({"id": snapshot["_id"], "created_at": now, "lineage": snapshot["lineage"]})),
+    )
+        .into_response())
 }
 
 #[utoipa::path(
@@ -773,7 +922,13 @@ pub async fn list_snapshots(
     Path((project, report, dataset)): Path<(String, String, String)>,
 ) -> Result<Response, ReportError> {
     require_admin(&scope, &project)?;
-    Ok(private(state.stores.docs.list_snapshots(&project, &report, &dataset, 50).await?))
+    Ok(private(
+        state
+            .stores
+            .docs
+            .list_snapshots(&project, &report, &dataset, 50)
+            .await?,
+    ))
 }
 
 // --- sample data (fixtures) -------------------------------------------------
@@ -792,7 +947,11 @@ pub struct FixtureRemoval {
 
 fn split3(id: &str) -> Option<(String, String, String)> {
     let mut p = id.splitn(3, '/');
-    Some((p.next()?.to_string(), p.next()?.to_string(), p.next()?.to_string()))
+    Some((
+        p.next()?.to_string(),
+        p.next()?.to_string(),
+        p.next()?.to_string(),
+    ))
 }
 
 #[utoipa::path(
@@ -810,10 +969,15 @@ pub async fn delete_fixture(
     Path(manifest): Path<String>,
 ) -> Result<Response, ReportError> {
     if !matches!(scope.viewer, crate::domain::auth::Viewer::Service { .. }) {
-        return Err(ReportError::Forbidden("fixture removal needs a service key".into()));
+        return Err(ReportError::Forbidden(
+            "fixture removal needs a service key".into(),
+        ));
     }
     let db = &state.stores.db;
-    let mut out = FixtureRemoval { manifest: manifest.clone(), ..Default::default() };
+    let mut out = FixtureRemoval {
+        manifest: manifest.clone(),
+        ..Default::default()
+    };
     let mut touched_schemas: std::collections::BTreeSet<(String, String)> = Default::default();
 
     for id in fixtures::entities(db, &manifest, "dataset").await? {
@@ -829,7 +993,9 @@ pub async fn delete_fixture(
     for id in fixtures::entities(db, &manifest, "report").await? {
         if let Some((p, r)) = id.split_once('/') {
             if !catalog::list_datasets(db, p, r).await?.is_empty() {
-                out.kept.push(format!("report {id} (it has cards that the fixture does not own)"));
+                out.kept.push(format!(
+                    "report {id} (it has cards that the fixture does not own)"
+                ));
                 fixtures::forget(db, &manifest, "report", &id).await?;
                 continue;
             }
@@ -848,7 +1014,9 @@ pub async fn delete_fixture(
                 .iter()
                 .any(|d| d.calculation_id == c && d.calculation_version == version);
             if used {
-                out.kept.push(format!("calculation {id} (a card that the fixture does not own shows it)"));
+                out.kept.push(format!(
+                    "calculation {id} (a card that the fixture does not own shows it)"
+                ));
             } else if calculations::delete_version(db, &p, &c, version).await? {
                 out.calculations += 1;
             }
@@ -868,9 +1036,15 @@ pub async fn delete_fixture(
                 .await?
                 .iter()
                 .any(|r| r.schema_version == version);
-            let used = calculations::list(db, &p).await?.iter().any(|c| c.inputs.iter().any(|i| i.schema == s && i.version == version));
+            let used = calculations::list(db, &p).await?.iter().any(|c| {
+                c.inputs
+                    .iter()
+                    .any(|i| i.schema == s && i.version == version)
+            });
             if other_records || used {
-                out.kept.push(format!("schema {id} (records or calculations that the fixture does not own use it)"));
+                out.kept.push(format!(
+                    "schema {id} (records or calculations that the fixture does not own use it)"
+                ));
             } else if schemas::delete_version(db, &p, &s, version).await? {
                 out.schemas += 1;
             }
@@ -908,9 +1082,16 @@ pub struct OperationsView {
     responses((status = 200, description = "Operations view", body = OperationsView), (status = 403, description = "Not a super admin")),
     tag = "Admin"
 )]
-pub async fn operations(State(state): State<Arc<AppState>>, Caller(scope): Caller) -> Result<Response, ReportError> {
+pub async fn operations(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+) -> Result<Response, ReportError> {
     require_super_admin(&scope)?;
-    let (postgres, couchdb, redis) = tokio::join!(state.stores.db.health(), state.stores.docs.health(), state.stores.cache.health());
+    let (postgres, couchdb, redis) = tokio::join!(
+        state.stores.db.health(),
+        state.stores.docs.health(),
+        state.stores.cache.health()
+    );
     let collections = state.datasets.loaded_collections();
     Ok(private(OperationsView {
         postgres,

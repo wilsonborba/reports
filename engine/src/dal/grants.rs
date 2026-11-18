@@ -63,12 +63,19 @@ fn from_row(row: &AnyRow) -> Result<Grant, ReportError> {
 /// Grants of one user (every project).
 pub async fn for_user(db: &Db, user_uuid: &str) -> Result<Vec<Grant>, ReportError> {
     let sql = format!("{} WHERE {} = $1", select(db), db.text("user_uuid"));
-    let rows = sqlx::query(&sql).bind(user_uuid).fetch_all(&db.pool).await?;
+    let rows = sqlx::query(&sql)
+        .bind(user_uuid)
+        .fetch_all(&db.pool)
+        .await?;
     rows.iter().map(from_row).collect()
 }
 
 /// Grants of one project, optionally of one user.
-pub async fn for_project(db: &Db, project: &str, user_uuid: Option<&str>) -> Result<Vec<Grant>, ReportError> {
+pub async fn for_project(
+    db: &Db,
+    project: &str,
+    user_uuid: Option<&str>,
+) -> Result<Vec<Grant>, ReportError> {
     let mut sql = format!("{} WHERE project_slug = $1", select(db));
     if user_uuid.is_some() {
         sql.push_str(&format!(" AND {} = $2", db.text("user_uuid")));
@@ -83,13 +90,28 @@ pub async fn for_project(db: &Db, project: &str, user_uuid: Option<&str>) -> Res
 }
 
 pub async fn get(db: &Db, project: &str, id: &str) -> Result<Option<Grant>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 AND {} = $2", select(db), db.text("id"));
-    let row = sqlx::query(&sql).bind(project).bind(id).fetch_optional(&db.pool).await?;
+    let sql = format!(
+        "{} WHERE project_slug = $1 AND {} = $2",
+        select(db),
+        db.text("id")
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(id)
+        .fetch_optional(&db.pool)
+        .await?;
     row.as_ref().map(from_row).transpose()
 }
 
 /// Creates a grant. The same grant twice returns the first one.
-pub async fn create(db: &Db, user_uuid: &str, project: &str, report: &str, card: Option<&str>, granted_by: Option<&str>) -> Result<Grant, ReportError> {
+pub async fn create(
+    db: &Db,
+    user_uuid: &str,
+    project: &str,
+    report: &str,
+    card: Option<&str>,
+    granted_by: Option<&str>,
+) -> Result<Grant, ReportError> {
     let id = uuid::Uuid::new_v4().to_string();
     let resource_type = if card.is_some() { "card" } else { "report" };
     let sql = format!(
@@ -127,13 +149,25 @@ pub async fn create(db: &Db, user_uuid: &str, project: &str, report: &str, card:
 
 /// Revokes a grant of a project. False when no such grant exists in this project.
 pub async fn delete(db: &Db, project: &str, id: &str) -> Result<bool, ReportError> {
-    let sql = format!("DELETE FROM resource_grants WHERE project_slug = $1 AND {} = $2", db.text("id"));
-    let done = sqlx::query(&sql).bind(project).bind(id).execute(&db.pool).await?;
+    let sql = format!(
+        "DELETE FROM resource_grants WHERE project_slug = $1 AND {} = $2",
+        db.text("id")
+    );
+    let done = sqlx::query(&sql)
+        .bind(project)
+        .bind(id)
+        .execute(&db.pool)
+        .await?;
     Ok(done.rows_affected() > 0)
 }
 
 /// Removes the grants of a deleted report or card.
-pub async fn delete_for_resource(db: &Db, project: &str, report: &str, card: Option<&str>) -> Result<u64, ReportError> {
+pub async fn delete_for_resource(
+    db: &Db,
+    project: &str,
+    report: &str,
+    card: Option<&str>,
+) -> Result<u64, ReportError> {
     let done = match card {
         Some(c) => sqlx::query("DELETE FROM resource_grants WHERE project_slug = $1 AND report_slug = $2 AND card_id = $3")
             .bind(project)

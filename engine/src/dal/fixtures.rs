@@ -33,7 +33,12 @@ pub async fn release(db: &Db, kind: &str, id: &str) -> Result<(), ReportError> {
 }
 
 /// Records ownership for a fixture write, or releases it for a manual write.
-pub async fn track(db: &Db, fixture: Option<&str>, kind: &str, id: &str) -> Result<(), ReportError> {
+pub async fn track(
+    db: &Db,
+    fixture: Option<&str>,
+    kind: &str,
+    id: &str,
+) -> Result<(), ReportError> {
     match fixture {
         Some(m) => own(db, m, kind, id).await,
         None => release(db, kind, id).await,
@@ -46,7 +51,12 @@ pub async fn entities(db: &Db, manifest: &str, kind: &str) -> Result<Vec<String>
         .bind(kind)
         .fetch_all(&db.pool)
         .await?;
-    rows.iter().map(|r| r.try_get::<String, _>("entity_id").map_err(ReportError::from)).collect()
+    rows.iter()
+        .map(|r| {
+            r.try_get::<String, _>("entity_id")
+                .map_err(ReportError::from)
+        })
+        .collect()
 }
 
 pub async fn forget(db: &Db, manifest: &str, kind: &str, id: &str) -> Result<(), ReportError> {
