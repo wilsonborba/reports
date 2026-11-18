@@ -176,19 +176,33 @@ pub async fn put_report(
     require_admin(&scope, &project)?;
     let fixture = fixture_of(&scope, &headers)?;
     catalog::active_project(&state.stores.db, &project).await?;
+    let vis = restricted_default(body.visibility);
+    let audience = crate::domain::auth::Audience::from_visibility(
+        crate::domain::auth::Visibility::parse(&vis),
+    )
+    .as_str()
+    .to_string();
     let record = ReportRecord {
         project: project.clone(),
         slug: report.clone(),
         title: body.title,
         description: body.description,
         metadata: body.metadata,
-        visibility: restricted_default(body.visibility),
+        visibility: vis,
         discoverable: body.discoverable,
         updated_at: String::new(),
+        source_app: "reports".to_string(),
+        owner_id: scope.user_uuid().unwrap_or("").to_string(),
+        control_authority: "user_owned".to_string(),
+        audience,
     };
     validate_report(&record)?;
     catalog::upsert_report(&state.stores.db, &record).await?;
     state.datasets.catalog_changed(&project).await;
+    state
+        .datasets
+        .invalidate_visibility_change(&project, &report)
+        .await;
     fixtures::track(
         &state.stores.db,
         fixture.as_deref(),
@@ -279,6 +293,12 @@ pub async fn put_dataset(
             calc.calculation_id, calc.version, calc.status
         )));
     }
+    let vis = restricted_default(body.visibility);
+    let audience = crate::domain::auth::Audience::from_visibility(
+        crate::domain::auth::Visibility::parse(&vis),
+    )
+    .as_str()
+    .to_string();
     let record = DatasetRecord {
         project: project.clone(),
         report_slug: report.clone(),
@@ -287,8 +307,12 @@ pub async fn put_dataset(
         calculation_id: calc.calculation_id.clone(),
         calculation_version: calc.version,
         spec: calc.definition.clone(),
-        visibility: restricted_default(body.visibility),
+        visibility: vis,
         discoverable: body.discoverable,
+        source_app: "reports".to_string(),
+        owner_id: scope.user_uuid().unwrap_or("").to_string(),
+        control_authority: "user_owned".to_string(),
+        audience,
     };
     validate_dataset(&record)?;
     // Dataset references stay inside the report and form no cycle.

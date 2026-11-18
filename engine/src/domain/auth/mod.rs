@@ -81,6 +81,94 @@ impl Visibility {
     }
 }
 
+/// Who controls an item's lifecycle and visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlAuthority {
+    UserOwned,
+    AppControlled,
+}
+
+impl ControlAuthority {
+    pub fn parse(text: &str) -> Self {
+        match text {
+            "app_controlled" => Self::AppControlled,
+            _ => Self::UserOwned,
+        }
+    }
+
+    pub fn parse_strict(text: &str) -> Result<Self, ReportError> {
+        match text {
+            "user_owned" => Ok(Self::UserOwned),
+            "app_controlled" => Ok(Self::AppControlled),
+            other => Err(ReportError::BadRequest(format!(
+                "control_authority '{other}' is not valid (use user_owned or app_controlled)"
+            ))),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UserOwned => "user_owned",
+            Self::AppControlled => "app_controlled",
+        }
+    }
+}
+
+/// Target audience of a report or dataset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Audience {
+    Public,
+    Asodya,
+    Personal,
+}
+
+impl Audience {
+    pub fn parse(text: &str) -> Self {
+        match text {
+            "public" => Self::Public,
+            "asodya" | "signed_in" => Self::Asodya,
+            _ => Self::Personal,
+        }
+    }
+
+    pub fn parse_strict(text: &str) -> Result<Self, ReportError> {
+        match text {
+            "public" => Ok(Self::Public),
+            "asodya" | "signed_in" => Ok(Self::Asodya),
+            "personal" | "restricted" => Ok(Self::Personal),
+            other => Err(ReportError::BadRequest(format!(
+                "audience '{other}' is not valid (use public, asodya or personal)"
+            ))),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Asodya => "asodya",
+            Self::Personal => "personal",
+        }
+    }
+
+    pub fn to_visibility(self) -> Visibility {
+        match self {
+            Self::Public => Visibility::Public,
+            Self::Asodya => Visibility::SignedIn,
+            Self::Personal => Visibility::Restricted,
+        }
+    }
+
+    pub fn from_visibility(v: Visibility) -> Self {
+        match v {
+            Visibility::Public => Self::Public,
+            Visibility::SignedIn => Self::Asodya,
+            Visibility::Restricted => Self::Personal,
+        }
+    }
+}
+
 /// The caller of one request with the project roles from the database.
 #[derive(Debug, Clone)]
 pub struct ViewerScope {
@@ -164,6 +252,44 @@ impl ViewerScope {
             || (visibility == Visibility::Restricted
                 && self.is_authenticated()
                 && self.grants.iter().any(|g| g.covers(project, report, card)))
+    }
+
+    /// Read access taking per-user ownership and audience into account.
+    /// Personal items are readable by their owner, project/super admins, or explicit grant holders.
+    pub fn can_read_owned(
+        &self,
+        project: &str,
+        report: &str,
+        card: Option<&str>,
+        owner_id: &str,
+        visibility: Visibility,
+        audience: Audience,
+    ) -> bool {
+        let effective_vis = visibility.stricter(audience.to_visibility());
+        if self.can_read_resource(project, report, card, effective_vis) {
+            return true;
+        }
+        effective_vis == Visibility::Restricted
+            && self.is_authenticated()
+            && !owner_id.is_empty()
+            && self.user_uuid() == Some(owner_id)
+    }
+
+    /// Whether the caller may publish or change visibility on an item.
+    /// Viewing app-controlled data never grants permission to publish it.
+    pub fn can_publish_owned(
+        &self,
+        project: &str,
+        owner_id: &str,
+        authority: ControlAuthority,
+    ) -> bool {
+        if self.can_admin(project) {
+            return true;
+        }
+        authority == ControlAuthority::UserOwned
+            && self.is_authenticated()
+            && !owner_id.is_empty()
+            && self.user_uuid() == Some(owner_id)
     }
 
     /// True when the user has a grant on the report or on any card of it.

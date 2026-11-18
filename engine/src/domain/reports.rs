@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 use crate::core::error::ReportError;
 use crate::dal::{catalog, DatasetRecord, ProjectRecord, ReportRecord};
-use crate::domain::auth::{ViewerScope, Visibility};
+use crate::domain::auth::{Audience, ViewerScope, Visibility};
 use crate::domain::composition::{domain_index, DomainIndex};
 use crate::domain::datasets::engine::Row;
 use crate::domain::datasets::service::AccessClass;
@@ -40,7 +40,8 @@ pub fn effective(report: &ReportRecord, dataset: &DatasetRecord) -> Visibility {
 
 pub fn report_access(scope: &ViewerScope, r: &ReportRecord) -> Access {
     let v = Visibility::parse(&r.visibility);
-    if scope.can_read_resource(&r.project, &r.slug, None, v)
+    let aud = Audience::parse(&r.audience);
+    if scope.can_read_owned(&r.project, &r.slug, None, &r.owner_id, v, aud)
         || (v == Visibility::Restricted
             && scope.is_authenticated()
             && scope.has_grant_in(&r.project, &r.slug))
@@ -63,8 +64,21 @@ pub fn dataset_access(
     if report == Access::Hidden {
         return Access::Hidden;
     }
+    let owner = if d.owner_id.is_empty() {
+        r.owner_id.as_str()
+    } else {
+        d.owner_id.as_str()
+    };
+    let aud = Audience::parse(&r.audience).max(Audience::parse(&d.audience));
     if report == Access::Readable
-        && scope.can_read_resource(&r.project, &r.slug, Some(&d.dataset_id), effective(r, d))
+        && scope.can_read_owned(
+            &r.project,
+            &r.slug,
+            Some(&d.dataset_id),
+            owner,
+            effective(r, d),
+            aud,
+        )
     {
         Access::Readable
     } else if d.discoverable {

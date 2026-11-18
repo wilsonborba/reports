@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS reports (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     visibility TEXT NOT NULL DEFAULT 'restricted' CHECK (visibility IN ('public', 'signed_in', 'restricted')),
     discoverable INTEGER NOT NULL DEFAULT 0,
+    source_app TEXT NOT NULL DEFAULT 'reports',
+    owner_id TEXT NOT NULL DEFAULT '',
+    control_authority TEXT NOT NULL DEFAULT 'user_owned' CHECK (control_authority IN ('user_owned', 'app_controlled')),
+    audience TEXT NOT NULL DEFAULT 'personal' CHECK (audience IN ('public', 'asodya', 'personal')),
     PRIMARY KEY (project_slug, slug)
 );
 
@@ -32,6 +36,10 @@ CREATE TABLE IF NOT EXISTS datasets (
     calculation_version INTEGER,
     visibility TEXT NOT NULL DEFAULT 'restricted' CHECK (visibility IN ('public', 'signed_in', 'restricted')),
     discoverable INTEGER NOT NULL DEFAULT 0,
+    source_app TEXT NOT NULL DEFAULT 'reports',
+    owner_id TEXT NOT NULL DEFAULT '',
+    control_authority TEXT NOT NULL DEFAULT 'user_owned' CHECK (control_authority IN ('user_owned', 'app_controlled')),
+    audience TEXT NOT NULL DEFAULT 'personal' CHECK (audience IN ('public', 'asodya', 'personal')),
     PRIMARY KEY (project_slug, report_slug, dataset_id),
     FOREIGN KEY (project_slug, report_slug) REFERENCES reports(project_slug, slug) ON DELETE CASCADE
 );
