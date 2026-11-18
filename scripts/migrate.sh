@@ -6,7 +6,8 @@
 #   scripts/migrate.sh --yes       apply them
 #
 # PostgreSQL: every file in engine/migrations/*.sql, in name order, each in one
-# transaction. The files are idempotent and contain structure only (no data).
+# transaction. The files are idempotent. Migration 007 moves legacy payloads into normalized rows.
+# Stop engine writers before migration 007; start the new engine after success.
 # CouchDB: the database and its Mango indexes.
 set -euo pipefail
 

@@ -13,6 +13,10 @@
 
 - *(changelog)* Record engine logging changes
 
+### Refactoring
+
+- *(storage)* Normalize legacy catalog and calculation data with tested migration and rollback (#40)
+
 ### Other
 
 - Back-merge v3.1.2 into feature/main

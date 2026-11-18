@@ -70,7 +70,7 @@ pub fn first_double_name(text: &I18nText) -> Option<String> {
 }
 
 /// Backend-only calculation definition of one dataset.
-/// It is stored in `datasets.spec` and never sent to the client.
+/// It is stored in normalized calculation component rows and never sent to the client.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DatasetSpec {
     pub title: I18nText,

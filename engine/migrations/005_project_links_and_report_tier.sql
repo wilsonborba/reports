@@ -1,7 +1,7 @@
 -- Migration 005: project links and Domain link (issues #10 and #19), report provenance
 -- computed from datasets only (issue #9). Structure only. Idempotent.
 
-ALTER TABLE catalog_projects ADD COLUMN IF NOT EXISTS tagline JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Localized tagline rows are created in migration 007.
 ALTER TABLE catalog_projects ADD COLUMN IF NOT EXISTS website_url TEXT;
 ALTER TABLE catalog_projects ADD COLUMN IF NOT EXISTS repository_url TEXT;
 ALTER TABLE catalog_projects ADD COLUMN IF NOT EXISTS sort_order BIGINT NOT NULL DEFAULT 0;

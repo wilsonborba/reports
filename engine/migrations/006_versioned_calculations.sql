@@ -9,8 +9,6 @@ CREATE TABLE IF NOT EXISTS calculation_versions (
     -- Main input schema and its version; every other input is listed in `inputs`.
     input_schema TEXT,
     input_schema_version BIGINT,
-    inputs JSONB NOT NULL DEFAULT '[]'::jsonb,
-    definition JSONB NOT NULL,
     -- A newer input schema version was published after this draft was written.
     needs_review BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -26,4 +24,4 @@ CREATE INDEX IF NOT EXISTS idx_calculation_versions_input
 -- A dataset shows one published calculation version. The inline spec is retired.
 ALTER TABLE datasets ADD COLUMN IF NOT EXISTS calculation_id TEXT;
 ALTER TABLE datasets ADD COLUMN IF NOT EXISTS calculation_version BIGINT;
-ALTER TABLE datasets DROP COLUMN IF EXISTS spec;
+-- Migration 007 preserves existing inline definitions before dropping the retired column.

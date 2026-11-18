@@ -1,7 +1,7 @@
 //! SQL access for PostgreSQL `asodya_reports` (production) and SQLite (tests).
 //!
 //! Both use the same queries through the sqlx `Any` driver. The few dialect differences
-//! (JSONB and UUID casts, booleans, the current time) come from [`Db`] helper methods.
+//! (UUID casts, booleans, the current time) come from [`Db`] helper methods.
 //! The engine never runs DDL here: `scripts/migrate.sh` owns the PostgreSQL schema.
 
 use std::sync::Once;
@@ -28,24 +28,46 @@ pub struct Db {
 pub const REQUIRED_SCHEMA: &[(&str, &[&str])] = &[
     (
         "catalog_projects",
-        &[
-            "slug", "name", "tagline", "description", "theme", "is_active", "website_url", "repository_url",
-            "sort_order", "domain_project_id", "updated_at",
-        ],
+        &["slug", "is_active", "website_url", "repository_url", "sort_order", "domain_project_id", "updated_at"],
     ),
     (
         "reports",
-        &["project_slug", "slug", "title", "description", "metadata", "visibility", "discoverable", "updated_at"],
+        &[
+            "project_slug",
+            "slug",
+            "sort_order",
+            "period_collection",
+            "period_field",
+            "visibility",
+            "discoverable",
+            "updated_at",
+        ],
     ),
     (
         "datasets",
-        &["project_slug", "report_slug", "dataset_id", "data_tier", "calculation_id", "calculation_version", "visibility", "discoverable"],
+        &[
+            "project_slug",
+            "report_slug",
+            "dataset_id",
+            "data_tier",
+            "calculation_id",
+            "calculation_version",
+            "visibility",
+            "discoverable",
+        ],
     ),
     (
         "calculation_versions",
         &[
-            "project_slug", "calculation_id", "version", "status", "input_schema", "input_schema_version", "inputs",
-            "definition", "needs_review", "created_at", "published_at",
+            "project_slug",
+            "calculation_id",
+            "version",
+            "status",
+            "input_schema",
+            "input_schema_version",
+            "needs_review",
+            "created_at",
+            "published_at",
         ],
     ),
     ("user_project_roles", &["user_uuid", "app_name", "is_project_admin"]),
@@ -71,11 +93,7 @@ impl Db {
     /// [`Db::check_schema`] reports it.
     pub fn connect(url: &str) -> Result<Self, ReportError> {
         DRIVERS.call_once(sqlx::any::install_default_drivers);
-        let dialect = if url.starts_with("sqlite:") {
-            Dialect::Sqlite
-        } else {
-            Dialect::Postgres
-        };
+        let dialect = if url.starts_with("sqlite:") { Dialect::Sqlite } else { Dialect::Postgres };
         let options = AnyPoolOptions::new().acquire_timeout(Duration::from_secs(5));
         // One SQLite connection keeps every test query on the same database file.
         let options = match dialect {
@@ -87,18 +105,9 @@ impl Db {
             }),
             Dialect::Postgres => options.max_connections(16),
         };
-        let pool = options
-            .connect_lazy(url)
-            .map_err(|e| ReportError::Unavailable(format!("database configuration: {e}")))?;
+        let pool =
+            options.connect_lazy(url).map_err(|e| ReportError::Unavailable(format!("database configuration: {e}")))?;
         Ok(Self { pool, dialect })
-    }
-
-    /// `$n` as JSON input.
-    pub fn json_in(&self, n: usize) -> String {
-        match self.dialect {
-            Dialect::Postgres => format!("CAST(${n} AS JSONB)"),
-            Dialect::Sqlite => format!("${n}"),
-        }
     }
 
     /// `$n` as UUID input.
@@ -161,7 +170,7 @@ impl Db {
     /// Fails when a required table or column is missing. It changes nothing.
     pub async fn check_schema(&self) -> Result<(), ReportError> {
         let mut missing = Vec::new();
-        for (table, columns) in REQUIRED_SCHEMA {
+        for (table, columns) in REQUIRED_SCHEMA.iter().chain(super::calculation_shape::REQUIRED.iter()) {
             let present = self.columns(table).await?;
             for c in *columns {
                 if !present.iter().any(|p| p == c) {
@@ -191,15 +200,10 @@ impl Db {
                 .await?
             }
             Dialect::Sqlite => {
-                sqlx::query("SELECT name FROM pragma_table_info($1)")
-                    .bind(table)
-                    .fetch_all(&self.pool)
-                    .await?
+                sqlx::query("SELECT name FROM pragma_table_info($1)").bind(table).fetch_all(&self.pool).await?
             }
         };
-        rows.iter()
-            .map(|r| r.try_get::<String, _>("name").map_err(ReportError::from))
-            .collect()
+        rows.iter().map(|r| r.try_get::<String, _>("name").map_err(ReportError::from)).collect()
     }
 
     /// Creates the test schema in a SQLite database. Production never calls this.
@@ -207,20 +211,9 @@ impl Db {
         if self.dialect != Dialect::Sqlite {
             return Err(ReportError::Internal("the test schema is only for SQLite".into()));
         }
-        sqlx::raw_sql(include_str!("../../migrations/sqlite/test_schema.sql"))
-            .execute(&self.pool)
-            .await?;
+        sqlx::raw_sql(include_str!("../../migrations/sqlite/test_schema.sql")).execute(&self.pool).await?;
         Ok(())
     }
-}
-
-/// Reads a text column that holds JSON.
-pub fn json_col<T: serde::de::DeserializeOwned + Default>(row: &AnyRow, column: &str) -> Result<T, ReportError> {
-    let text: String = row.try_get(column)?;
-    if text.trim().is_empty() {
-        return Ok(T::default());
-    }
-    serde_json::from_str(&text).map_err(|e| ReportError::Database(format!("column {column} is not valid JSON: {e}")))
 }
 
 /// Bind value of an optional text: '' for None (read it with [`Db::opt_in`]).
