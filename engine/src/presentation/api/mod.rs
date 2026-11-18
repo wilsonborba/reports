@@ -3,6 +3,7 @@ pub mod docs;
 pub mod embeds;
 pub mod identity;
 pub mod logs;
+pub mod owner;
 pub mod public;
 pub mod server;
 pub mod viewer;
