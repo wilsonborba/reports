@@ -191,6 +191,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Session routes (gateway session rule).
         .route("/me", get(viewer::me))
         .route("/me/projects/:project/reports", get(viewer::my_reports))
+        .route("/me/projects/:project/items", post(super::owner::create_item))
+        .route(
+            "/me/items/:id",
+            get(super::owner::get_item)
+                .patch(super::owner::patch_item)
+                .delete(super::owner::delete_item),
+        )
+        .route(
+            "/me/items/:id/dataset",
+            axum::routing::put(super::owner::replace_dataset),
+        )
         .route("/projects/:project/reports/:report", get(viewer::report_view))
         .route("/projects/:project/reports/:report/datasets/:dataset", get(viewer::dataset_page))
         .route("/projects/:project/reports/:report/cards/:dataset", get(viewer::dataset_page))
