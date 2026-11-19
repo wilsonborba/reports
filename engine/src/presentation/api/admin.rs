@@ -1242,3 +1242,55 @@ pub async fn get_dataset_meta(
         "field_semantics": semantics.into_values().collect::<Vec<_>>(),
     })))
 }
+
+pub async fn post_template(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path(project): Path<String>,
+    Json(body): Json<crate::dal::VisualTemplateVersion>,
+) -> Result<Response, ReportError> {
+    require_admin(&scope, &project)?;
+    crate::dal::templates::save_draft(&state.stores.db, &body).await?;
+    let saved =
+        crate::dal::templates::get_version(&state.stores.db, &body.template_id, body.version)
+            .await?
+            .ok_or_else(|| ReportError::Internal("saved template missing".into()))?;
+    Ok((StatusCode::CREATED, private(saved)).into_response())
+}
+
+pub async fn publish_template(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, template_id, version)): Path<(String, String, i64)>,
+) -> Result<Response, ReportError> {
+    require_admin(&scope, &project)?;
+    let ok = crate::dal::templates::publish(&state.stores.db, &template_id, version).await?;
+    if !ok {
+        return Err(ReportError::Conflict(format!(
+            "visual template {template_id} v{version} is not a draft or does not exist"
+        )));
+    }
+    let published = crate::dal::templates::get_version(&state.stores.db, &template_id, version)
+        .await?
+        .ok_or_else(|| ReportError::NotFound("template not found".into()))?;
+    Ok(private(published))
+}
+
+pub async fn put_card_visual(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset)): Path<(String, String, String)>,
+    Json(body): Json<crate::dal::CardVisualBinding>,
+) -> Result<Response, ReportError> {
+    require_admin(&scope, &project)?;
+    catalog::get_dataset(&state.stores.db, &project, &report, &dataset)
+        .await?
+        .ok_or_else(|| ReportError::NotFound("dataset not found".into()))?;
+    crate::dal::templates::bind_card_visual(&state.stores.db, &project, &report, &dataset, &body)
+        .await?;
+    state
+        .datasets
+        .invalidate_visibility_change(&project, &report)
+        .await;
+    Ok(private(body))
+}

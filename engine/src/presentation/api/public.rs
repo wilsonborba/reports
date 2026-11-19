@@ -262,3 +262,49 @@ pub async fn showcase_card(
         .await?,
     ))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateQuery {
+    pub kind: Option<String>,
+    pub lang: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/templates",
+    summary = "Published visual templates with slots and options",
+    params(("kind" = Option<String>, Query, description = "chart or diagram"), ("lang" = Option<String>, Query)),
+    responses((status = 200, description = "Published template versions", body = Vec<crate::dal::TemplateDiscoveryItem>)),
+    tag = "Catalog"
+)]
+pub async fn list_templates(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<TemplateQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    let lang = resolve_lang(q.lang.as_deref(), &headers);
+    let items =
+        crate::dal::templates::list_published(&state.stores.db, q.kind.as_deref(), &lang).await?;
+    Ok(public(serde_json::json!({ "templates": items })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/projects/{project}/templates",
+    summary = "Published visual templates for consumers of a project",
+    params(("project" = String, Path), ("kind" = Option<String>, Query), ("lang" = Option<String>, Query)),
+    responses((status = 200, description = "Published template versions", body = Vec<crate::dal::TemplateDiscoveryItem>)),
+    tag = "Catalog"
+)]
+pub async fn list_project_templates(
+    State(state): State<Arc<AppState>>,
+    Path(project): Path<String>,
+    Query(q): Query<TemplateQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    crate::dal::catalog::active_project(&state.stores.db, &project).await?;
+    let lang = resolve_lang(q.lang.as_deref(), &headers);
+    let items =
+        crate::dal::templates::list_published(&state.stores.db, q.kind.as_deref(), &lang).await?;
+    Ok(public(serde_json::json!({ "templates": items })))
+}
