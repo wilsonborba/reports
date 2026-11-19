@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:reports_ui/layouts/report_layout.dart';
 import 'package:reports_ui/main.dart';
-import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/widgets/charts/visual_chooser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/fake_api.dart';

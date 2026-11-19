@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:reports_ui/layouts/report_layout.dart';
 import 'package:reports_ui/themes/theme_registry.dart';
 import 'package:reports_ui/widgets/charts/chart_parts.dart';
 import 'package:reports_ui/widgets/charts/donut_chart.dart';

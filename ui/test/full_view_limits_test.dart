@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:reports_ui/layouts/report_layout.dart';
-import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/widgets/charts/bar_charts.dart';
 import 'package:reports_ui/widgets/charts/data_table_view.dart';
 import 'package:reports_ui/widgets/charts/visual_chooser.dart';

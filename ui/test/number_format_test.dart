@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reports_ui/l10n/strings.dart';
-import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/widgets/charts/format.dart';
 
 void main() {

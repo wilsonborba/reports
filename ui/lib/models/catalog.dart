@@ -2,6 +2,9 @@
 /// Everything about a project (texts, links, colors, images) comes from the API.
 library;
 
+import 'package:reports_view/reports_view.dart' show ReportPeriod;
+export 'package:reports_view/reports_view.dart' show ReportPeriod;
+
 /// Logo or icon of a project (API `assets`).
 class AssetRef {
   final String url;
@@ -207,19 +210,6 @@ class ProjectSummary {
       };
 }
 
-class ReportPeriod {
-  final String start;
-  final String end;
-
-  const ReportPeriod(this.start, this.end);
-
-  static ReportPeriod? fromJson(dynamic j) {
-    if (j is! Map) return null;
-    return ReportPeriod('${j['start'] ?? ''}', '${j['end'] ?? ''}');
-  }
-
-  Map<String, dynamic> toJson() => {'start': start, 'end': end};
-}
 
 class ReportSummary {
   final String slug;

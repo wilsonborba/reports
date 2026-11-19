@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reports_ui/main.dart';
 import 'package:reports_ui/widgets/report/share_dialog.dart';
 import 'package:reports_ui/themes/reports_theme.dart';
-import 'package:reports_ui/themes/report_palette.dart';
 import 'package:reports_ui/widgets/report/dataset_slot.dart';
 import 'package:reports_ui/widgets/charts/data_table_view.dart';
 import 'package:reports_ui/widgets/shell/app_shell.dart';

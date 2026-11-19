@@ -1,5 +1,3 @@
-import '../layouts/report_layout.dart';
-import '../models/report.dart';
 import '../widgets/charts/visual_chooser.dart';
 
 /// Rows of a card in a short table (Markdown and PDF): the preview rows of the card, or
