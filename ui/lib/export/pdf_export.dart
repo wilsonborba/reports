@@ -548,7 +548,7 @@ class _Builder {
 
   /// Ranking rows: rank, label, bar, value (one color). Donuts print as bars too.
   pw.Widget bars(List<Map<String, dynamic>> rows, FieldInfo label, FieldInfo measure, FieldInfo? second, List<String> notes, int total) {
-    final maxV = rows.fold<double>(0, (m, r) => math.max(m, asDouble(r[measure.name]) ?? 0));
+    final maxV = rows.fold<double>(0, (m, r) => math.max(m, measureValue(r[measure.name], measure) ?? 0));
     const labelW = 170.0, valueW = 110.0, rankW = 16.0;
     final barW = inner - labelW - valueW - rankW - 12;
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -560,7 +560,10 @@ class _Builder {
             pw.SizedBox(width: labelW, child: text(cell(valueText(rows[i][label.name], label), notes), size: 7.5, maxWidth: labelW - 4)),
             pw.SizedBox(width: 6),
             pw.Container(
-              width: maxV <= 0 ? 0 : math.max(1.0, barW * (asDouble(rows[i][measure.name]) ?? 0) / maxV),
+              width: () {
+                final v = measureValue(rows[i][measure.name], measure);
+                return (v == null || maxV <= 0) ? 0.0 : math.max(1.0, barW * v / maxV);
+              }(),
               height: 6,
               color: series(0),
             ),
@@ -568,7 +571,7 @@ class _Builder {
             pw.SizedBox(
               width: valueW,
               child: text(
-                [valueWithUnit(rows[i][measure.name], measure), if (second != null) valueWithUnit(rows[i][second.name], second)].join('  '),
+                [measureValueWithUnit(rows[i][measure.name], measure), if (second != null) measureValueWithUnit(rows[i][second.name], second)].join('  '),
                 size: 7.5,
                 align: pw.TextAlign.right,
                 maxWidth: valueW,
@@ -653,8 +656,8 @@ class _Builder {
 
   pw.Widget columns(DatasetPage page, FieldInfo x, FieldInfo m, PdfColor color, {double? height}) {
     final rows = page.rows;
-    final values = [for (final r in rows) asDouble(r[m.name]) ?? 0];
-    final range = YRange.of(values, zero: true);
+    final values = [for (final r in rows) measureValue(r[m.name], m)];
+    final range = YRange.of([for (final v in values) ?v], zero: true);
     return plot(
       height: height ?? chartHeight,
       range: range,
@@ -665,7 +668,9 @@ class _Builder {
         final bw = math.max(0.6, slot * 0.7);
         g.setFillColor(color);
         for (var i = 0; i < values.length; i++) {
-          final y0 = y(0), y1 = y(values[i]);
+          final v = values[i];
+          if (v == null) continue;
+          final y0 = y(0), y1 = y(v);
           g.drawRect(i * slot + (slot - bw) / 2, math.min(y0, y1), bw, (y1 - y0).abs());
         }
         g.fillPath();
@@ -734,7 +739,8 @@ class _Builder {
       final xk = '${r[x.name]}', ck = '${r[category.name]}';
       xs.putIfAbsent(xk, () => r[x.name]);
       names[ck] = valueText(r[category.name], category);
-      final v = asDouble(r[m.name]) ?? 0;
+      final v = measureValue(r[m.name], m);
+      if (v == null) continue;
       totals[ck] = (totals[ck] ?? 0) + v;
       (values[xk] ??= {})[ck] = (values[xk]?[ck] ?? 0) + v;
     }
