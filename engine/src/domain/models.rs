@@ -58,6 +58,15 @@ pub struct ReportSummary {
     pub signed_in_cards: usize,
     /// Visible cards whose effective visibility is `restricted` (admin or grant).
     pub restricted_cards: usize,
+    /// Access audience (`public`, `asodya`, `personal`, or `restricted`).
+    #[serde(default)]
+    pub audience: String,
+    /// Chart/template types present in visible cards.
+    #[serde(default)]
+    pub chart_types: Vec<String>,
+    /// Canonical open-in-Reports URL for this report.
+    #[serde(default)]
+    pub open_in_reports_url: String,
 }
 
 /// Cards of a report that the caller sees, and what opens the ones it cannot read. The

@@ -97,6 +97,8 @@ pub trait DocumentStore: Send + Sync {
     ) -> Result<Vec<RecordDoc>, ReportError>;
     /// Stores a durable result snapshot (`type: snapshot`). The ID must be new.
     async fn put_snapshot(&self, snapshot: &Value) -> Result<(), ReportError>;
+    /// Reads one stored snapshot by its `_id`.
+    async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError>;
     /// Snapshots of one dataset, newest first.
     async fn list_snapshots(
         &self,
@@ -281,6 +283,11 @@ impl DocumentStore for CouchDocuments {
         }
     }
 
+    async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError> {
+        let mut docs = self.find(json!({ "_id": id }), None, 1).await?;
+        Ok(docs.pop())
+    }
+
     async fn list_snapshots(
         &self,
         project: &str,
@@ -418,6 +425,17 @@ impl DocumentStore for MemoryDocuments {
         self.ensure_online()?;
         self.snapshots.write().unwrap().push(snapshot.clone());
         Ok(())
+    }
+
+    async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError> {
+        self.ensure_online()?;
+        Ok(self
+            .snapshots
+            .read()
+            .unwrap()
+            .iter()
+            .find(|s| s["_id"].as_str() == Some(id))
+            .cloned())
     }
 
     async fn list_snapshots(

@@ -230,30 +230,40 @@ pub async fn report_summaries(
         .filter(|q| !q.is_empty());
     let mut out = Vec::new();
     for (r, access) in visible_reports(svc, project, scope).await? {
-        if let Some(n) = &needle {
-            let hay = format!(
-                "{} {} {} {}",
-                r.slug,
-                r.title.values().cloned().collect::<Vec<_>>().join(" "),
-                resolve_text(&r.description, lang),
-                r.metadata.tags.join(" ")
-            )
-            .to_lowercase();
-            if !hay.contains(n.as_str()) {
-                continue;
-            }
-        }
+        let mut chart_types =
+            catalog::report_chart_types(&svc.stores().db, project, &r.slug).await?;
         let datasets: Vec<DatasetRecord> =
             catalog::list_datasets(&svc.stores().db, project, &r.slug)
                 .await?
                 .into_iter()
                 .filter(|d| dataset_access(scope, &r, access, d) != Access::Hidden)
                 .collect();
+        if chart_types.is_empty() && !datasets.is_empty() {
+            chart_types.push("chart".to_string());
+        }
+        if let Some(n) = &needle {
+            let hay = format!(
+                "{} {} {} {} {}",
+                r.slug,
+                r.title.values().cloned().collect::<Vec<_>>().join(" "),
+                resolve_text(&r.description, lang),
+                r.metadata.tags.join(" "),
+                chart_types.join(" ")
+            )
+            .to_lowercase();
+            if !hay.contains(n.as_str()) {
+                continue;
+            }
+        }
         let data_tier = report_tier(&datasets);
         if tier.is_some_and(|t| t != data_tier) {
             continue;
         }
         let count = |v: Visibility| datasets.iter().filter(|d| effective(&r, d) == v).count();
+        let open_in_reports_url = format!(
+            "https://reports.asodya.com/v1/projects/{}/reports/{}",
+            r.project, r.slug
+        );
         out.push(ReportSummary {
             slug: r.slug.clone(),
             project: r.project.clone(),
@@ -272,6 +282,9 @@ pub async fn report_summaries(
             can_view: access == Access::Readable,
             signed_in_cards: count(Visibility::SignedIn),
             restricted_cards: count(Visibility::Restricted),
+            audience: r.audience.clone(),
+            chart_types,
+            open_in_reports_url,
         });
     }
     Ok(out)
