@@ -141,6 +141,15 @@ fn admin_routes(with_reads: bool) -> Router<Arc<AppState>> {
             "/reports/:report/datasets/:dataset/meta",
             get(admin::get_dataset_meta).put(admin::put_dataset_meta),
         )
+        .route(
+            "/reports/:report/datasets/:dataset/visual",
+            put(admin::put_card_visual),
+        )
+        .route("/templates", post(admin::post_template))
+        .route(
+            "/templates/:template/versions/:version/publish",
+            post(admin::publish_template),
+        )
         .route("/grants", grants)
         .route("/grants/:grant", axum::routing::delete(admin::delete_grant))
         .route(
@@ -182,8 +191,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/ready", get(ready))
         // Guest routes (gateway public rule).
         .route("/catalog", get(public::list_projects))
+        .route("/templates", get(public::list_templates))
         .route("/projects", get(public::list_projects))
         .route("/projects/:project", get(public::project_detail))
+        .route("/projects/:project/templates", get(public::list_project_templates))
         .route("/projects/:project/theme", get(public::project_theme))
         .route("/projects/:project/reports", get(public::list_reports))
         .route("/projects/:project/stats", get(public::project_stats))

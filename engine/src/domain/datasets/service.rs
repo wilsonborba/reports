@@ -111,6 +111,8 @@ pub struct DatasetPage {
     #[schema(value_type = Object)]
     pub applied_filters: BTreeMap<String, Value>,
     pub lineage: Lineage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual: Option<crate::dal::CardVisualBinding>,
 }
 
 /// Who may read a cached result. Session and guest results never share a key.
@@ -824,6 +826,13 @@ impl DatasetService {
             };
             applied.insert(f.field().to_string(), v);
         }
+        let visual = crate::dal::templates::get_card_visual(
+            &self.stores.db,
+            &record.project,
+            &record.report_slug,
+            &record.dataset_id,
+        )
+        .await?;
         Ok(DatasetPage {
             descriptor: self.describe(record, lang).await?,
             language: lang.to_string(),
@@ -833,6 +842,7 @@ impl DatasetService {
             total_rows,
             applied_filters: applied,
             lineage,
+            visual,
         })
     }
 

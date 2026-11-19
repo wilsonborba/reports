@@ -14,6 +14,7 @@ pub mod grants;
 mod normalized;
 pub mod schemas;
 pub mod sql;
+pub mod templates;
 
 use std::sync::Arc;
 
@@ -26,6 +27,9 @@ pub use documents::{CouchDocuments, DocumentStore, InsertOutcome, MemoryDocument
 pub use grants::Grant;
 pub use schemas::SchemaVersion;
 pub use sql::Db;
+pub use templates::{
+    CardVisualBinding, TemplateDiscoveryItem, TemplateOption, TemplateSlot, VisualTemplateVersion,
+};
 
 /// The three network stores of one engine process.
 #[derive(Clone)]
