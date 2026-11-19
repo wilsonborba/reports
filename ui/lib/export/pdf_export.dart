@@ -383,15 +383,36 @@ class _Builder {
       if (filters.isNotEmpty) ...[pw.SizedBox(height: 3), text('${t('md_filters')}: ${filters.join('; ')}', size: 7.5, color: muted)],
       pw.SizedBox(height: 8),
     ];
-    if (page.rows.isEmpty) {
+    if (!d.canView) {
+      body.add(text('Restricted chart', size: 8.5, color: muted));
+    } else if (page.rows.isEmpty) {
       body.add(text(t('no_data'), size: 8.5, color: muted));
     } else {
+      final (xAxisTitle, yAxisTitle) = ChartFrame.axisTitlesFor(page);
+      if (yAxisTitle != null && visual != Visual.kpi && visual != Visual.table && visual != Visual.donut) {
+        body.add(text(yAxisTitle, size: 7, color: muted));
+      }
       final chart = this.chart(visual, page, card.slot, notes);
-      if (chart != null) body.addAll([chart, pw.SizedBox(height: 8)]);
+      if (chart != null) body.addAll([chart, pw.SizedBox(height: 4)]);
+      if (xAxisTitle != null && visual != Visual.kpi && visual != Visual.table && visual != Visual.donut) {
+        body.add(text(xAxisTitle, size: 7, color: muted));
+      }
+      body.add(pw.SizedBox(height: 4));
       if (visual != Visual.kpi && visual != Visual.hbar && visual != Visual.donut) {
         body.add(table(page, card.slot, notes));
       }
     }
+    final meta = d.meta;
+    final footerParts = <String>[
+      if (meta != null && meta.source.isNotEmpty) 'Source: ${meta.source}',
+      if (meta != null && (meta.periodStart.isNotEmpty || meta.periodEnd.isNotEmpty))
+        'Period: ${meta.periodStart} to ${meta.periodEnd} (${meta.timezone})',
+      'Tier: ${d.dataTier}',
+    ];
+    body.addAll([
+      pw.SizedBox(height: 4),
+      text(footerParts.join('  |  '), size: 6.5, color: muted),
+    ]);
     if (notes.isNotEmpty) {
       body.add(pw.SizedBox(height: 6));
       for (var i = 0; i < notes.length; i++) {
