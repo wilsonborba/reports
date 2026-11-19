@@ -99,6 +99,14 @@ pub trait DocumentStore: Send + Sync {
     async fn put_snapshot(&self, snapshot: &Value) -> Result<(), ReportError>;
     /// Reads one stored snapshot by its `_id`.
     async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError>;
+    /// Stores a temporary render job (`type: render_job`) with `expires_at` epoch seconds.
+    async fn put_render_job(&self, job: &Value) -> Result<(), ReportError>;
+    /// Reads one render job by its `job_id`.
+    async fn get_render_job(&self, job_id: &str) -> Result<Option<Value>, ReportError>;
+    /// Deletes one render job by its `job_id`. Returns true if deleted.
+    async fn delete_render_job(&self, job_id: &str) -> Result<bool, ReportError>;
+    /// Deletes all render jobs with `expires_at <= now_secs`. Returns deleted count.
+    async fn cleanup_expired_render_jobs(&self, now_secs: i64) -> Result<usize, ReportError>;
     /// Snapshots of one dataset, newest first.
     async fn list_snapshots(
         &self,
@@ -288,6 +296,89 @@ impl DocumentStore for CouchDocuments {
         Ok(docs.pop())
     }
 
+    async fn put_render_job(&self, job: &Value) -> Result<(), ReportError> {
+        let response = self.send(self.client.post(self.url("")).json(job)).await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(ReportError::Unavailable(format!(
+                "CouchDB render_job write returned {}",
+                response.status()
+            )))
+        }
+    }
+
+    async fn get_render_job(&self, job_id: &str) -> Result<Option<Value>, ReportError> {
+        let mut docs = self
+            .find(json!({ "type": "render_job", "job_id": job_id }), None, 1)
+            .await?;
+        Ok(docs.pop())
+    }
+
+    async fn delete_render_job(&self, job_id: &str) -> Result<bool, ReportError> {
+        let docs = self
+            .find(
+                json!({ "type": "render_job", "job_id": job_id }),
+                Some(json!(["_id", "_rev"])),
+                1,
+            )
+            .await?;
+        let Some(doc) = docs.into_iter().next() else {
+            return Ok(false);
+        };
+        let deletions = vec![json!({ "_id": doc["_id"], "_rev": doc["_rev"], "_deleted": true })];
+        let response = self
+            .send(
+                self.client
+                    .post(self.url("/_bulk_docs"))
+                    .json(&json!({ "docs": deletions })),
+            )
+            .await?;
+        if response.status().is_success() {
+            Ok(true)
+        } else {
+            Err(ReportError::Unavailable(format!(
+                "CouchDB render_job delete returned {}",
+                response.status()
+            )))
+        }
+    }
+
+    async fn cleanup_expired_render_jobs(&self, now_secs: i64) -> Result<usize, ReportError> {
+        let docs = self
+            .find(
+                json!({ "type": "render_job", "expires_at": { "$lte": now_secs } }),
+                Some(json!(["_id", "_rev"])),
+                usize::MAX,
+            )
+            .await?;
+        if docs.is_empty() {
+            return Ok(0);
+        }
+        let deletions: Vec<Value> = docs
+            .iter()
+            .map(|d| json!({ "_id": d["_id"], "_rev": d["_rev"], "_deleted": true }))
+            .collect();
+        let mut deleted = 0;
+        for chunk in deletions.chunks(1000) {
+            let response = self
+                .send(
+                    self.client
+                        .post(self.url("/_bulk_docs"))
+                        .json(&json!({ "docs": chunk })),
+                )
+                .await?;
+            if !response.status().is_success() {
+                return Err(ReportError::Unavailable(format!(
+                    "CouchDB render_job cleanup returned {}",
+                    response.status()
+                )));
+            }
+            deleted += chunk.len();
+        }
+        Ok(deleted)
+    }
+
     async fn list_snapshots(
         &self,
         project: &str,
@@ -436,6 +527,46 @@ impl DocumentStore for MemoryDocuments {
             .iter()
             .find(|s| s["_id"].as_str() == Some(id))
             .cloned())
+    }
+
+    async fn put_render_job(&self, job: &Value) -> Result<(), ReportError> {
+        self.ensure_online()?;
+        self.snapshots.write().unwrap().push(job.clone());
+        Ok(())
+    }
+
+    async fn get_render_job(&self, job_id: &str) -> Result<Option<Value>, ReportError> {
+        self.ensure_online()?;
+        Ok(self
+            .snapshots
+            .read()
+            .unwrap()
+            .iter()
+            .find(|s| {
+                s["type"].as_str() == Some("render_job") && s["job_id"].as_str() == Some(job_id)
+            })
+            .cloned())
+    }
+
+    async fn delete_render_job(&self, job_id: &str) -> Result<bool, ReportError> {
+        self.ensure_online()?;
+        let mut items = self.snapshots.write().unwrap();
+        let before = items.len();
+        items.retain(|s| {
+            !(s["type"].as_str() == Some("render_job") && s["job_id"].as_str() == Some(job_id))
+        });
+        Ok(items.len() < before)
+    }
+
+    async fn cleanup_expired_render_jobs(&self, now_secs: i64) -> Result<usize, ReportError> {
+        self.ensure_online()?;
+        let mut items = self.snapshots.write().unwrap();
+        let before = items.len();
+        items.retain(|s| {
+            !(s["type"].as_str() == Some("render_job")
+                && s["expires_at"].as_i64().is_some_and(|exp| exp <= now_secs))
+        });
+        Ok(before - items.len())
     }
 
     async fn list_snapshots(

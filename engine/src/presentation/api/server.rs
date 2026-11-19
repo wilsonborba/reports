@@ -241,6 +241,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest("/admin/projects/:project", admin_routes(true))
         .route("/admin/fixtures/:manifest", axum::routing::delete(admin::delete_fixture))
         .route("/admin/operations", get(admin::operations))
+        .route("/render_jobs", post(super::render_jobs::create))
+        .route("/render_jobs/cleanup", post(super::render_jobs::cleanup))
+        .route(
+            "/render_jobs/:job_id",
+            get(super::render_jobs::get).delete(super::render_jobs::delete),
+        )
         // The request log keeps the path only: a query can hold a login artifact.
         .layer(TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<axum::body::Body>| {
             tracing::debug_span!("request", method = %req.method(), path = %req.uri().path())

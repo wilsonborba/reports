@@ -39,6 +39,18 @@ impl DocumentStore for CountingDocs {
     async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError> {
         self.inner.get_snapshot(id).await
     }
+    async fn put_render_job(&self, job: &Value) -> Result<(), ReportError> {
+        self.inner.put_render_job(job).await
+    }
+    async fn get_render_job(&self, job_id: &str) -> Result<Option<Value>, ReportError> {
+        self.inner.get_render_job(job_id).await
+    }
+    async fn delete_render_job(&self, job_id: &str) -> Result<bool, ReportError> {
+        self.inner.delete_render_job(job_id).await
+    }
+    async fn cleanup_expired_render_jobs(&self, now_secs: i64) -> Result<usize, ReportError> {
+        self.inner.cleanup_expired_render_jobs(now_secs).await
+    }
     async fn list_snapshots(
         &self,
         p: &str,
