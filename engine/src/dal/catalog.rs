@@ -896,3 +896,86 @@ pub async fn list_roles(db: &Db, project: &str) -> Result<Vec<ProjectRole>, Repo
         })
         .collect()
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardSnapshotRow {
+    pub id: String,
+    pub project_slug: String,
+    pub report_slug: String,
+    pub dataset_id: String,
+    pub captured_by: String,
+    pub captured_at: String,
+    pub couch_doc_id: String,
+    pub total_rows: i64,
+}
+
+pub async fn insert_card_snapshot(db: &Db, s: &CardSnapshotRow) -> Result<(), ReportError> {
+    sqlx::query(
+        "INSERT INTO card_snapshots(id, project_slug, report_slug, dataset_id, captured_by, captured_at, couch_doc_id, total_rows)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(&s.id)
+    .bind(&s.project_slug)
+    .bind(&s.report_slug)
+    .bind(&s.dataset_id)
+    .bind(&s.captured_by)
+    .bind(&s.captured_at)
+    .bind(&s.couch_doc_id)
+    .bind(s.total_rows)
+    .execute(&db.pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_card_snapshot(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    id: &str,
+) -> Result<Option<CardSnapshotRow>, ReportError> {
+    let row = sqlx::query(
+        "SELECT id, project_slug, report_slug, dataset_id, captured_by, captured_at, couch_doc_id, CAST(total_rows AS BIGINT) AS total_rows
+         FROM card_snapshots
+         WHERE id = $1 AND project_slug = $2 AND report_slug = $3 AND dataset_id = $4",
+    )
+    .bind(id)
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(|r| {
+        Ok(CardSnapshotRow {
+            id: r.try_get("id")?,
+            project_slug: r.try_get("project_slug")?,
+            report_slug: r.try_get("report_slug")?,
+            dataset_id: r.try_get("dataset_id")?,
+            captured_by: r.try_get("captured_by")?,
+            captured_at: r.try_get("captured_at")?,
+            couch_doc_id: r.try_get("couch_doc_id")?,
+            total_rows: r.try_get("total_rows")?,
+        })
+    })
+    .transpose()
+}
+
+pub async fn report_chart_types(
+    db: &Db,
+    project: &str,
+    report: &str,
+) -> Result<Vec<String>, ReportError> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT template_id FROM user_chart_items WHERE project_slug = $1 AND report_slug = $2 ORDER BY template_id",
+    )
+    .bind(project)
+    .bind(report)
+    .fetch_all(&db.pool)
+    .await?;
+    rows.iter()
+        .map(|r| {
+            r.try_get::<String, _>("template_id")
+                .map_err(ReportError::from)
+        })
+        .collect()
+}

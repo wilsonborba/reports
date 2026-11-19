@@ -209,6 +209,22 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/projects/:project/reports/:report", get(viewer::report_view))
         .route("/projects/:project/reports/:report/datasets/:dataset", get(viewer::dataset_page))
         .route("/projects/:project/reports/:report/cards/:dataset", get(viewer::dataset_page))
+        .route(
+            "/projects/:project/reports/:report/cards/:dataset/embed",
+            get(embeds::viewer_descriptor),
+        )
+        .route(
+            "/projects/:project/reports/:report/cards/:dataset/snapshots",
+            post(embeds::capture_snapshot),
+        )
+        .route(
+            "/projects/:project/reports/:report/cards/:dataset/snapshots/:snapshot",
+            get(embeds::snapshot_meta),
+        )
+        .route(
+            "/projects/:project/reports/:report/cards/:dataset/snapshots/:snapshot/content",
+            get(embeds::snapshot_content),
+        )
         // Admin routes (both prefixes; the engine checks the role on every call).
         .nest("/projects/:project/admin", admin_routes(false))
         .nest("/admin/projects/:project", admin_routes(true))

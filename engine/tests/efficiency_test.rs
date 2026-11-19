@@ -36,6 +36,9 @@ impl DocumentStore for CountingDocs {
     async fn put_snapshot(&self, s: &Value) -> Result<(), ReportError> {
         self.inner.put_snapshot(s).await
     }
+    async fn get_snapshot(&self, id: &str) -> Result<Option<Value>, ReportError> {
+        self.inner.get_snapshot(id).await
+    }
     async fn list_snapshots(
         &self,
         p: &str,
