@@ -8,6 +8,7 @@ pub mod guardrail;
 pub mod ingest;
 pub mod models;
 pub mod owner;
+pub mod render_jobs;
 pub mod reports;
 pub mod stats;
 pub mod themes;
