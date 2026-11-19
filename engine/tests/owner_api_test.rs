@@ -179,3 +179,183 @@ async fn owner_api_create_idempotency_limits_if_match_visibility_and_delete() {
     assert_eq!(st, StatusCode::OK);
     assert_eq!(del["deleted"], true);
 }
+
+#[tokio::test]
+async fn making_one_personal_item_public_never_exposes_another_personal_item() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+
+    let (st1, created1) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "title": "Owner Chart One",
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "PublicChartRow", "y": 111 }]
+        })),
+    )
+    .await;
+    assert_eq!(st1, StatusCode::CREATED);
+    let id1 = created1["item"]["id"].as_str().unwrap().to_string();
+    let report1 = created1["item"]["report_slug"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let dataset1 = created1["item"]["dataset_id"].as_str().unwrap().to_string();
+    let embed1 = created1["item"]["embed_url"].as_str().unwrap().to_string();
+
+    let (st2, created2) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "title": "Owner Chart Two",
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "SecretChartRow", "y": 222 }]
+        })),
+    )
+    .await;
+    assert_eq!(st2, StatusCode::CREATED);
+    let id2 = created2["item"]["id"].as_str().unwrap().to_string();
+    let report2 = created2["item"]["report_slug"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let dataset2 = created2["item"]["dataset_id"].as_str().unwrap().to_string();
+    let embed2 = created2["item"]["embed_url"].as_str().unwrap().to_string();
+
+    // Before publishing item 1, user B cannot read either item through any route.
+    for (report, dataset, embed) in [
+        (&report1, &dataset1, &embed1),
+        (&report2, &dataset2, &embed2),
+    ] {
+        let (st, _) = call_with_headers(
+            &t,
+            "GET",
+            &format!("/projects/cortex/reports/{report}"),
+            Some(USER_2),
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        let (st, _) = call_with_headers(
+            &t,
+            "GET",
+            &format!("/projects/cortex/reports/{report}/datasets/{dataset}"),
+            Some(USER_2),
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+        let (st, _) = call_with_headers(&t, "GET", embed, None, &[], None).await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+    }
+
+    // User A makes item 1 public; item 2 remains personal.
+    let (st, patched) = call_with_headers(
+        &t,
+        "PATCH",
+        &format!("/me/items/{id1}"),
+        Some(USER_1),
+        &[],
+        Some(json!({ "audience": "public" })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(patched["item"]["audience"], "public");
+
+    // User B can read item 1 via report view, dataset page, and embed descriptor.
+    let (st, rep1_view) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report1}"),
+        Some(USER_2),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(rep1_view["datasets"][0]["can_view"], true);
+
+    let (st, ds1_page) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report1}/datasets/{dataset1}"),
+        Some(USER_2),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let ds1_text = ds1_page.to_string();
+    assert!(ds1_text.contains("PublicChartRow"));
+    assert!(!ds1_text.contains("SecretChartRow"));
+
+    let (st, embed1_desc) = call_with_headers(&t, "GET", &embed1, Some(USER_2), &[], None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(embed1_desc["embed_url"]
+        .as_str()
+        .unwrap()
+        .contains(&report1));
+
+    // User B still cannot read item 2 through owner API, report view, dataset page, or embed.
+    let (st, _) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{id2}"),
+        Some(USER_2),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    let (st, _) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report2}"),
+        Some(USER_2),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    let (st, _) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report2}/datasets/{dataset2}"),
+        Some(USER_2),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    let (st, _) = call_with_headers(&t, "GET", &embed2, Some(USER_2), &[], None).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    // Owner A can still read both items.
+    let (st, owner_ds2) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report2}/datasets/{dataset2}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(owner_ds2.to_string().contains("SecretChartRow"));
+}

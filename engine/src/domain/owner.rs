@@ -4,12 +4,14 @@ use serde_json::{json, Value};
 use sqlx::Row;
 
 use crate::core::error::ReportError;
-use crate::dal::catalog::{self, ReportMetadata, ReportRecord};
+use crate::dal::calculations::{self, CalculationVersion, InputRef};
+use crate::dal::catalog::{self, DatasetRecord, ReportMetadata, ReportRecord};
 use crate::dal::documents::RecordDoc;
 use crate::dal::Stores;
 use crate::domain::auth::{Audience, ControlAuthority, ViewerScope};
 use crate::domain::datasets::service::DatasetService;
-use crate::domain::datasets::spec::I18nText;
+use crate::domain::datasets::spec::{DataTier, DatasetSpec, FieldSpec, I18nText};
+use std::collections::BTreeSet;
 
 pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 1_048_576;
 pub const DEFAULT_MAX_UPLOAD_RECORDS: usize = 1000;
@@ -185,6 +187,124 @@ fn map_summary(row: &sqlx::any::AnyRow, row_count: usize) -> Result<OwnerItemSum
     })
 }
 
+fn owner_fields(mapping: &Value, rows: &[Value]) -> Vec<FieldSpec> {
+    let mut seen = BTreeSet::new();
+    let mut fields = Vec::new();
+    let sample = rows.first();
+    if let Some(obj) = mapping.as_object() {
+        for col_val in obj.values() {
+            if let Some(col) = col_val.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                if !seen.insert(col.to_string()) {
+                    continue;
+                }
+                let is_num = sample
+                    .and_then(|r| r.get(col))
+                    .is_some_and(|v| v.is_number());
+                fields.push(FieldSpec {
+                    name: col.to_string(),
+                    label: I18nText::from([("en".into(), col.to_string())]),
+                    field_type: if is_num { "float" } else { "string" }.to_string(),
+                    role: if is_num { "measure" } else { "dimension" }.to_string(),
+                    unit: None,
+                    decimals: None,
+                    missing_means: "no_data".to_string(),
+                    denominator_field: None,
+                    denominator_text: None,
+                });
+            }
+        }
+    }
+    fields
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn publish_owner_dataset(
+    stores: &Stores,
+    project: &str,
+    item_id: &str,
+    report_slug: &str,
+    dataset_id: &str,
+    title: &str,
+    source_app: &str,
+    owner_id: &str,
+    audience: Audience,
+    mapping: &Value,
+    rows: &[Value],
+) -> Result<(), ReportError> {
+    let calc_id = format!("owner-calc-{item_id}");
+    let prev_ver: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(version), 0) FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2",
+    )
+    .bind(project)
+    .bind(&calc_id)
+    .fetch_one(&stores.db.pool)
+    .await?;
+    let version = prev_ver + 1;
+    let row_schema = format!("owner-rows-{item_id}-v{version}");
+
+    let row_docs: Vec<RecordDoc> = rows
+        .iter()
+        .enumerate()
+        .map(|(idx, row)| {
+            RecordDoc::new(
+                project,
+                &row_schema,
+                1,
+                &format!("owner-row:{item_id}:v{version}:{idx}"),
+                None,
+                None,
+                row.clone(),
+            )
+        })
+        .collect();
+    if !row_docs.is_empty() {
+        stores.docs.insert_records(&row_docs).await?;
+    }
+
+    let spec = DatasetSpec {
+        title: I18nText::from([("en".into(), title.to_string())]),
+        source: Some(row_schema.clone()),
+        fields: owner_fields(mapping, rows),
+        ..Default::default()
+    };
+    let calc = CalculationVersion {
+        project: project.to_string(),
+        calculation_id: calc_id.clone(),
+        version,
+        status: "draft".to_string(),
+        input_schema: Some(row_schema.clone()),
+        input_schema_version: Some(1),
+        inputs: vec![InputRef {
+            schema: row_schema,
+            version: 1,
+        }],
+        definition: spec.clone(),
+        needs_review: false,
+        created_at: String::new(),
+        published_at: None,
+    };
+    calculations::save_draft(&stores.db, &calc).await?;
+    calculations::publish(&stores.db, &calc).await?;
+
+    let dataset_rec = DatasetRecord {
+        project: project.to_string(),
+        report_slug: report_slug.to_string(),
+        dataset_id: dataset_id.to_string(),
+        data_tier: DataTier::Real,
+        calculation_id: calc_id,
+        calculation_version: version,
+        spec,
+        visibility: audience.to_visibility().as_str().to_string(),
+        discoverable: false,
+        source_app: source_app.to_string(),
+        owner_id: owner_id.to_string(),
+        control_authority: ControlAuthority::UserOwned.as_str().to_string(),
+        audience: audience.as_str().to_string(),
+    };
+    catalog::upsert_dataset(&stores.db, &dataset_rec).await?;
+    Ok(())
+}
+
 pub async fn create_item(
     stores: &Stores,
     datasets: &DatasetService,
@@ -273,7 +393,7 @@ pub async fn create_item(
     let rep = ReportRecord {
         project: project.to_string(),
         slug: report_slug.clone(),
-        title: I18nText::from([("en".into(), title)]),
+        title: I18nText::from([("en".into(), title.clone())]),
         description: I18nText::default(),
         metadata: ReportMetadata::default(),
         visibility: audience.to_visibility().as_str().to_string(),
@@ -285,6 +405,20 @@ pub async fn create_item(
         audience: audience.as_str().to_string(),
     };
     catalog::upsert_report(&stores.db, &rep).await?;
+    publish_owner_dataset(
+        stores,
+        project,
+        &item_id,
+        &report_slug,
+        &dataset_id,
+        &title,
+        &source_app,
+        owner_id,
+        audience,
+        &input.mapping,
+        &input.rows,
+    )
+    .await?;
 
     sqlx::query(
         "INSERT INTO user_chart_items(
@@ -417,6 +551,23 @@ pub async fn replace_dataset(
     .execute(&stores.db.pool)
     .await?;
 
+    let owner_id = require_owner_user(scope)?.to_string();
+    let audience = Audience::parse(&detail.item.audience);
+    publish_owner_dataset(
+        stores,
+        &detail.item.project,
+        item_id,
+        &detail.item.report_slug,
+        &detail.item.dataset_id,
+        &detail.item.report_slug,
+        &detail.item.source_app,
+        &owner_id,
+        audience,
+        &mapping,
+        &input.rows,
+    )
+    .await?;
+
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
@@ -494,6 +645,16 @@ pub async fn patch_item(
     .execute(&stores.db.pool)
     .await?;
 
+    sqlx::query(
+        "UPDATE datasets SET visibility = $1, audience = $2 WHERE project_slug = $3 AND report_slug = $4",
+    )
+    .bind(new_audience.to_visibility().as_str())
+    .bind(new_audience.as_str())
+    .bind(&detail.item.project)
+    .bind(&detail.item.report_slug)
+    .execute(&stores.db.pool)
+    .await?;
+
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
@@ -532,7 +693,15 @@ pub async fn delete_item(
         .bind(item_id)
         .execute(&stores.db.pool)
         .await?;
+    catalog::delete_dataset(
+        &stores.db,
+        &detail.item.project,
+        &detail.item.report_slug,
+        &detail.item.dataset_id,
+    )
+    .await?;
     catalog::delete_report(&stores.db, &detail.item.project, &detail.item.report_slug).await?;
+
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
