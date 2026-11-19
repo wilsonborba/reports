@@ -1,31 +1,5 @@
-import '../models/report.dart';
-
-/// Chart types of the frontend. The API never sends them; the frontend decides.
-enum Visual { auto, kpi, line, bar, stackedBar, hbar, donut, combo, curve, map, table, sankey }
-
-/// One card of a section: a dataset and how to show it.
-class Slot {
-  final String datasetId;
-  final Visual visual;
-
-  /// Wide cards take the full row by default.
-  final bool wide;
-
-  /// Extra datasets that the visual needs (for example the links of a map).
-  final List<String> companions;
-
-  /// Measures to draw, in order (the first is the bar of a combo chart). Empty means automatic.
-  final List<String> measures;
-
-  /// Category fields in stage order (Sankey). Empty means automatic.
-  final List<String> dimensions;
-
-  const Slot(this.datasetId,
-      {this.visual = Visual.auto, this.wide = false, this.companions = const [], this.measures = const [], this.dimensions = const []});
-
-  /// Unique key in a report (the same dataset can appear twice with two visuals).
-  String get key => visual == Visual.auto ? datasetId : '$datasetId.${visual.name}';
-}
+import 'package:reports_view/reports_view.dart';
+export 'package:reports_view/reports_view.dart' show Slot, Visual;
 
 class ReportLayout {
   final List<List<Slot>> sections;

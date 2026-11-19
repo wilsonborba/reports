@@ -1,8 +1,6 @@
 import 'package:reports_ui/core/tracking_manifest.dart';
 import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
-import '../../models/report.dart';
-import '../../themes/report_palette.dart';
 import '../charts/format.dart';
 
 /// Filter values of one card as API query parameters: `f.<field>=a,b` for categories,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import '../../models/catalog.dart';
 import '../../services/catalog_service.dart';
-import '../../themes/report_palette.dart';
 import '../../widgets/charts/format.dart';
 import '../../widgets/public/code_panel.dart';
 import '../../widgets/public/flow_diagram.dart';
