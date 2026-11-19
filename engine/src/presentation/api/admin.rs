@@ -70,6 +70,10 @@ pub struct ReportBody {
     /// A gated report that guests may see as a placeholder (default false)
     #[serde(default)]
     pub discoverable: bool,
+    #[serde(default)]
+    pub owner_id: Option<String>,
+    #[serde(default)]
+    pub audience: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -86,6 +90,10 @@ pub struct DatasetBody {
     /// A gated dataset that guests may see as a skeleton (default false)
     #[serde(default)]
     pub discoverable: bool,
+    #[serde(default)]
+    pub owner_id: Option<String>,
+    #[serde(default)]
+    pub audience: Option<String>,
 }
 
 fn restricted_default(v: Option<String>) -> String {
@@ -177,11 +185,19 @@ pub async fn put_report(
     let fixture = fixture_of(&scope, &headers)?;
     catalog::active_project(&state.stores.db, &project).await?;
     let vis = restricted_default(body.visibility);
-    let audience = crate::domain::auth::Audience::from_visibility(
-        crate::domain::auth::Visibility::parse(&vis),
-    )
-    .as_str()
-    .to_string();
+    let audience = match body.audience.as_deref() {
+        Some(a) => crate::domain::auth::Audience::parse_strict(a)?
+            .as_str()
+            .to_string(),
+        None => crate::domain::auth::Audience::from_visibility(
+            crate::domain::auth::Visibility::parse(&vis),
+        )
+        .as_str()
+        .to_string(),
+    };
+    let owner_id = body
+        .owner_id
+        .unwrap_or_else(|| scope.user_uuid().unwrap_or("").to_string());
     let record = ReportRecord {
         project: project.clone(),
         slug: report.clone(),
@@ -192,7 +208,7 @@ pub async fn put_report(
         discoverable: body.discoverable,
         updated_at: String::new(),
         source_app: "reports".to_string(),
-        owner_id: scope.user_uuid().unwrap_or("").to_string(),
+        owner_id,
         control_authority: "user_owned".to_string(),
         audience,
     };
@@ -294,11 +310,19 @@ pub async fn put_dataset(
         )));
     }
     let vis = restricted_default(body.visibility);
-    let audience = crate::domain::auth::Audience::from_visibility(
-        crate::domain::auth::Visibility::parse(&vis),
-    )
-    .as_str()
-    .to_string();
+    let audience = match body.audience.as_deref() {
+        Some(a) => crate::domain::auth::Audience::parse_strict(a)?
+            .as_str()
+            .to_string(),
+        None => crate::domain::auth::Audience::from_visibility(
+            crate::domain::auth::Visibility::parse(&vis),
+        )
+        .as_str()
+        .to_string(),
+    };
+    let owner_id = body
+        .owner_id
+        .unwrap_or_else(|| scope.user_uuid().unwrap_or("").to_string());
     let record = DatasetRecord {
         project: project.clone(),
         report_slug: report.clone(),
@@ -310,7 +334,7 @@ pub async fn put_dataset(
         visibility: vis,
         discoverable: body.discoverable,
         source_app: "reports".to_string(),
-        owner_id: scope.user_uuid().unwrap_or("").to_string(),
+        owner_id,
         control_authority: "user_owned".to_string(),
         audience,
     };
