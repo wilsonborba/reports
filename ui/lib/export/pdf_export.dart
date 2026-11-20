@@ -539,6 +539,15 @@ class _Builder {
       case Visual.qqPlot:
       case Visual.populationPyramid:
       case Visual.raincloud:
+      case Visual.scatter:
+      case Visual.bubble:
+      case Visual.heatmap:
+      case Visual.correlationMatrix:
+      case Visual.hexbin:
+      case Visual.contour2d:
+      case Visual.splom:
+      case Visual.quadrant:
+      case Visual.ternary:
         final (main, second) = VisualChooser.ranked(d, slot);
         final limit = compact ? 6 : ExportRows.limitFor(page, slot);
         return bars(page.rows.length > limit ? page.rows.sublist(0, limit) : page.rows, dims.first, main, second, notes, ExportRows.total(page));
