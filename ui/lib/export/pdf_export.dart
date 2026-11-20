@@ -604,6 +604,11 @@ class _Builder {
       case Visual.stackedBar:
         return stacked(page, dims[0], dims[1], ms.first);
       case Visual.map:
+      case Visual.bubbleMap:
+      case Visual.choropleth:
+      case Visual.geoHeatmap:
+      case Visual.flowMap:
+      case Visual.hexTileMap:
         return map(page, ms.first);
       case Visual.sankey:
       case Visual.alluvial:

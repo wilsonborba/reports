@@ -1637,3 +1637,67 @@ pub async fn seed_sets_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Geographic catalog templates (catalog items 93 to 98).
+pub fn geo_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str)] = &[
+        ("map", "Point map", "Mapa de pontos", "แผนที่จุด"),
+        ("bubble_map", "Bubble map", "Mapa de bolhas", "แผนที่ฟอง"),
+        ("choropleth", "Choropleth", "Mapa coroplético", "แผนที่โคโรเพลท"),
+        ("geo_heatmap", "Geographic heatmap", "Mapa de calor geográfico", "แผนที่ความหนาแน่นเชิงพื้นที่"),
+        ("flow_map", "Flow map", "Mapa de fluxo", "แผนที่การไหล"),
+        ("hex_tile_map", "Hex tile map", "Mapa hexagonal", "แผนที่หกเหลี่ยม"),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th)| {
+            let mut title = HashMap::new();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec!["string".to_string(), "enum".to_string()],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec!["integer".to_string(), "float".to_string()],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 6 geographic catalog templates.
+pub async fn seed_geo_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in geo_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
