@@ -980,3 +980,170 @@ pub async fn seed_time_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Catalog templates for part-of-a-whole visuals (catalog items 44 to 54).
+pub fn part_whole_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str, i64, i64, i64, i64)] = &[
+        (
+            "donut",
+            "Donut Chart",
+            "Grafico de Rosca",
+            "แผนภูมิโดนัท",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "pie",
+            "Pie Chart",
+            "Grafico de Pizza",
+            "แผนภูมิวงกลม",
+            1,
+            1,
+            1,
+            1,
+        ),
+        ("gauge", "Gauge", "Medidor Circular", "มาตรวัด", 0, 1, 1, 2),
+        (
+            "meter",
+            "Meter",
+            "Barra de Progresso",
+            "แถบวัดระดับ",
+            0,
+            1,
+            1,
+            2,
+        ),
+        (
+            "treemap",
+            "Treemap",
+            "Mapa de Arvore",
+            "แผนภูมิสี่เหลี่ยมซ้อน",
+            1,
+            3,
+            1,
+            1,
+        ),
+        (
+            "sunburst",
+            "Sunburst",
+            "Explosao Solar",
+            "แผนภูมิรัศมีซ้อน",
+            1,
+            3,
+            1,
+            1,
+        ),
+        (
+            "icicle",
+            "Icicle Chart",
+            "Grafico de Cascata Hierarquica",
+            "แผนภูมิแท่งลำดับชั้น",
+            1,
+            3,
+            1,
+            1,
+        ),
+        (
+            "circle_packing",
+            "Circle Packing",
+            "Empacotamento de Circulos",
+            "แผนภูมิวงกลมซ้อน",
+            1,
+            3,
+            1,
+            1,
+        ),
+        (
+            "waffle",
+            "Waffle Chart",
+            "Grafico de Waffle",
+            "แผนภูมิวัฟเฟิล",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "nightingale_rose",
+            "Nightingale Rose",
+            "Rosa de Nightingale",
+            "แผนภูมิกลีบกุหลาบ",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "funnel",
+            "Funnel Chart",
+            "Grafico de Funil",
+            "แผนภูมิกรวย",
+            1,
+            1,
+            1,
+            1,
+        ),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_d, max_d, min_m, max_m)| {
+            let mut title = I18nText::default();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: min_d > 0,
+                        min_count: min_d,
+                        max_count: max_d,
+                        accepted_types: vec![
+                            "string".to_string(),
+                            "enum".to_string(),
+                            "boolean".to_string(),
+                        ],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: max_m,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 11 part-of-a-whole catalog templates.
+pub async fn seed_part_whole_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in part_whole_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}

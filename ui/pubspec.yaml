@@ -32,7 +32,7 @@ dependencies:
   reports_view:
     git:
       url: https://github.com/wilsonborba/reports_view.git
-      ref: 1d7bce6
+      ref: f5f2757
   flutter:
     sdk: flutter
   flutter_web_plugins:
