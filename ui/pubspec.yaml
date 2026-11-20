@@ -29,10 +29,7 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   screen_trail: ^0.1.0
-  reports_view:
-    git:
-      url: https://github.com/wilsonborba/reports_view.git
-      ref: 93f8025
+  reports_view: 0.2.0
   flutter:
     sdk: flutter
   flutter_web_plugins:
