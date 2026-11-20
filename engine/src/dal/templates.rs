@@ -1339,3 +1339,160 @@ pub async fn seed_distribution_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Catalog templates for relation and correlation visuals (catalog items 65 to 73).
+pub fn relation_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[CatalogSpec] = &[
+        (
+            "scatter",
+            "Scatter Plot",
+            "Grafico de Dispersao",
+            "แผนภูมิกระจาย",
+            0,
+            1,
+            2,
+            2,
+        ),
+        (
+            "bubble",
+            "Bubble Chart",
+            "Grafico de Bolhas",
+            "แผนภูมิฟอง",
+            0,
+            1,
+            2,
+            3,
+        ),
+        (
+            "heatmap",
+            "Heatmap",
+            "Mapa de Calor",
+            "แผนที่ความร้อน",
+            1,
+            2,
+            1,
+            2,
+        ),
+        (
+            "correlation_matrix",
+            "Correlation Matrix",
+            "Matriz de Correlacao",
+            "เมทริกซ์สหสัมพันธ์",
+            1,
+            1,
+            2,
+            4,
+        ),
+        (
+            "hexbin",
+            "Hexbin Plot",
+            "Grafico Hexbin",
+            "แผนภูมิหกเหลี่ยมความหนาแน่น",
+            0,
+            1,
+            2,
+            2,
+        ),
+        (
+            "contour_2d",
+            "2D Contour",
+            "Contorno 2D",
+            "แผนภูมิเส้นชั้นความหนาแน่น",
+            0,
+            1,
+            2,
+            2,
+        ),
+        (
+            "splom",
+            "Scatter Plot Matrix (SPLOM)",
+            "Matriz de Dispersao",
+            "เมทริกซ์แผนภูมิกระจาย",
+            0,
+            1,
+            2,
+            4,
+        ),
+        (
+            "quadrant",
+            "Quadrant Chart",
+            "Grafico de Quadrantes",
+            "แผนภูมิสี่จตุภาค",
+            1,
+            1,
+            2,
+            2,
+        ),
+        (
+            "ternary",
+            "Ternary Plot",
+            "Grafico Ternario",
+            "แผนภูมิสามเหลี่ยมสัดส่วน",
+            0,
+            1,
+            2,
+            3,
+        ),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_d, max_d, min_m, max_m)| {
+            let mut title = I18nText::default();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: min_d > 0,
+                        min_count: min_d,
+                        max_count: max_d,
+                        accepted_types: vec![
+                            "string".to_string(),
+                            "enum".to_string(),
+                            "integer".to_string(),
+                            "float".to_string(),
+                        ],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: max_m,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 9 relation and correlation catalog templates.
+pub async fn seed_relation_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in relation_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
