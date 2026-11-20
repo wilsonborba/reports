@@ -574,3 +574,210 @@ pub async fn get_card_visual(
         options,
     }))
 }
+
+/// Catalog items 1 to 23 (Comparison of categories, Part 5 full catalog).
+pub fn comparison_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str, i64, i64)] = &[
+        (
+            "vertical_bar",
+            "Vertical Bar",
+            "Barras Verticais",
+            "แผนภูมิแท่งแนวตั้ง",
+            1,
+            1,
+        ),
+        (
+            "horizontal_bar",
+            "Horizontal Bar",
+            "Barras Horizontais",
+            "แผนภูมิแท่งแนวนอน",
+            1,
+            1,
+        ),
+        (
+            "ranking_bar",
+            "Ranking Bar",
+            "Ranking de Barras",
+            "แผนภูมิแท่งจัดอันดับ",
+            1,
+            1,
+        ),
+        (
+            "grouped_bar",
+            "Grouped Bar",
+            "Barras Agrupadas",
+            "แผนภูมิแท่งจัดกลุ่ม",
+            1,
+            4,
+        ),
+        (
+            "stacked_bar",
+            "Stacked Bar",
+            "Barras Empilhadas",
+            "แผนภูมิแท่งซ้อน",
+            1,
+            4,
+        ),
+        (
+            "stacked_bar_100",
+            "100% Stacked Bar",
+            "Barras Empilhadas 100%",
+            "แผนภูมิแท่งซ้อน 100%",
+            2,
+            4,
+        ),
+        (
+            "diverging_bar",
+            "Diverging Bar",
+            "Barras Divergentes",
+            "แผนภูมิแท่งแยกทิศทาง",
+            1,
+            1,
+        ),
+        (
+            "floating_bar",
+            "Floating Bar",
+            "Barras Flutuantes",
+            "แผนภูมิแท่งช่วงค่า",
+            2,
+            2,
+        ),
+        ("lollipop", "Lollipop", "Pirulito", "แผนภูมิโลลิป็อป", 1, 1),
+        (
+            "dot_plot",
+            "Dot Plot (Cleveland)",
+            "Grafico de Pontos",
+            "แผนภูมิจุด",
+            1,
+            1,
+        ),
+        ("dumbbell", "Dumbbell", "Halteres", "แผนภูมิดัมเบล", 2, 2),
+        (
+            "slope",
+            "Slope Chart",
+            "Grafico de Inclinacao",
+            "แผนภูมิความชัน",
+            2,
+            2,
+        ),
+        ("bullet", "Bullet Chart", "Grafico Bala", "แผนภูมิบุลเล็ต", 2, 2),
+        (
+            "utilization_bar",
+            "Utilization Bar",
+            "Barra de Utilizacao",
+            "แถบแสดงการใช้งาน",
+            1,
+            1,
+        ),
+        ("pictogram", "Pictogram", "Pictograma", "แผนภูมิรูปภาพ", 1, 1),
+        (
+            "radial_bar",
+            "Radial Bar",
+            "Barra Radial",
+            "แผนภูมิแท่งรัศมี",
+            1,
+            1,
+        ),
+        (
+            "circular_bar",
+            "Circular Bar Plot",
+            "Barras Circulares",
+            "แผนภูมิแท่งวงกลม",
+            1,
+            1,
+        ),
+        ("radar", "Radar / Spider", "Radar", "แผนภูมิเรดาร์", 2, 6),
+        (
+            "parallel_coordinates",
+            "Parallel Coordinates",
+            "Coordenadas Paralelas",
+            "พิกัดขนาน",
+            2,
+            6,
+        ),
+        (
+            "marimekko",
+            "Marimekko",
+            "Marimekko",
+            "แผนภูมิมาริเม็กโกะ",
+            2,
+            2,
+        ),
+        ("waterfall", "Waterfall", "Cascata", "แผนภูมิน้ำตก", 1, 1),
+        ("pareto", "Pareto", "Pareto", "แผนภูมิพาเรโต", 1, 1),
+        (
+            "small_multiples",
+            "Small Multiples",
+            "Pequenos Multiplos",
+            "แผนภูมิย่อยหลายชุด",
+            1,
+            4,
+        ),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_m, max_m)| {
+            let mut title = I18nText::default();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            let max_dims = if id == "stacked_bar" { 2 } else { 1 };
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: max_dims,
+                        accepted_types: vec!["string".to_string()],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: max_m,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![TemplateOption {
+                    option_name: "sort".to_string(),
+                    value_type: "enum".to_string(),
+                    default_value: if id == "ranking_bar" || id == "pareto" {
+                        "desc".to_string()
+                    } else {
+                        "none".to_string()
+                    },
+                    allowed_values: vec!["none".to_string(), "asc".to_string(), "desc".to_string()],
+                }],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 23 comparison catalog templates.
+pub async fn seed_comparison_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in comparison_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
