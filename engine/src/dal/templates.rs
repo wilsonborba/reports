@@ -1094,6 +1094,45 @@ pub fn part_whole_catalog_templates() -> Vec<VisualTemplateVersion> {
             title.insert("en".to_string(), en.to_string());
             title.insert("pt-BR".to_string(), pt.to_string());
             title.insert("th".to_string(), th.to_string());
+            let mut slots = vec![
+                TemplateSlot {
+                    slot_name: "category".to_string(),
+                    role: "dimension".to_string(),
+                    is_required: min_d > 0,
+                    min_count: min_d,
+                    max_count: max_d,
+                    accepted_types: vec![
+                        "string".to_string(),
+                        "enum".to_string(),
+                        "boolean".to_string(),
+                    ],
+                },
+                TemplateSlot {
+                    slot_name: "value".to_string(),
+                    role: "measure".to_string(),
+                    is_required: true,
+                    min_count: min_m,
+                    max_count: max_m,
+                    accepted_types: vec![
+                        "integer".to_string(),
+                        "float".to_string(),
+                        "percent".to_string(),
+                    ],
+                },
+            ];
+            if matches!(id, "treemap" | "sunburst" | "icicle" | "circle_packing") {
+                slots.insert(
+                    0,
+                    TemplateSlot {
+                        slot_name: "parent".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: false,
+                        min_count: 0,
+                        max_count: 1,
+                        accepted_types: vec!["string".to_string(), "enum".to_string()],
+                    },
+                );
+            }
             VisualTemplateVersion {
                 template_id: id.to_string(),
                 version: 1,
@@ -1101,32 +1140,7 @@ pub fn part_whole_catalog_templates() -> Vec<VisualTemplateVersion> {
                 status: "draft".to_string(),
                 visual: id.to_string(),
                 title,
-                slots: vec![
-                    TemplateSlot {
-                        slot_name: "category".to_string(),
-                        role: "dimension".to_string(),
-                        is_required: min_d > 0,
-                        min_count: min_d,
-                        max_count: max_d,
-                        accepted_types: vec![
-                            "string".to_string(),
-                            "enum".to_string(),
-                            "boolean".to_string(),
-                        ],
-                    },
-                    TemplateSlot {
-                        slot_name: "value".to_string(),
-                        role: "measure".to_string(),
-                        is_required: true,
-                        min_count: min_m,
-                        max_count: max_m,
-                        accepted_types: vec![
-                            "integer".to_string(),
-                            "float".to_string(),
-                            "percent".to_string(),
-                        ],
-                    },
-                ],
+                slots,
                 options: vec![],
                 published_at: None,
             }
