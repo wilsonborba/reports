@@ -517,6 +517,7 @@ class _Builder {
       case Visual.kpi:
         return kpi(page);
       case Visual.hbar:
+      case Visual.rankingBar:
       case Visual.donut:
         final (main, second) = VisualChooser.ranked(d, slot);
         final limit = compact ? 6 : ExportRows.limitFor(page, slot);
@@ -526,6 +527,25 @@ class _Builder {
         final x = dims.isNotEmpty ? dims.first : d.fields.first;
         return lines(page, x, ms, numericX: visual == Visual.curve);
       case Visual.bar:
+      case Visual.groupedBar:
+      case Visual.stackedBar100:
+      case Visual.divergingBar:
+      case Visual.floatingBar:
+      case Visual.lollipop:
+      case Visual.dotPlot:
+      case Visual.dumbbell:
+      case Visual.slope:
+      case Visual.bullet:
+      case Visual.utilizationBar:
+      case Visual.pictogram:
+      case Visual.radialBar:
+      case Visual.circularBar:
+      case Visual.radar:
+      case Visual.parallelCoordinates:
+      case Visual.marimekko:
+      case Visual.waterfall:
+      case Visual.pareto:
+      case Visual.smallMultiples:
         return columns(page, dims.first, ms.first, series(0));
       case Visual.combo:
         return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
