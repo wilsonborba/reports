@@ -1701,3 +1701,71 @@ pub async fn seed_geo_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Indicators and tables catalog templates (items 99 to 104: kpi, kpi_sparkline,
+/// table, heat_table, status_scorecard, word_cloud).
+pub fn indicator_table_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str, i64, i64)] = &[
+        ("kpi", "KPI Tile", "Bloco KPI", "การ์ดตัวชี้วัด KPI", 0, 1),
+        ("kpi_sparkline", "KPI with Sparkline", "KPI com Sparkline", "KPI พร้อมกราฟเส้นย่อ", 0, 1),
+        ("table", "Data Table", "Tabela de Dados", "ตารางข้อมูล", 0, 1),
+        ("heat_table", "Heat Table", "Tabela de Calor", "ตารางความร้อน", 1, 1),
+        ("status_scorecard", "Status Scorecard", "Matriz de Status", "ตารางคะแนนสถานะ", 1, 1),
+        ("word_cloud", "Word Cloud", "Nuvem de Palavras", "กลุ่มคำ", 1, 1),
+    ];
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_dim, min_m)| {
+            let mut title = HashMap::new();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: min_dim > 0,
+                        min_count: min_dim,
+                        max_count: 1,
+                        accepted_types: vec!["string".to_string(), "date".to_string()],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: 3,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 6 indicator and table catalog templates.
+pub async fn seed_indicator_table_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in indicator_table_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
