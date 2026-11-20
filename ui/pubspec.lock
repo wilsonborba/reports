@@ -420,8 +420,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "288651e"
-      resolved-ref: "288651e372159eb7848d4e1be1d9ad418796bff2"
+      ref: "09e61b4"
+      resolved-ref: "09e61b42e5df6865cdfc431a90159af241a65b29"
       url: "https://github.com/wilsonborba/reports_view.git"
     source: git
     version: "0.1.0"
