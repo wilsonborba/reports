@@ -1769,3 +1769,74 @@ pub async fn seed_indicator_table_templates(db: &Db) -> Result<(), ReportError> 
     }
     Ok(())
 }
+
+/// Science, AI, and assessment catalog templates (items 105 to 114).
+pub fn science_ai_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str)] = &[
+        ("top_k_prob", "Top-k probability bar", "Barras de probabilidade top-k", "กราฟแท่งความน่าจะเป็น top-k"),
+        ("calibration", "Calibration diagram", "Diagrama de calibração", "แผนภาพการปรับเทียบ"),
+        ("confusion_matrix", "Confusion matrix", "Matriz de confusão", "เมทริกซ์ความสับสน"),
+        ("roc_pr", "ROC and PR curve", "Curva ROC e PR", "เส้นโค้ง ROC และ PR"),
+        ("learning_curve", "Learning / loss curve", "Curva de aprendizado", "กราฟการเรียนรู้"),
+        ("irt_icc", "Item characteristic curve", "Curva característica do item", "เส้นโค้งคุณลักษณะข้อสอบ"),
+        ("irt_iif", "Test information curve", "Curva de informação do teste", "เส้นโค้งสารสนเทศแบบทดสอบ"),
+        ("wright_map", "Wright map", "Mapa de Wright", "แผนที่ไรท์"),
+        ("item_diff_disc", "Difficulty x discrimination", "Dificuldade x discriminação", "ความยาก x อำนาจจำแนก"),
+        ("kaplan_meier", "Kaplan-Meier survival curve", "Curva de sobrevivência", "เส้นโค้งการรอดชีพ"),
+    ];
+    specs
+        .iter()
+        .map(|&(id, en, pt, th)| {
+            let mut title = HashMap::new();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec!["string".to_string(), "integer".to_string()],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 2,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 10 science, AI, and assessment templates.
+pub async fn seed_science_ai_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in science_ai_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
