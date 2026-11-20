@@ -419,10 +419,11 @@ packages:
   reports_view:
     dependency: "direct main"
     description:
-      name: reports_view
-      sha256: "73ee52a53e0d5ce4af8ff6f6197276fba940f77b711f8027b8f073e3446cec32"
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: a0efcbf
+      resolved-ref: a0efcbf45f0a7833b33961bcccebf502205b6a55
+      url: "https://github.com/wilsonborba/reports_view.git"
+    source: git
     version: "0.2.0"
   screen_trail:
     dependency: "direct main"

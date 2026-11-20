@@ -606,6 +606,21 @@ class _Builder {
       case Visual.map:
         return map(page, ms.first);
       case Visual.sankey:
+      case Visual.alluvial:
+      case Visual.chord:
+      case Visual.arcDiagram:
+      case Visual.flowchart:
+      case Visual.layeredDag:
+      case Visual.sequenceDiagram:
+      case Visual.stateDiagram:
+      case Visual.swimlane:
+      case Visual.treeOrg:
+      case Visual.dendrogram:
+      case Visual.mindMap:
+      case Visual.network:
+      case Visual.adjacencyMatrix:
+      case Visual.erDiagram:
+      case Visual.architectureDiagram:
         return sankey(page, VisualChooser.sankeyStages(d, slot), ms.first, notes);
       case Visual.table:
       case Visual.auto:
