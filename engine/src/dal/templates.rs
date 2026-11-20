@@ -1147,3 +1147,181 @@ pub async fn seed_part_whole_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+type CatalogSpec = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    i64,
+    i64,
+    i64,
+    i64,
+);
+
+/// Catalog templates for distribution visuals (catalog items 55 to 64).
+pub fn distribution_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[CatalogSpec] = &[
+        (
+            "histogram",
+            "Histogram",
+            "Histograma",
+            "ฮิสโทแกรม",
+            0,
+            1,
+            1,
+            1,
+        ),
+        (
+            "box_plot",
+            "Box Plot",
+            "Grafico de Caixa",
+            "แผนภูมิกล่อง",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "violin",
+            "Violin Plot",
+            "Grafico de Violino",
+            "แผนภูมิไวโอลิน",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "density",
+            "Density Plot",
+            "Grafico de Densidade",
+            "แผนภูมิความหนาแน่น",
+            0,
+            1,
+            1,
+            1,
+        ),
+        (
+            "ridgeline",
+            "Ridgeline Plot",
+            "Grafico de Cristas",
+            "แผนภูมิสันเขา",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "strip",
+            "Strip Plot",
+            "Grafico de Pontos em Faixa",
+            "แผนภูมิจุดตามกลุ่ม",
+            1,
+            1,
+            1,
+            1,
+        ),
+        (
+            "ecdf",
+            "ECDF Plot",
+            "Distribuicao Cumulativa Empirica",
+            "ฟังก์ชันแจกแจงสะสมเชิงประจักษ์",
+            0,
+            1,
+            1,
+            1,
+        ),
+        (
+            "qq_plot",
+            "Q-Q Plot",
+            "Grafico Q-Q",
+            "แผนภูมิควอนไทล์",
+            0,
+            1,
+            1,
+            1,
+        ),
+        (
+            "population_pyramid",
+            "Population Pyramid",
+            "Piramide Etaria",
+            "พีระมิดประชากร",
+            1,
+            1,
+            1,
+            2,
+        ),
+        (
+            "raincloud",
+            "Raincloud Plot",
+            "Grafico Nuvem de Chuva",
+            "แผนภูมิเมฆฝน",
+            1,
+            1,
+            1,
+            1,
+        ),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_d, max_d, min_m, max_m)| {
+            let mut title = I18nText::default();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: min_d > 0,
+                        min_count: min_d,
+                        max_count: max_d,
+                        accepted_types: vec![
+                            "string".to_string(),
+                            "enum".to_string(),
+                            "integer".to_string(),
+                            "float".to_string(),
+                        ],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: max_m,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 10 distribution catalog templates.
+pub async fn seed_distribution_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in distribution_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}

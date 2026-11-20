@@ -529,6 +529,16 @@ class _Builder {
       case Visual.waffle:
       case Visual.nightingaleRose:
       case Visual.funnel:
+      case Visual.histogram:
+      case Visual.boxPlot:
+      case Visual.violin:
+      case Visual.density:
+      case Visual.ridgeline:
+      case Visual.strip:
+      case Visual.ecdf:
+      case Visual.qqPlot:
+      case Visual.populationPyramid:
+      case Visual.raincloud:
         final (main, second) = VisualChooser.ranked(d, slot);
         final limit = compact ? 6 : ExportRows.limitFor(page, slot);
         return bars(page.rows.length > limit ? page.rows.sublist(0, limit) : page.rows, dims.first, main, second, notes, ExportRows.total(page));
