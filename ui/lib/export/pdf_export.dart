@@ -519,6 +519,16 @@ class _Builder {
       case Visual.hbar:
       case Visual.rankingBar:
       case Visual.donut:
+      case Visual.pie:
+      case Visual.gauge:
+      case Visual.meter:
+      case Visual.treemap:
+      case Visual.sunburst:
+      case Visual.icicle:
+      case Visual.circlePacking:
+      case Visual.waffle:
+      case Visual.nightingaleRose:
+      case Visual.funnel:
         final (main, second) = VisualChooser.ranked(d, slot);
         final limit = compact ? 6 : ExportRows.limitFor(page, slot);
         return bars(page.rows.length > limit ? page.rows.sublist(0, limit) : page.rows, dims.first, main, second, notes, ExportRows.total(page));
