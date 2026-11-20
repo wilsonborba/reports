@@ -781,3 +781,202 @@ pub async fn seed_comparison_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Catalog items 24 to 43 (Change over time, Part 5 full catalog).
+pub fn time_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str, i64, i64)] = &[
+        ("line", "Line Chart", "Grafico de Linha", "แผนภูมิเส้น", 1, 4),
+        (
+            "step_line",
+            "Step Line",
+            "Linha em Degraus",
+            "แผนภูมิเส้นขั้นบันได",
+            1,
+            4,
+        ),
+        ("area", "Area Chart", "Grafico de Area", "แผนภูมิพื้นที่", 1, 4),
+        (
+            "stacked_area",
+            "Stacked Area",
+            "Area Empilhada",
+            "แผนภูมิพื้นที่ซ้อน",
+            2,
+            4,
+        ),
+        (
+            "stacked_area_100",
+            "100% Stacked Area",
+            "Area Empilhada 100%",
+            "แผนภูมิพื้นที่ซ้อน 100%",
+            2,
+            4,
+        ),
+        (
+            "streamgraph",
+            "Streamgraph",
+            "Streamgraph",
+            "สตรีมกราฟ",
+            2,
+            4,
+        ),
+        ("sparkline", "Sparkline", "Minigrafico", "สปาร์กไลน์", 1, 1),
+        (
+            "bump_chart",
+            "Bump Chart",
+            "Grafico de Ranking Temporal",
+            "แผนภูมิอันดับตามเวลา",
+            1,
+            4,
+        ),
+        (
+            "candlestick",
+            "Candlestick / OHLC",
+            "Candlestick",
+            "แผนภูมิแท่งเทียน",
+            2,
+            4,
+        ),
+        (
+            "range_band",
+            "Range Band",
+            "Faixa de Intervalo",
+            "แถบช่วงความเชื่อมั่น",
+            2,
+            2,
+        ),
+        (
+            "combo",
+            "Combo Bar + Line",
+            "Combinado Barras e Linha",
+            "แผนภูมิผสมแท่งและเส้น",
+            2,
+            2,
+        ),
+        (
+            "annotated_line",
+            "Annotated Line",
+            "Linha Anotada",
+            "แผนภูมิเส้นพร้อมคำอธิบาย",
+            1,
+            4,
+        ),
+        ("timeline", "Timeline", "Linha do Tempo", "ไทม์ไลน์", 1, 2),
+        (
+            "gantt",
+            "Gantt Chart",
+            "Grafico de Gantt",
+            "แผนภูมิแกนต์",
+            2,
+            2,
+        ),
+        (
+            "calendar_heatmap",
+            "Calendar Heatmap",
+            "Mapa de Calor de Calendario",
+            "แผนที่ความร้อนปฏิทิน",
+            1,
+            1,
+        ),
+        (
+            "horizon",
+            "Horizon Chart",
+            "Grafico de Horizonte",
+            "แผนภูมิฮอไรซัน",
+            1,
+            2,
+        ),
+        (
+            "control_chart",
+            "Control Chart (SPC)",
+            "Carta de Controle",
+            "แผนภูมิควบคุม",
+            1,
+            1,
+        ),
+        (
+            "burndown",
+            "Burndown / Burnup",
+            "Burndown",
+            "แผนภูมิเบิร์นดาวน์",
+            1,
+            2,
+        ),
+        (
+            "cycle_plot",
+            "Cycle Plot",
+            "Grafico de Ciclo",
+            "แผนภูมิวงรอบเวลา",
+            1,
+            2,
+        ),
+        (
+            "curve",
+            "Continuous Curve",
+            "Curva Continua",
+            "เส้นโค้งต่อเนื่อง",
+            1,
+            2,
+        ),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th, min_m, max_m)| {
+            let mut title = I18nText::default();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "chart".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "time".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec![
+                            "date".to_string(),
+                            "datetime".to_string(),
+                            "integer".to_string(),
+                            "float".to_string(),
+                        ],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: min_m,
+                        max_count: max_m,
+                        accepted_types: vec![
+                            "integer".to_string(),
+                            "float".to_string(),
+                            "percent".to_string(),
+                        ],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 20 change-over-time catalog templates.
+pub async fn seed_time_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in time_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}

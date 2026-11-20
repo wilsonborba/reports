@@ -524,6 +524,23 @@ class _Builder {
         return bars(page.rows.length > limit ? page.rows.sublist(0, limit) : page.rows, dims.first, main, second, notes, ExportRows.total(page));
       case Visual.line:
       case Visual.curve:
+      case Visual.stepLine:
+      case Visual.area:
+      case Visual.stackedArea:
+      case Visual.stackedArea100:
+      case Visual.streamgraph:
+      case Visual.sparkline:
+      case Visual.bumpChart:
+      case Visual.candlestick:
+      case Visual.rangeBand:
+      case Visual.annotatedLine:
+      case Visual.timeline:
+      case Visual.gantt:
+      case Visual.calendarHeatmap:
+      case Visual.horizon:
+      case Visual.controlChart:
+      case Visual.burndown:
+      case Visual.cyclePlot:
         final x = dims.isNotEmpty ? dims.first : d.fields.first;
         return lines(page, x, ms, numericX: visual == Visual.curve);
       case Visual.bar:
