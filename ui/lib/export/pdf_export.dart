@@ -621,6 +621,9 @@ class _Builder {
       case Visual.adjacencyMatrix:
       case Visual.erDiagram:
       case Visual.architectureDiagram:
+      case Visual.venn:
+      case Visual.euler:
+      case Visual.upset:
         return sankey(page, VisualChooser.sankeyStages(d, slot), ms.first, notes);
       case Visual.table:
       case Visual.auto:
