@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/strings.dart';
 import '../../models/catalog.dart';
 import '../../services/catalog_service.dart';
-import '../../themes/report_palette.dart';
 import '../../themes/theme_registry.dart';
 import '../brand/brand_mark.dart';
 import '../charts/format.dart';

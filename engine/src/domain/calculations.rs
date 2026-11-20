@@ -13,7 +13,10 @@ use utoipa::ToSchema;
 use crate::core::error::ReportError;
 use crate::dal::{calculations, catalog, schemas, CalculationVersion, InputRef, SchemaVersion};
 use crate::domain::catalog::valid_slug;
-use crate::domain::datasets::engine::{CompiledExpr, AGGREGATIONS, BUCKET_UNITS, MAX_WINDOW, NUMERIC_AGGREGATIONS, OPERATORS, WINDOW_AGGREGATIONS};
+use crate::domain::datasets::engine::{
+    CompiledExpr, AGGREGATIONS, BUCKET_UNITS, MAX_WINDOW, NUMERIC_AGGREGATIONS, OPERATORS,
+    WINDOW_AGGREGATIONS,
+};
 use crate::domain::datasets::spec::{Condition, DatasetSpec, DerivedSpec};
 use crate::domain::datasets::DatasetService;
 use crate::domain::guardrail::ValidationError;
@@ -21,7 +24,17 @@ use crate::domain::guardrail::ValidationError;
 /// Largest result a definition may produce.
 pub const MAX_RESULT_ROWS: usize = 50_000;
 pub const FILTER_TYPES: &[&str] = &["category", "date", "hour", "number"];
-pub const OUTPUT_TYPES: &[&str] = &["string", "integer", "float", "percent", "date", "datetime", "hour", "latitude", "longitude"];
+pub const OUTPUT_TYPES: &[&str] = &[
+    "string",
+    "integer",
+    "float",
+    "percent",
+    "date",
+    "datetime",
+    "hour",
+    "latitude",
+    "longitude",
+];
 pub const CALCULATORS: &[&str] = &["series"];
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -63,16 +76,29 @@ fn require(errors: &mut Vec<ValidationError>, fields: &Fields, name: &str, path:
     }
 }
 
-fn check_conditions(errors: &mut Vec<ValidationError>, fields: &Fields, conds: &[Condition], path: &str) {
+fn check_conditions(
+    errors: &mut Vec<ValidationError>,
+    fields: &Fields,
+    conds: &[Condition],
+    path: &str,
+) {
     for (i, c) in conds.iter().enumerate() {
         require(errors, fields, &c.field, &format!("{path}[{i}].field"));
         if !OPERATORS.contains(&c.op.as_str()) {
-            errors.push(err(&format!("{path}[{i}].op"), format!("unknown operator '{}'", c.op)));
+            errors.push(err(
+                &format!("{path}[{i}].op"),
+                format!("unknown operator '{}'", c.op),
+            ));
         }
     }
 }
 
-fn check_derived(errors: &mut Vec<ValidationError>, fields: &mut Fields, derived: &[DerivedSpec], path: &str) {
+fn check_derived(
+    errors: &mut Vec<ValidationError>,
+    fields: &mut Fields,
+    derived: &[DerivedSpec],
+    path: &str,
+) {
     for (i, d) in derived.iter().enumerate() {
         match (&d.expr, &d.expr_field) {
             (Some(expr), _) => {
@@ -91,7 +117,10 @@ fn check_derived(errors: &mut Vec<ValidationError>, fields: &mut Fields, derived
 fn latest_published(all: &[SchemaVersion]) -> HashMap<String, &SchemaVersion> {
     let mut out: HashMap<String, &SchemaVersion> = HashMap::new();
     for s in all.iter().filter(|s| s.status == "published") {
-        if out.get(&s.schema_name).is_none_or(|old| old.version < s.version) {
+        if out
+            .get(&s.schema_name)
+            .is_none_or(|old| old.version < s.version)
+        {
             out.insert(s.schema_name.clone(), s);
         }
     }
@@ -107,7 +136,11 @@ pub struct Checked {
 }
 
 /// Checks a definition against the published schemas of its project.
-pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, all: &[SchemaVersion]) -> Checked {
+pub fn check_definition(
+    def: &DatasetSpec,
+    input_schema_version: Option<i64>,
+    all: &[SchemaVersion],
+) -> Checked {
     let mut errors = Vec::new();
     let latest = latest_published(all);
     let mut inputs: BTreeSet<InputRef> = BTreeSet::new();
@@ -118,49 +151,93 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
     if let Some(c) = &def.calculator {
         let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
         if !CALCULATORS.contains(&name) {
-            errors.push(err("calculator.name", format!("unknown calculator '{name}' (use {})", CALCULATORS.join(", "))));
+            errors.push(err(
+                "calculator.name",
+                format!(
+                    "unknown calculator '{name}' (use {})",
+                    CALCULATORS.join(", ")
+                ),
+            ));
         }
     }
     match &def.source {
         Some(source) => {
             let chosen = match input_schema_version {
-                Some(v) => all.iter().find(|s| &s.schema_name == source && s.version == v),
+                Some(v) => all
+                    .iter()
+                    .find(|s| &s.schema_name == source && s.version == v),
                 None => latest.get(source).copied(),
             };
             match chosen {
                 Some(s) if s.status == "published" => {
                     fields = top_level(s);
-                    inputs.insert(InputRef { schema: s.schema_name.clone(), version: s.version });
+                    inputs.insert(InputRef {
+                        schema: s.schema_name.clone(),
+                        version: s.version,
+                    });
                     input_schema = Some(s.schema_name.clone());
                     input_version = Some(s.version);
                 }
-                Some(s) => errors.push(err("source", format!("schema '{source}' v{} is {}, not published", s.version, s.status))),
-                None => errors.push(err("source", format!("schema '{source}' has no published version{}", input_schema_version.map(|v| format!(" {v}")).unwrap_or_default()))),
+                Some(s) => errors.push(err(
+                    "source",
+                    format!(
+                        "schema '{source}' v{} is {}, not published",
+                        s.version, s.status
+                    ),
+                )),
+                None => errors.push(err(
+                    "source",
+                    format!(
+                        "schema '{source}' has no published version{}",
+                        input_schema_version
+                            .map(|v| format!(" {v}"))
+                            .unwrap_or_default()
+                    ),
+                )),
             }
         }
-        None if def.calculator.is_none() => errors.push(err("source", "a definition needs a source schema or a calculator")),
+        None if def.calculator.is_none() => errors.push(err(
+            "source",
+            "a definition needs a source schema or a calculator",
+        )),
         None => {}
     }
     for (i, u) in def.union.iter().enumerate() {
         match latest.get(u) {
             Some(s) => {
-                inputs.insert(InputRef { schema: s.schema_name.clone(), version: s.version });
+                inputs.insert(InputRef {
+                    schema: s.schema_name.clone(),
+                    version: s.version,
+                });
             }
-            None => errors.push(err(&format!("union[{i}]"), format!("schema '{u}' has no published version"))),
+            None => errors.push(err(
+                &format!("union[{i}]"),
+                format!("schema '{u}' has no published version"),
+            )),
         }
     }
     for (i, l) in def.lookups.iter().enumerate() {
         let path = format!("lookups[{i}]");
         let Some(s) = latest.get(&l.collection) else {
-            errors.push(err(&path, format!("schema '{}' has no published version", l.collection)));
+            errors.push(err(
+                &path,
+                format!("schema '{}' has no published version", l.collection),
+            ));
             continue;
         };
-        inputs.insert(InputRef { schema: s.schema_name.clone(), version: s.version });
+        inputs.insert(InputRef {
+            schema: s.schema_name.clone(),
+            version: s.version,
+        });
         let theirs = top_level(s);
         for k in &l.key {
             require(&mut errors, &fields, k, &format!("{path}.key"));
         }
-        let matches = if l.match_.is_empty() { &l.key } else { &l.match_ };
+        let matches = if l.match_.is_empty() {
+            &l.key
+        } else {
+            &l.match_
+        };
         if matches.len() != l.key.len() {
             errors.push(err(&format!("{path}.match"), "needs as many fields as key"));
         }
@@ -174,7 +251,10 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
                 .iter()
                 .map(|f| {
                     require(&mut errors, &theirs, f, &format!("{path}.fields"));
-                    (f.clone(), theirs.get(f).cloned().unwrap_or_else(|| "any".into()))
+                    (
+                        f.clone(),
+                        theirs.get(f).cloned().unwrap_or_else(|| "any".into()),
+                    )
                 })
                 .collect()
         };
@@ -187,11 +267,21 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
         let path = format!("buckets[{i}]");
         match fields.get(&b.field).map(String::as_str) {
             Some("date" | "datetime" | "any") => {}
-            Some(other) => errors.push(err(&format!("{path}.field"), format!("'{}' is {other}, not a date or time", b.field))),
+            Some(other) => errors.push(err(
+                &format!("{path}.field"),
+                format!("'{}' is {other}, not a date or time", b.field),
+            )),
             None => require(&mut errors, &fields, &b.field, &format!("{path}.field")),
         }
         if !BUCKET_UNITS.contains(&b.unit.as_str()) {
-            errors.push(err(&format!("{path}.unit"), format!("unknown unit '{}' (use {})", b.unit, BUCKET_UNITS.join(", "))));
+            errors.push(err(
+                &format!("{path}.unit"),
+                format!(
+                    "unknown unit '{}' (use {})",
+                    b.unit,
+                    BUCKET_UNITS.join(", ")
+                ),
+            ));
         }
         fields.insert(b.name.clone(), "string".into());
     }
@@ -199,10 +289,18 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
     check_conditions(&mut errors, &fields, &def.where_, "where");
     for (i, f) in def.filters.iter().enumerate() {
         if !f.refs_only() {
-            require(&mut errors, &fields, &f.field, &format!("filters[{i}].field"));
+            require(
+                &mut errors,
+                &fields,
+                &f.field,
+                &format!("filters[{i}].field"),
+            );
         }
         if !FILTER_TYPES.contains(&f.filter_type.as_str()) {
-            errors.push(err(&format!("filters[{i}].type"), format!("unknown filter type '{}'", f.filter_type)));
+            errors.push(err(
+                &format!("filters[{i}].type"),
+                format!("unknown filter type '{}'", f.filter_type),
+            ));
         }
     }
 
@@ -213,22 +311,34 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
         let mut out = Fields::new();
         for g in &stage.group_by {
             require(&mut errors, &current, g, &format!("{path}.group_by"));
-            out.insert(g.clone(), current.get(g).cloned().unwrap_or_else(|| "any".into()));
+            out.insert(
+                g.clone(),
+                current.get(g).cloned().unwrap_or_else(|| "any".into()),
+            );
         }
         for (mi, m) in stage.measures.iter().enumerate() {
             let mp = format!("{path}.measures[{mi}]");
             if !AGGREGATIONS.contains(&m.agg.as_str()) {
-                errors.push(err(&format!("{mp}.agg"), format!("unknown aggregation '{}'", m.agg)));
+                errors.push(err(
+                    &format!("{mp}.agg"),
+                    format!("unknown aggregation '{}'", m.agg),
+                ));
             }
             if let Some(f) = &m.field {
                 require(&mut errors, &current, f, &format!("{mp}.field"));
                 if let Some(t) = current.get(f) {
                     if NUMERIC_AGGREGATIONS.contains(&m.agg.as_str()) && !is_numeric(t) {
-                        errors.push(err(&format!("{mp}.field"), format!("'{}' needs a number, but '{f}' is {t}", m.agg)));
+                        errors.push(err(
+                            &format!("{mp}.field"),
+                            format!("'{}' needs a number, but '{f}' is {t}", m.agg),
+                        ));
                     }
                 }
             } else if m.agg != "count" && m.fields.is_empty() {
-                errors.push(err(&format!("{mp}.field"), format!("'{}' needs a field", m.agg)));
+                errors.push(err(
+                    &format!("{mp}.field"),
+                    format!("'{}' needs a field", m.agg),
+                ));
             }
             for f in &m.fields {
                 require(&mut errors, &current, f, &format!("{mp}.fields"));
@@ -237,19 +347,38 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
                 require(&mut errors, &current, by, &format!("{mp}.by"));
             }
             check_conditions(&mut errors, &current, &m.where_, &format!("{mp}.where"));
-            out.insert(m.name.clone(), if m.agg == "count" || m.agg == "count_distinct" { "integer" } else { "any" }.into());
+            out.insert(
+                m.name.clone(),
+                if m.agg == "count" || m.agg == "count_distinct" {
+                    "integer"
+                } else {
+                    "any"
+                }
+                .into(),
+            );
         }
         for p in &stage.partition_by {
             require(&mut errors, &out, p, &format!("{path}.partition_by"));
         }
-        check_derived(&mut errors, &mut out, &stage.derived, &format!("{path}.derived"));
+        check_derived(
+            &mut errors,
+            &mut out,
+            &stage.derived,
+            &format!("{path}.derived"),
+        );
         for (wi, w) in stage.windows.iter().enumerate() {
             let wp = format!("{path}.windows[{wi}]");
             if !WINDOW_AGGREGATIONS.contains(&w.agg.as_str()) {
-                errors.push(err(&format!("{wp}.agg"), format!("unknown window aggregation '{}'", w.agg)));
+                errors.push(err(
+                    &format!("{wp}.agg"),
+                    format!("unknown window aggregation '{}'", w.agg),
+                ));
             }
             if w.size == 0 || w.size > MAX_WINDOW {
-                errors.push(err(&format!("{wp}.size"), format!("use 1 to {MAX_WINDOW} rows")));
+                errors.push(err(
+                    &format!("{wp}.size"),
+                    format!("use 1 to {MAX_WINDOW} rows"),
+                ));
             }
             require(&mut errors, &out, &w.field, &format!("{wp}.field"));
             require(&mut errors, &out, &w.order_by, &format!("{wp}.order_by"));
@@ -264,10 +393,19 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
     if let Some(c) = &def.calculator {
         // The series calculator makes its own rows: x plus one column per expression.
         current = Fields::new();
-        if let Some(x) = c.get("x").and_then(|x| x.get("name")).and_then(|n| n.as_str()) {
+        if let Some(x) = c
+            .get("x")
+            .and_then(|x| x.get("name"))
+            .and_then(|n| n.as_str())
+        {
             current.insert(x.into(), "float".into());
         }
-        for e in c.get("exprs").and_then(|e| e.as_array()).cloned().unwrap_or_default() {
+        for e in c
+            .get("exprs")
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default()
+        {
             if let Some(n) = e.get("name").and_then(|n| n.as_str()) {
                 current.insert(n.into(), "float".into());
             }
@@ -284,30 +422,61 @@ pub fn check_definition(def: &DatasetSpec, input_schema_version: Option<i64>, al
     for (i, f) in def.fields.iter().enumerate() {
         require(&mut errors, &current, &f.name, &format!("fields[{i}].name"));
         if !OUTPUT_TYPES.contains(&f.field_type.as_str()) {
-            errors.push(err(&format!("fields[{i}].type"), format!("unknown output type '{}'", f.field_type)));
+            errors.push(err(
+                &format!("fields[{i}].type"),
+                format!("unknown output type '{}'", f.field_type),
+            ));
         }
         if f.role != "dimension" && f.role != "measure" {
-            errors.push(err(&format!("fields[{i}].role"), "use dimension or measure"));
+            errors.push(err(
+                &format!("fields[{i}].role"),
+                "use dimension or measure",
+            ));
         }
     }
     if def.limit.is_some_and(|l| l > MAX_RESULT_ROWS) {
         errors.push(err("limit", format!("at most {MAX_RESULT_ROWS} rows")));
     }
-    Checked { errors, input_schema, input_schema_version: input_version, inputs: inputs.into_iter().collect() }
+    Checked {
+        errors,
+        input_schema,
+        input_schema_version: input_version,
+        inputs: inputs.into_iter().collect(),
+    }
 }
 
-pub async fn save_draft(svc: &DatasetService, project: &str, req: CalculationDraftRequest) -> Result<CalculationVersion, ReportError> {
+pub async fn save_draft(
+    svc: &DatasetService,
+    project: &str,
+    req: CalculationDraftRequest,
+) -> Result<CalculationVersion, ReportError> {
     let db = &svc.stores().db;
     catalog::active_project(db, project).await?;
     if !valid_slug(&req.calculation_id) {
-        return Err(ReportError::BadRequest(format!("calculation id '{}' is not a valid slug", req.calculation_id)));
+        return Err(ReportError::BadRequest(format!(
+            "calculation id '{}' is not a valid slug",
+            req.calculation_id
+        )));
     }
     let version = match req.version {
         Some(v) if v > 0 => v,
-        Some(v) => return Err(ReportError::BadRequest(format!("version {v} must be 1 or more"))),
-        None => calculations::latest_version(db, project, &req.calculation_id).await?.unwrap_or(0) + 1,
+        Some(v) => {
+            return Err(ReportError::BadRequest(format!(
+                "version {v} must be 1 or more"
+            )))
+        }
+        None => {
+            calculations::latest_version(db, project, &req.calculation_id)
+                .await?
+                .unwrap_or(0)
+                + 1
+        }
     };
-    let checked = check_definition(&req.definition, req.input_schema_version, &schemas::list(db, project).await?);
+    let checked = check_definition(
+        &req.definition,
+        req.input_schema_version,
+        &schemas::list(db, project).await?,
+    );
     let draft = CalculationVersion {
         project: project.to_string(),
         calculation_id: req.calculation_id.clone(),
@@ -327,48 +496,87 @@ pub async fn save_draft(svc: &DatasetService, project: &str, req: CalculationDra
         .ok_or_else(|| ReportError::Internal("saved calculation draft is missing".into()))
 }
 
-async fn load(svc: &DatasetService, project: &str, id: &str, version: i64) -> Result<CalculationVersion, ReportError> {
+async fn load(
+    svc: &DatasetService,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<CalculationVersion, ReportError> {
     calculations::get(&svc.stores().db, project, id, version)
         .await?
         .ok_or_else(|| ReportError::not_found(format!("calculation {project}:{id} v{version}")))
 }
 
 /// Dry run: the violations a publish would report.
-pub async fn validate(svc: &DatasetService, project: &str, id: &str, version: i64) -> Result<Vec<ValidationError>, ReportError> {
+pub async fn validate(
+    svc: &DatasetService,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<Vec<ValidationError>, ReportError> {
     let c = load(svc, project, id, version).await?;
     let all = schemas::list(&svc.stores().db, project).await?;
     Ok(check_definition(&c.definition, c.input_schema_version, &all).errors)
 }
 
-pub async fn publish(svc: &DatasetService, project: &str, id: &str, version: i64) -> Result<CalculationVersion, ReportError> {
+pub async fn publish(
+    svc: &DatasetService,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<CalculationVersion, ReportError> {
     let db = &svc.stores().db;
     let mut c = load(svc, project, id, version).await?;
     if c.status != "draft" {
-        return Err(ReportError::Conflict(format!("calculation {project}:{id} v{version} is {}, not a draft", c.status)));
+        return Err(ReportError::Conflict(format!(
+            "calculation {project}:{id} v{version} is {}, not a draft",
+            c.status
+        )));
     }
-    let checked = check_definition(&c.definition, c.input_schema_version, &schemas::list(db, project).await?);
+    let checked = check_definition(
+        &c.definition,
+        c.input_schema_version,
+        &schemas::list(db, project).await?,
+    );
     if !checked.errors.is_empty() {
-        return Err(ReportError::Validation { message: format!("calculation {id} v{version} cannot be published"), violations: checked.errors });
+        return Err(ReportError::Validation {
+            message: format!("calculation {id} v{version} cannot be published"),
+            violations: checked.errors,
+        });
     }
     c.input_schema = checked.input_schema;
     c.input_schema_version = checked.input_schema_version;
     c.inputs = checked.inputs;
     if !calculations::publish(db, &c).await? {
-        return Err(ReportError::Conflict(format!("calculation {project}:{id} v{version} changed during the request")));
+        return Err(ReportError::Conflict(format!(
+            "calculation {project}:{id} v{version} changed during the request"
+        )));
     }
     load(svc, project, id, version).await
 }
 
-pub async fn retire(svc: &DatasetService, project: &str, id: &str, version: i64) -> Result<CalculationVersion, ReportError> {
+pub async fn retire(
+    svc: &DatasetService,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<CalculationVersion, ReportError> {
     if !calculations::retire(&svc.stores().db, project, id, version).await? {
-        return Err(ReportError::Conflict(format!("calculation {project}:{id} v{version} is not published")));
+        return Err(ReportError::Conflict(format!(
+            "calculation {project}:{id} v{version} is not published"
+        )));
     }
     load(svc, project, id, version).await
 }
 
 /// Checks that the refs of the datasets of a report form no cycle (the new binding included).
 pub fn check_ref_cycles(graph: &HashMap<String, Vec<String>>) -> Result<(), ReportError> {
-    fn visit(n: &str, g: &HashMap<String, Vec<String>>, stack: &mut Vec<String>, done: &mut BTreeSet<String>) -> Option<Vec<String>> {
+    fn visit(
+        n: &str,
+        g: &HashMap<String, Vec<String>>,
+        stack: &mut Vec<String>,
+        done: &mut BTreeSet<String>,
+    ) -> Option<Vec<String>> {
         if done.contains(n) {
             return None;
         }
@@ -412,7 +620,15 @@ mod tests {
             version,
             status: status.into(),
             description: None,
-            fields: fields.iter().map(|(p, t)| SchemaField { path: (*p).into(), field_type: (*t).into(), required: true, description: None }).collect(),
+            fields: fields
+                .iter()
+                .map(|(p, t)| SchemaField {
+                    path: (*p).into(),
+                    field_type: (*t).into(),
+                    required: true,
+                    description: None,
+                })
+                .collect(),
             created_at: String::new(),
             published_at: None,
         }
@@ -420,7 +636,18 @@ mod tests {
 
     /// Fields of the autodroid `Job` model (autodroid/lib/domain/models/job_model.py).
     fn job_v1() -> SchemaVersion {
-        schema("job", 1, "published", &[("job_type", "string"), ("adapter_name", "string"), ("status", "string"), ("attempt_count", "integer"), ("created_at", "datetime")])
+        schema(
+            "job",
+            1,
+            "published",
+            &[
+                ("job_type", "string"),
+                ("adapter_name", "string"),
+                ("status", "string"),
+                ("attempt_count", "integer"),
+                ("created_at", "datetime"),
+            ],
+        )
     }
 
     fn def(v: serde_json::Value) -> DatasetSpec {
@@ -442,7 +669,13 @@ mod tests {
         }));
         let c = check_definition(&d, None, &[job_v1()]);
         assert!(c.errors.is_empty(), "{:?}", c.errors);
-        assert_eq!(c.inputs, vec![InputRef { schema: "job".into(), version: 1 }]);
+        assert_eq!(
+            c.inputs,
+            vec![InputRef {
+                schema: "job".into(),
+                version: 1
+            }]
+        );
     }
 
     #[test]
@@ -455,23 +688,49 @@ mod tests {
                 {"name": "m", "agg": "median", "field": "attempt_count"}]}],
             "fields": [{"name": "nope", "label": {"en": "x"}, "type": "money"}]
         }));
-        let paths: Vec<String> = check_definition(&d, None, &[job_v1()]).errors.into_iter().map(|e| e.field_path).collect();
-        for p in ["where[0].op", "stages[0].group_by", "stages[0].measures[0].field", "stages[0].measures[1].agg", "fields[0].name", "fields[0].type"] {
+        let paths: Vec<String> = check_definition(&d, None, &[job_v1()])
+            .errors
+            .into_iter()
+            .map(|e| e.field_path)
+            .collect();
+        for p in [
+            "where[0].op",
+            "stages[0].group_by",
+            "stages[0].measures[0].field",
+            "stages[0].measures[1].agg",
+            "fields[0].name",
+            "fields[0].type",
+        ] {
             assert!(paths.iter().any(|x| x == p), "missing {p} in {paths:?}");
         }
     }
 
     #[test]
     fn a_renamed_field_needs_a_new_compatible_version() {
-        let renamed = schema("job", 2, "published", &[("job_kind", "string"), ("status", "string")]);
+        let renamed = schema(
+            "job",
+            2,
+            "published",
+            &[("job_kind", "string"), ("status", "string")],
+        );
         let d = def(json!({"title": {"en": "x"}, "source": "job",
             "stages": [{"group_by": ["job_type"], "measures": [{"name": "n", "agg": "count"}]}],
             "fields": [{"name": "n", "label": {"en": "n"}, "type": "integer"}]}));
         // Against the latest version (v2) the old field name fails; pinned to v1 it passes.
-        assert!(!check_definition(&d, None, &[job_v1(), renamed.clone()]).errors.is_empty());
-        assert!(check_definition(&d, Some(1), &[job_v1(), renamed]).errors.is_empty());
+        assert!(!check_definition(&d, None, &[job_v1(), renamed.clone()])
+            .errors
+            .is_empty());
+        assert!(check_definition(&d, Some(1), &[job_v1(), renamed])
+            .errors
+            .is_empty());
         // A draft schema version is not an input.
-        assert!(!check_definition(&d, Some(3), &[schema("job", 3, "draft", &[("job_type", "string")])]).errors.is_empty());
+        assert!(!check_definition(
+            &d,
+            Some(3),
+            &[schema("job", 3, "draft", &[("job_type", "string")])]
+        )
+        .errors
+        .is_empty());
     }
 
     #[test]

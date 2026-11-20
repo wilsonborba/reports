@@ -9,7 +9,10 @@ use serde_json::{json, Value};
 
 fn dump() -> Option<Vec<Value>> {
     let file = tempfile::NamedTempFile::new().unwrap();
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/population/populate.py");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scripts/population/populate.py"
+    );
     let status = std::process::Command::new("python3")
         .arg(script)
         .arg("--dump")
@@ -29,7 +32,13 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
     };
     let t = TestApp::new().await;
     for slug in ["domain", "certifications", "cortex", "autodroid", "fsm"] {
-        let (s, v) = t.service("PUT", &format!("/projects/{slug}/admin/project"), json!({"name": {"en": slug, "pt-BR": slug, "th": slug}})).await;
+        let (s, v) = t
+            .service(
+                "PUT",
+                &format!("/projects/{slug}/admin/project"),
+                json!({"name": {"en": slug, "pt-BR": slug, "th": slug}}),
+            )
+            .await;
         assert_eq!(s, StatusCode::OK, "{v}");
     }
     let mut cards = Vec::new();
@@ -44,7 +53,11 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
         if let Some(f) = &fixture {
             headers.push(("x-reports-fixture", f.as_str()));
         }
-        let body = if r["body"].is_null() { None } else { Some(r["body"].clone()) };
+        let body = if r["body"].is_null() {
+            None
+        } else {
+            Some(r["body"].clone())
+        };
         let (s, v, _) = t.call(method, path, &headers, body).await;
         assert!(s.is_success(), "{method} {path} -> {s}: {v}");
         if path.contains("/datasets/") {
@@ -65,37 +78,111 @@ async fn sample_data_scripts_load_cleanly_and_every_card_answers() {
     for slug in ["domain", "certifications", "cortex", "autodroid", "fsm"] {
         let (_, list) = t.get(&format!("/projects/{slug}/reports"), &[]).await;
         let first = list["items"][0]["slug"].as_str().unwrap().to_string();
-        let (_, show) = t.get(&format!("/projects/{slug}/showcase/{first}"), &[]).await;
-        assert!(show["cards"].as_array().unwrap().iter().any(|c| c["can_view"] == true), "{slug}: {show}");
+        let (_, show) = t
+            .get(&format!("/projects/{slug}/showcase/{first}"), &[])
+            .await;
+        assert!(
+            show["cards"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["can_view"] == true),
+            "{slug}: {show}"
+        );
     }
     // Every access case of the sample data: guest, signed-in user with no role, super admin.
     let viewer = [("x-uuid", ALICE)];
     let card = |p: &str, r: &str, c: &str| format!("/projects/{p}/reports/{r}/datasets/{c}");
     let cases = [
         // Login only: a gated card of a public report, and a card of a signed_in report.
-        (card("domain", "repository-health", "stars-per-month"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("cortex", "model-usage", "tokens-by-model"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("certifications", "study-progress", "accuracy"), StatusCode::UNAUTHORIZED, StatusCode::OK),
-        (card("autodroid", "job-reliability", "failures-per-day"), StatusCode::UNAUTHORIZED, StatusCode::OK),
+        (
+            card("domain", "repository-health", "stars-per-month"),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::OK,
+        ),
+        (
+            card("cortex", "model-usage", "tokens-by-model"),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::OK,
+        ),
+        (
+            card("certifications", "study-progress", "accuracy"),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::OK,
+        ),
+        (
+            card("autodroid", "job-reliability", "failures-per-day"),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::OK,
+        ),
         // Login plus admin: a restricted card, and a card of a restricted report.
-        (card("certifications", "exam-results", "results-by-exam-and-language"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
-        (card("autodroid", "job-reliability", "errors-by-adapter-and-message"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
-        (card("cortex", "reliability", "errors-by-type"), StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN),
+        (
+            card(
+                "certifications",
+                "exam-results",
+                "results-by-exam-and-language",
+            ),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            card(
+                "autodroid",
+                "job-reliability",
+                "errors-by-adapter-and-message",
+            ),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            card("cortex", "reliability", "errors-by-type"),
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+        ),
         // Hidden: a restricted card that is not discoverable does not exist for them.
-        (card("fsm", "media-activity", "largest-by-app"), StatusCode::NOT_FOUND, StatusCode::NOT_FOUND),
-        (card("autodroid", "adapters", "adapter-summary"), StatusCode::NOT_FOUND, StatusCode::NOT_FOUND),
+        (
+            card("fsm", "media-activity", "largest-by-app"),
+            StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            card("autodroid", "adapters", "adapter-summary"),
+            StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
+        ),
     ];
     for (url, guest, signed_in) in &cases {
         assert_eq!(t.get(url, &[]).await.0, *guest, "guest {url}");
         assert_eq!(t.get(url, &viewer).await.0, *signed_in, "signed in {url}");
-        assert_eq!(t.get(url, &root).await.0, StatusCode::OK, "super admin {url}");
+        assert_eq!(
+            t.get(url, &root).await.0,
+            StatusCode::OK,
+            "super admin {url}"
+        );
     }
     let (_, show) = t.get("/projects/fsm/showcase/media-activity", &[]).await;
-    assert!(show["cards"].as_array().unwrap().iter().all(|c| c["dataset_id"] != "largest-by-app"), "{show}");
+    assert!(
+        show["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["dataset_id"] != "largest-by-app"),
+        "{show}"
+    );
     // A second run writes nothing new: same keys, same definitions.
     let before = t.docs.len();
-    for r in requests.iter().filter(|r| r["path"].as_str().unwrap().contains("/ingest/")) {
-        let (s, v, _) = t.call("POST", r["path"].as_str().unwrap(), &[("x-reports-service-key", SERVICE_KEY)], Some(r["body"].clone())).await;
+    for r in requests
+        .iter()
+        .filter(|r| r["path"].as_str().unwrap().contains("/ingest/"))
+    {
+        let (s, v, _) = t
+            .call(
+                "POST",
+                r["path"].as_str().unwrap(),
+                &[("x-reports-service-key", SERVICE_KEY)],
+                Some(r["body"].clone()),
+            )
+            .await;
         assert_eq!(s, StatusCode::CREATED);
         assert_eq!(v["created"], 0, "{v}");
     }

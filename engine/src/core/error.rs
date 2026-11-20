@@ -53,7 +53,9 @@ impl ReportError {
     pub fn status(&self) -> StatusCode {
         match self {
             ReportError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-            ReportError::Database(_) | ReportError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ReportError::Database(_) | ReportError::Internal(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             ReportError::NotFound(_) => StatusCode::NOT_FOUND,
             ReportError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ReportError::Validation { .. } => StatusCode::UNPROCESSABLE_ENTITY,

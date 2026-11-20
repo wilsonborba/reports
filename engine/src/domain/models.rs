@@ -5,9 +5,9 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::domain::auth::Visibility;
+use crate::domain::composition::{DomainDetails, DomainStatus};
 use crate::domain::datasets::spec::DataTier;
 use crate::domain::datasets::DatasetDescriptor;
-use crate::domain::composition::{DomainDetails, DomainStatus};
 use crate::domain::themes::ProjectTheme;
 
 /// First and last value of the report period field.
@@ -58,6 +58,15 @@ pub struct ReportSummary {
     pub signed_in_cards: usize,
     /// Visible cards whose effective visibility is `restricted` (admin or grant).
     pub restricted_cards: usize,
+    /// Access audience (`public`, `asodya`, `personal`, or `restricted`).
+    #[serde(default)]
+    pub audience: String,
+    /// Chart/template types present in visible cards.
+    #[serde(default)]
+    pub chart_types: Vec<String>,
+    /// Canonical open-in-Reports URL for this report.
+    #[serde(default)]
+    pub open_in_reports_url: String,
 }
 
 /// Cards of a report that the caller sees, and what opens the ones it cannot read. The
@@ -106,10 +115,27 @@ pub struct Paged<T> {
 pub const DEFAULT_PAGE_SIZE: usize = 12;
 pub const MAX_PAGE_SIZE: usize = 100;
 
-pub fn paginate<T>(items: Vec<T>, page: Option<usize>, page_size: Option<usize>, lang: &str) -> Paged<T> {
-    let page_size = page_size.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
+pub fn paginate<T>(
+    items: Vec<T>,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    lang: &str,
+) -> Paged<T> {
+    let page_size = page_size
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .clamp(1, MAX_PAGE_SIZE);
     let page = page.unwrap_or(1).max(1);
     let total = items.len();
-    let items = items.into_iter().skip((page - 1) * page_size).take(page_size).collect();
-    Paged { items, page, page_size, total, language: lang.to_string() }
+    let items = items
+        .into_iter()
+        .skip((page - 1) * page_size)
+        .take(page_size)
+        .collect();
+    Paged {
+        items,
+        page,
+        page_size,
+        total,
+        language: lang.to_string(),
+    }
 }

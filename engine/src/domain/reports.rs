@@ -13,13 +13,15 @@ use utoipa::ToSchema;
 
 use crate::core::error::ReportError;
 use crate::dal::{catalog, DatasetRecord, ProjectRecord, ReportRecord};
-use crate::domain::auth::{ViewerScope, Visibility};
+use crate::domain::auth::{Audience, ViewerScope, Visibility};
 use crate::domain::composition::{domain_index, DomainIndex};
 use crate::domain::datasets::engine::Row;
 use crate::domain::datasets::service::AccessClass;
 use crate::domain::datasets::spec::{resolve_text, DataTier, FilterParam};
 use crate::domain::datasets::{DatasetDescriptor, DatasetPage, DatasetService};
-use crate::domain::models::{AccessSummary, ProjectSummary, ReportPeriod, ReportSummary, ReportView};
+use crate::domain::models::{
+    AccessSummary, ProjectSummary, ReportPeriod, ReportSummary, ReportView,
+};
 
 /// Rows of each public card sent inline in the showcase.
 pub const SHOWCASE_ROWS: usize = 500;
@@ -38,8 +40,11 @@ pub fn effective(report: &ReportRecord, dataset: &DatasetRecord) -> Visibility {
 
 pub fn report_access(scope: &ViewerScope, r: &ReportRecord) -> Access {
     let v = Visibility::parse(&r.visibility);
-    if scope.can_read_resource(&r.project, &r.slug, None, v)
-        || (v == Visibility::Restricted && scope.is_authenticated() && scope.has_grant_in(&r.project, &r.slug))
+    let aud = Audience::parse(&r.audience);
+    if scope.can_read_owned(&r.project, &r.slug, None, &r.owner_id, v, aud)
+        || (v == Visibility::Restricted
+            && scope.is_authenticated()
+            && scope.has_grant_in(&r.project, &r.slug))
     {
         Access::Readable
     } else if r.discoverable {
@@ -50,11 +55,31 @@ pub fn report_access(scope: &ViewerScope, r: &ReportRecord) -> Access {
 }
 
 /// Access to one dataset. `report` is the access to its report.
-pub fn dataset_access(scope: &ViewerScope, r: &ReportRecord, report: Access, d: &DatasetRecord) -> Access {
+pub fn dataset_access(
+    scope: &ViewerScope,
+    r: &ReportRecord,
+    report: Access,
+    d: &DatasetRecord,
+) -> Access {
     if report == Access::Hidden {
         return Access::Hidden;
     }
-    if report == Access::Readable && scope.can_read_resource(&r.project, &r.slug, Some(&d.dataset_id), effective(r, d)) {
+    let owner = if d.owner_id.is_empty() {
+        r.owner_id.as_str()
+    } else {
+        d.owner_id.as_str()
+    };
+    let aud = Audience::parse(&r.audience).max(Audience::parse(&d.audience));
+    if report == Access::Readable
+        && scope.can_read_owned(
+            &r.project,
+            &r.slug,
+            Some(&d.dataset_id),
+            owner,
+            effective(r, d),
+            aud,
+        )
+    {
         Access::Readable
     } else if d.discoverable {
         Access::Discoverable
@@ -64,11 +89,18 @@ pub fn dataset_access(scope: &ViewerScope, r: &ReportRecord, report: Access, d: 
 }
 
 /// Cards of a report in the order of its `card_order`, then the others by ID.
-async fn ordered_datasets(svc: &DatasetService, r: &ReportRecord) -> Result<Vec<DatasetRecord>, ReportError> {
+async fn ordered_datasets(
+    svc: &DatasetService,
+    r: &ReportRecord,
+) -> Result<Vec<DatasetRecord>, ReportError> {
     let mut datasets = catalog::list_datasets(&svc.stores().db, &r.project, &r.slug).await?;
     let order = &r.metadata.card_order;
     let rank = |id: &str| order.iter().position(|o| o == id).unwrap_or(order.len());
-    datasets.sort_by(|a, b| rank(&a.dataset_id).cmp(&rank(&b.dataset_id)).then_with(|| a.dataset_id.cmp(&b.dataset_id)));
+    datasets.sort_by(|a, b| {
+        rank(&a.dataset_id)
+            .cmp(&rank(&b.dataset_id))
+            .then_with(|| a.dataset_id.cmp(&b.dataset_id))
+    });
     Ok(datasets)
 }
 
@@ -88,7 +120,10 @@ fn tiers_of(datasets: &[DatasetRecord]) -> Vec<DataTier> {
 /// the caller reads it. A signed-in placeholder opens with any session, so only a guest
 /// needs to sign in for it; a restricted one needs an admin or a grant.
 fn access_summary(scope: &ViewerScope, cards: &[(Visibility, bool)]) -> AccessSummary {
-    let mut out = AccessSummary { total: cards.len(), ..AccessSummary::default() };
+    let mut out = AccessSummary {
+        total: cards.len(),
+        ..AccessSummary::default()
+    };
     for (visibility, readable) in cards {
         match (readable, visibility) {
             (true, _) => out.readable += 1,
@@ -109,7 +144,11 @@ fn class_of(v: Visibility) -> AccessClass {
 }
 
 /// Reports of a project that the caller can see (readable or discoverable), with access.
-async fn visible_reports(svc: &DatasetService, project: &str, scope: &ViewerScope) -> Result<Vec<(ReportRecord, Access)>, ReportError> {
+async fn visible_reports(
+    svc: &DatasetService,
+    project: &str,
+    scope: &ViewerScope,
+) -> Result<Vec<(ReportRecord, Access)>, ReportError> {
     let all = catalog::list_reports(&svc.stores().db, project).await?;
     Ok(all
         .into_iter()
@@ -148,7 +187,12 @@ pub async fn project_summary(
 }
 
 /// Every active project, with Domain details from one cached domain_api request.
-pub async fn project_summaries(svc: &DatasetService, lang: &str, scope: &ViewerScope, domain_ttl: u64) -> Result<Vec<ProjectSummary>, ReportError> {
+pub async fn project_summaries(
+    svc: &DatasetService,
+    lang: &str,
+    scope: &ViewerScope,
+    domain_ttl: u64,
+) -> Result<Vec<ProjectSummary>, ReportError> {
     let projects = catalog::list_projects(&svc.stores().db, true).await?;
     let index = domain_index(svc.stores(), domain_ttl).await;
     let mut out = Vec::new();
@@ -158,7 +202,10 @@ pub async fn project_summaries(svc: &DatasetService, lang: &str, scope: &ViewerS
     Ok(out)
 }
 
-async fn period(svc: &DatasetService, r: &ReportRecord) -> Result<Option<ReportPeriod>, ReportError> {
+async fn period(
+    svc: &DatasetService,
+    r: &ReportRecord,
+) -> Result<Option<ReportPeriod>, ReportError> {
     match &r.metadata.period_source {
         Some(p) => Ok(svc
             .period(&r.project, &p.collection, &p.field)
@@ -178,38 +225,55 @@ pub async fn report_summaries(
     scope: &ViewerScope,
 ) -> Result<Vec<ReportSummary>, ReportError> {
     catalog::active_project(&svc.stores().db, project).await?;
-    let needle = query.map(|q| q.trim().to_lowercase()).filter(|q| !q.is_empty());
+    let needle = query
+        .map(|q| q.trim().to_lowercase())
+        .filter(|q| !q.is_empty());
     let mut out = Vec::new();
     for (r, access) in visible_reports(svc, project, scope).await? {
+        let mut chart_types =
+            catalog::report_chart_types(&svc.stores().db, project, &r.slug).await?;
+        let datasets: Vec<DatasetRecord> =
+            catalog::list_datasets(&svc.stores().db, project, &r.slug)
+                .await?
+                .into_iter()
+                .filter(|d| dataset_access(scope, &r, access, d) != Access::Hidden)
+                .collect();
+        if chart_types.is_empty() && !datasets.is_empty() {
+            chart_types.push("chart".to_string());
+        }
         if let Some(n) = &needle {
             let hay = format!(
-                "{} {} {} {}",
+                "{} {} {} {} {}",
                 r.slug,
                 r.title.values().cloned().collect::<Vec<_>>().join(" "),
                 resolve_text(&r.description, lang),
-                r.metadata.tags.join(" ")
+                r.metadata.tags.join(" "),
+                chart_types.join(" ")
             )
             .to_lowercase();
             if !hay.contains(n.as_str()) {
                 continue;
             }
         }
-        let datasets: Vec<DatasetRecord> = catalog::list_datasets(&svc.stores().db, project, &r.slug)
-            .await?
-            .into_iter()
-            .filter(|d| dataset_access(scope, &r, access, d) != Access::Hidden)
-            .collect();
         let data_tier = report_tier(&datasets);
         if tier.is_some_and(|t| t != data_tier) {
             continue;
         }
         let count = |v: Visibility| datasets.iter().filter(|d| effective(&r, d) == v).count();
+        let open_in_reports_url = format!(
+            "https://reports.asodya.com/v1/projects/{}/reports/{}",
+            r.project, r.slug
+        );
         out.push(ReportSummary {
             slug: r.slug.clone(),
             project: r.project.clone(),
             title: resolve_text(&r.title, lang),
             description: resolve_text(&r.description, lang),
-            period: if access == Access::Readable { period(svc, &r).await? } else { None },
+            period: if access == Access::Readable {
+                period(svc, &r).await?
+            } else {
+                None
+            },
             dataset_count: datasets.len() as i64,
             updated_at: r.updated_at.clone(),
             tags: r.metadata.tags.clone(),
@@ -218,12 +282,19 @@ pub async fn report_summaries(
             can_view: access == Access::Readable,
             signed_in_cards: count(Visibility::SignedIn),
             restricted_cards: count(Visibility::Restricted),
+            audience: r.audience.clone(),
+            chart_types,
+            open_in_reports_url,
         });
     }
     Ok(out)
 }
 
-async fn load_report(svc: &DatasetService, project: &str, report: &str) -> Result<ReportRecord, ReportError> {
+async fn load_report(
+    svc: &DatasetService,
+    project: &str,
+    report: &str,
+) -> Result<ReportRecord, ReportError> {
     catalog::active_project(&svc.stores().db, project).await?;
     catalog::get_report(&svc.stores().db, project, report)
         .await?
@@ -255,6 +326,7 @@ fn skeleton_descriptor(d: &DatasetRecord, visibility: Visibility, lang: &str) ->
         filters: Vec::new(),
         can_view: false,
         visibility: visibility.as_str().to_string(),
+        meta: None,
     })
 }
 
@@ -332,13 +404,21 @@ pub async fn dataset_page(
     let report_level = report_access(scope, &r);
     let d = catalog::get_dataset(&svc.stores().db, project, report, dataset_id)
         .await?
-        .ok_or_else(|| ReportError::not_found(format!("dataset '{project}/{report}/{dataset_id}'")))?;
+        .ok_or_else(|| {
+            ReportError::not_found(format!("dataset '{project}/{report}/{dataset_id}'"))
+        })?;
     match dataset_access(scope, &r, report_level, &d) {
-        Access::Hidden => Err(ReportError::not_found(format!("dataset '{project}/{report}/{dataset_id}'"))),
-        Access::Discoverable => Err(scope.denied(&format!("dataset '{project}/{report}/{dataset_id}'"))),
+        Access::Hidden => Err(ReportError::not_found(format!(
+            "dataset '{project}/{report}/{dataset_id}'"
+        ))),
+        Access::Discoverable => {
+            Err(scope.denied(&format!("dataset '{project}/{report}/{dataset_id}'")))
+        }
         Access::Readable => {
             let visibility = effective(&r, &d);
-            let mut page = svc.page(&d, filters, lang, offset, limit, class_of(visibility)).await?;
+            let mut page = svc
+                .page(&d, filters, lang, offset, limit, class_of(visibility))
+                .await?;
             page.descriptor.visibility = visibility.as_str().to_string();
             Ok(page)
         }
@@ -405,14 +485,25 @@ fn skeleton_card(d: &DatasetRecord, visibility: Visibility, lang: &str) -> Showc
         total_rows: None,
         skeleton: Some(Skeleton {
             layout: "chart".into(),
-            action: if visibility == Visibility::SignedIn { "login" } else { "access" }.into(),
+            action: if visibility == Visibility::SignedIn {
+                "login"
+            } else {
+                "access"
+            }
+            .into(),
         }),
     }
 }
 
 /// Guest view of a report: public cards with data, discoverable gated cards as skeletons.
 /// `tier` keeps only the cards of that tier, like the session view.
-pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &str, tier: Option<DataTier>) -> Result<ShowcaseView, ReportError> {
+pub async fn showcase(
+    svc: &DatasetService,
+    project: &str,
+    report: &str,
+    lang: &str,
+    tier: Option<DataTier>,
+) -> Result<ShowcaseView, ReportError> {
     let scope = ViewerScope::guest();
     let r = load_report(svc, project, report).await?;
     let access = report_access(&scope, &r);
@@ -433,7 +524,9 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
         }
         match card_access {
             Access::Readable => {
-                let page = svc.page(d, &[], lang, 0, SHOWCASE_ROWS, AccessClass::Public).await?;
+                let page = svc
+                    .page(d, &[], lang, 0, SHOWCASE_ROWS, AccessClass::Public)
+                    .await?;
                 cards.push(ShowcaseCard {
                     dataset_id: d.dataset_id.clone(),
                     title: page.descriptor.title.clone(),
@@ -450,14 +543,19 @@ pub async fn showcase(svc: &DatasetService, project: &str, report: &str, lang: &
             Access::Hidden => {}
         }
     }
-    let counts: Vec<(Visibility, bool)> = cards.iter().map(|c| (c.visibility, c.can_view)).collect();
+    let counts: Vec<(Visibility, bool)> =
+        cards.iter().map(|c| (c.visibility, c.can_view)).collect();
     Ok(ShowcaseView {
         project: r.project.clone(),
         report: r.slug.clone(),
         title: resolve_text(&r.title, lang),
         description: resolve_text(&r.description, lang),
         tags: r.metadata.tags.clone(),
-        period: if access == Access::Readable { period(svc, &r).await? } else { None },
+        period: if access == Access::Readable {
+            period(svc, &r).await?
+        } else {
+            None
+        },
         updated_at: r.updated_at.clone(),
         language: lang.to_string(),
         data_tier: report_tier(&shown),
@@ -481,7 +579,18 @@ pub async fn showcase_card(
     offset: usize,
     limit: usize,
 ) -> Result<DatasetPage, ReportError> {
-    dataset_page(svc, project, report, dataset_id, filters, lang, offset, limit, &ViewerScope::guest()).await
+    dataset_page(
+        svc,
+        project,
+        report,
+        dataset_id,
+        filters,
+        lang,
+        offset,
+        limit,
+        &ViewerScope::guest(),
+    )
+    .await
 }
 
 /// After an ingestion: calculates again the public datasets marked `warm` (explicit
@@ -499,13 +608,21 @@ pub async fn warm_public(svc: &DatasetService, project: &str, schema: Option<&st
             continue;
         };
         for d in datasets {
-            let depends = schema.is_none_or(|s| crate::domain::datasets::service::dependencies(&d.spec).contains(s));
-            if !d.spec.warm || !depends || effective(&r, &d) != Visibility::Public || report_access(&guest, &r) != Access::Readable {
+            let depends = schema.is_none_or(|s| {
+                crate::domain::datasets::service::dependencies(&d.spec).contains(s)
+            });
+            if !d.spec.warm
+                || !depends
+                || effective(&r, &d) != Visibility::Public
+                || report_access(&guest, &r) != Access::Readable
+            {
                 continue;
             }
             match svc.page(&d, &[], "en", 0, 1, AccessClass::Public).await {
                 Ok(_) => warmed += 1,
-                Err(e) => tracing::warn!(project, report = %r.slug, dataset = %d.dataset_id, "warm-up failed: {}", e),
+                Err(e) => {
+                    tracing::warn!(project, report = %r.slug, dataset = %d.dataset_id, "warm-up failed: {}", e)
+                }
             }
         }
     }

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import '../models/report.dart';
 import '../widgets/charts/format.dart';
 import 'export_plan.dart';
 import 'export_rows.dart';
@@ -59,6 +58,15 @@ class MarkdownExport {
           out.writeln(d.description);
           out.writeln();
         }
+        final meta = d.meta;
+        if (meta != null && meta.source.isNotEmpty) {
+          out.writeln('- Source: ${meta.source}');
+        }
+        if (meta != null && (meta.periodStart.isNotEmpty || meta.periodEnd.isNotEmpty)) {
+          out.writeln('- Period: ${meta.periodStart} to ${meta.periodEnd} (${meta.timezone})');
+        }
+        out.writeln('- Tier: ${d.dataTier}');
+        out.writeln();
         final filters = describeFilters(d, card.filters, t);
         if (filters.isNotEmpty) {
           out.writeln('${t('md_filters')}:');

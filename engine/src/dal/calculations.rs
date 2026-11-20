@@ -6,7 +6,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use super::sql::{flag_col, json_col, opt, opt_col, opt_num, Db};
+use super::sql::{flag_col, opt, opt_col, opt_num, Db};
 use crate::core::error::ReportError;
 use crate::domain::datasets::spec::DatasetSpec;
 
@@ -41,18 +41,16 @@ fn select(db: &Db) -> String {
     format!(
         "SELECT project_slug, calculation_id, CAST(version AS BIGINT) AS version, status, \
          {} AS input_schema, CAST(COALESCE(input_schema_version, 0) AS BIGINT) AS input_schema_version, \
-         {} AS inputs, {} AS definition, {} AS needs_review, {} AS created_at, {} AS published_at \
+         {} AS needs_review, {} AS created_at, {} AS published_at \
          FROM calculation_versions",
         db.opt_text("input_schema"),
-        db.text("inputs"),
-        db.text("definition"),
         db.flag("needs_review"),
         db.text("created_at"),
         db.opt_text("published_at"),
     )
 }
 
-fn from_row(row: &AnyRow) -> Result<CalculationVersion, ReportError> {
+async fn from_row(db: &Db, row: &AnyRow) -> Result<CalculationVersion, ReportError> {
     let input_version: i64 = row.try_get("input_schema_version")?;
     Ok(CalculationVersion {
         project: row.try_get("project_slug")?,
@@ -61,24 +59,59 @@ fn from_row(row: &AnyRow) -> Result<CalculationVersion, ReportError> {
         status: row.try_get("status")?,
         input_schema: opt_col(row, "input_schema")?,
         input_schema_version: (input_version > 0).then_some(input_version),
-        inputs: json_col(row, "inputs")?,
-        definition: json_col(row, "definition")?,
+        inputs: load_inputs(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            &row.try_get::<String, _>("calculation_id")?,
+            row.try_get("version")?,
+        )
+        .await?,
+        definition: load_definition(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            &row.try_get::<String, _>("calculation_id")?,
+            row.try_get("version")?,
+        )
+        .await?,
         needs_review: flag_col(row, "needs_review")?,
         created_at: row.try_get("created_at")?,
         published_at: opt_col(row, "published_at")?,
     })
 }
 
-pub async fn get(db: &Db, project: &str, id: &str, version: i64) -> Result<Option<CalculationVersion>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 AND calculation_id = $2 AND version = $3", select(db));
-    let row = sqlx::query(&sql).bind(project).bind(id).bind(version).fetch_optional(&db.pool).await?;
-    row.as_ref().map(from_row).transpose()
+pub async fn get(
+    db: &Db,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<Option<CalculationVersion>, ReportError> {
+    let sql = format!(
+        "{} WHERE project_slug = $1 AND calculation_id = $2 AND version = $3",
+        select(db)
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(id)
+        .bind(version)
+        .fetch_optional(&db.pool)
+        .await?;
+    match row {
+        Some(r) => Ok(Some(from_row(db, &r).await?)),
+        None => Ok(None),
+    }
 }
 
 pub async fn list(db: &Db, project: &str) -> Result<Vec<CalculationVersion>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 ORDER BY calculation_id, version", select(db));
+    let sql = format!(
+        "{} WHERE project_slug = $1 ORDER BY calculation_id, version",
+        select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
-    rows.iter().map(from_row).collect()
+    let mut out = Vec::new();
+    for r in &rows {
+        out.push(from_row(db, r).await?);
+    }
+    Ok(out)
 }
 
 pub async fn latest_version(db: &Db, project: &str, id: &str) -> Result<Option<i64>, ReportError> {
@@ -93,8 +126,58 @@ pub async fn latest_version(db: &Db, project: &str, id: &str) -> Result<Option<i
     Ok((v > 0).then_some(v))
 }
 
-fn to_json<T: Serialize>(v: &T) -> Result<String, ReportError> {
-    serde_json::to_string(v).map_err(|e| ReportError::Internal(e.to_string()))
+pub async fn load_definition(
+    db: &Db,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<DatasetSpec, ReportError> {
+    let v = super::normalized::read(
+        db,
+        &super::normalized::Key {
+            project,
+            calculation: id,
+            version,
+        },
+    )
+    .await?;
+    if v.is_null() {
+        return Ok(DatasetSpec::default());
+    }
+    serde_json::from_value(v).map_err(|e| ReportError::Database(e.to_string()))
+}
+async fn load_inputs(
+    db: &Db,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<Vec<InputRef>, ReportError> {
+    let rows=sqlx::query("SELECT schema_name,CAST(schema_version AS BIGINT) AS schema_version FROM calculation_inputs WHERE project_slug=$1 AND calculation_id=$2 AND version=$3 ORDER BY position").bind(project).bind(id).bind(version).fetch_all(&db.pool).await?;
+    rows.iter()
+        .map(|r| {
+            Ok(InputRef {
+                schema: r.try_get("schema_name")?,
+                version: r.try_get("schema_version")?,
+            })
+        })
+        .collect()
+}
+async fn write_inputs(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    c: &CalculationVersion,
+) -> Result<(), ReportError> {
+    sqlx::query(
+        "DELETE FROM calculation_inputs WHERE project_slug=$1 AND calculation_id=$2 AND version=$3",
+    )
+    .bind(&c.project)
+    .bind(&c.calculation_id)
+    .bind(c.version)
+    .execute(&mut **tx)
+    .await?;
+    for (i, input) in c.inputs.iter().enumerate() {
+        sqlx::query("INSERT INTO calculation_inputs(project_slug,calculation_id,version,position,schema_name,schema_version) VALUES ($1,$2,$3,$4,$5,$6)").bind(&c.project).bind(&c.calculation_id).bind(c.version).bind(i as i64).bind(&input.schema).bind(input.version).execute(&mut **tx).await?;
+    }
+    Ok(())
 }
 
 /// Creates a draft or replaces an existing draft. A published or retired version is 409.
@@ -111,52 +194,55 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
             )));
         }
     }
-    let sql = format!(
-        "INSERT INTO calculation_versions (project_slug, calculation_id, version, status, input_schema, \
-         input_schema_version, inputs, definition, needs_review) \
-         VALUES ($1, $2, $3, 'draft', {}, {}, {}, {}, $8) \
-         ON CONFLICT (project_slug, calculation_id, version) DO UPDATE SET input_schema = EXCLUDED.input_schema, \
-         input_schema_version = EXCLUDED.input_schema_version, inputs = EXCLUDED.inputs, \
-         definition = EXCLUDED.definition, needs_review = EXCLUDED.needs_review",
-        db.opt_in(4),
-        db.opt_num_in(5),
-        db.json_in(6),
-        db.json_in(7)
-    );
-    sqlx::query(&sql)
+    let mut tx = db.pool.begin().await?;
+    let sql=format!("INSERT INTO calculation_versions(project_slug,calculation_id,version,status,input_schema,input_schema_version,needs_review) VALUES ($1,$2,$3,'draft',{}, {},$6) ON CONFLICT(project_slug,calculation_id,version) DO UPDATE SET input_schema=EXCLUDED.input_schema,input_schema_version=EXCLUDED.input_schema_version,needs_review=EXCLUDED.needs_review WHERE calculation_versions.status='draft'",db.opt_in(4),db.opt_num_in(5));
+    let done = sqlx::query(&sql)
         .bind(&c.project)
         .bind(&c.calculation_id)
         .bind(c.version)
         .bind(opt(&c.input_schema))
         .bind(opt_num(c.input_schema_version))
-        .bind(to_json(&c.inputs)?)
-        .bind(to_json(&c.definition)?)
         .bind(c.needs_review)
-        .execute(&db.pool)
+        .execute(&mut *tx)
         .await?;
+    if done.rows_affected() == 0 {
+        return Err(ReportError::Conflict(
+            "calculation is no longer a draft".into(),
+        ));
+    }
+    write_inputs(&mut tx, c).await?;
+    let value =
+        serde_json::to_value(&c.definition).map_err(|e| ReportError::Internal(e.to_string()))?;
+    super::normalized::write(
+        &mut tx,
+        &super::normalized::Key {
+            project: &c.project,
+            calculation: &c.calculation_id,
+            version: c.version,
+        },
+        &value,
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
 /// Publishes a draft with its final input list (immutable from now on).
 pub async fn publish(db: &Db, c: &CalculationVersion) -> Result<bool, ReportError> {
-    let sql = format!(
-        "UPDATE calculation_versions SET status = 'published', published_at = {}, needs_review = FALSE, \
-         input_schema = {}, input_schema_version = {}, inputs = {} \
-         WHERE project_slug = $4 AND calculation_id = $5 AND version = $6 AND status = 'draft'",
-        db.now(),
-        db.opt_in(1),
-        db.opt_num_in(2),
-        db.json_in(3)
-    );
+    let mut tx = db.pool.begin().await?;
+    let sql=format!("UPDATE calculation_versions SET status='published',published_at={},needs_review=FALSE,input_schema={},input_schema_version={} WHERE project_slug=$3 AND calculation_id=$4 AND version=$5 AND status='draft'",db.now(),db.opt_in(1),db.opt_num_in(2));
     let done = sqlx::query(&sql)
         .bind(opt(&c.input_schema))
         .bind(opt_num(c.input_schema_version))
-        .bind(to_json(&c.inputs)?)
         .bind(&c.project)
         .bind(&c.calculation_id)
         .bind(c.version)
-        .execute(&db.pool)
+        .execute(&mut *tx)
         .await?;
+    if done.rows_affected() > 0 {
+        write_inputs(&mut tx, c).await?;
+    }
+    tx.commit().await?;
     Ok(done.rows_affected() > 0)
 }
 
@@ -173,7 +259,12 @@ pub async fn retire(db: &Db, project: &str, id: &str, version: i64) -> Result<bo
 }
 
 /// Marks drafts that read an older version of `schema` for review. Returns how many.
-pub async fn mark_drafts_for_review(db: &Db, project: &str, schema: &str, new_version: i64) -> Result<u64, ReportError> {
+pub async fn mark_drafts_for_review(
+    db: &Db,
+    project: &str,
+    schema: &str,
+    new_version: i64,
+) -> Result<u64, ReportError> {
     let done = sqlx::query(
         "UPDATE calculation_versions SET needs_review = TRUE WHERE project_slug = $1 AND status = 'draft' \
          AND input_schema = $2 AND COALESCE(input_schema_version, 0) < $3",
@@ -187,12 +278,19 @@ pub async fn mark_drafts_for_review(db: &Db, project: &str, schema: &str, new_ve
 }
 
 /// Deletes a version of any status (fixture removal only).
-pub async fn delete_version(db: &Db, project: &str, id: &str, version: i64) -> Result<bool, ReportError> {
-    let done = sqlx::query("DELETE FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2 AND version = $3")
-        .bind(project)
-        .bind(id)
-        .bind(version)
-        .execute(&db.pool)
-        .await?;
+pub async fn delete_version(
+    db: &Db,
+    project: &str,
+    id: &str,
+    version: i64,
+) -> Result<bool, ReportError> {
+    let done = sqlx::query(
+        "DELETE FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2 AND version = $3",
+    )
+    .bind(project)
+    .bind(id)
+    .bind(version)
+    .execute(&db.pool)
+    .await?;
     Ok(done.rows_affected() > 0)
 }

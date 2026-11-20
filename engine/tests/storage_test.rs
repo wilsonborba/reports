@@ -11,7 +11,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
-use reports::dal::{catalog, CacheStore, CouchDocuments, Db, DocumentStore, LockState, ProjectRecord, RecordDoc, RedisCache};
+use reports::dal::{
+    catalog, CacheStore, CouchDocuments, Db, DocumentStore, LockState, ProjectRecord, RecordDoc,
+    RedisCache,
+};
 use reports::domain::themes::ProjectTheme;
 
 async fn sqlite() -> (tempfile::TempDir, String, Db) {
@@ -26,7 +29,10 @@ async fn sqlite() -> (tempfile::TempDir, String, Db) {
 async fn schema_check_passes_on_a_migrated_database_and_names_missing_parts() {
     let (_dir, _url, db) = sqlite().await;
     db.check_schema().await.unwrap();
-    sqlx::query("DROP TABLE schema_fields").execute(&db.pool).await.unwrap();
+    sqlx::query("DROP TABLE schema_fields")
+        .execute(&db.pool)
+        .await
+        .unwrap();
     let err = db.check_schema().await.unwrap_err().to_string();
     assert!(err.contains("schema_fields.field_path"), "{err}");
     assert!(err.contains("scripts/migrate.sh"), "{err}");
@@ -39,7 +45,11 @@ async fn project_writes_persist_across_a_new_connection() {
         slug: "fsm".into(),
         name: [("en".to_string(), "FSM Media Storage".to_string())].into(),
         tagline: Default::default(),
-        description: [("pt-BR".to_string(), "Armazenamento de mídia na LAN".to_string())].into(),
+        description: [(
+            "pt-BR".to_string(),
+            "Armazenamento de mídia na LAN".to_string(),
+        )]
+        .into(),
         theme: ProjectTheme::default(),
         is_active: true,
         website_url: Some("https://github.com/wilsonborba/fsm".into()),
@@ -74,7 +84,11 @@ async fn database_outage_is_a_clear_error() {
 
 type Docs = Arc<Mutex<HashMap<String, Value>>>;
 
-async fn bulk(State(docs): State<Docs>, Path(_db): Path<String>, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+async fn bulk(
+    State(docs): State<Docs>,
+    Path(_db): Path<String>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
     let mut store = docs.lock().unwrap();
     let mut out = Vec::new();
     for d in body["docs"].as_array().unwrap() {
@@ -95,7 +109,11 @@ async fn bulk(State(docs): State<Docs>, Path(_db): Path<String>, Json(body): Jso
 }
 
 /// `_find` with equality selectors and bookmark pagination (bookmark = offset).
-async fn find(State(docs): State<Docs>, Path(_db): Path<String>, Json(body): Json<Value>) -> Json<Value> {
+async fn find(
+    State(docs): State<Docs>,
+    Path(_db): Path<String>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
     let store = docs.lock().unwrap();
     let selector = body["selector"].as_object().unwrap();
     let mut matched: Vec<Value> = store
@@ -104,7 +122,10 @@ async fn find(State(docs): State<Docs>, Path(_db): Path<String>, Json(body): Jso
         .cloned()
         .collect();
     matched.sort_by(|a, b| a["_id"].as_str().cmp(&b["_id"].as_str()));
-    let start: usize = body["bookmark"].as_str().and_then(|b| b.parse().ok()).unwrap_or(0);
+    let start: usize = body["bookmark"]
+        .as_str()
+        .and_then(|b| b.parse().ok())
+        .unwrap_or(0);
     let limit = body["limit"].as_u64().unwrap() as usize;
     let page: Vec<Value> = matched.into_iter().skip(start).take(limit).collect();
     let bookmark = (start + page.len()).to_string();
@@ -114,9 +135,16 @@ async fn find(State(docs): State<Docs>, Path(_db): Path<String>, Json(body): Jso
 async fn mock_couch() -> (String, Docs) {
     let docs: Docs = Arc::default();
     let app = Router::new()
-        .route("/:db", get(|Path(db): Path<String>| async move {
-            if db == "reports_documents" { (StatusCode::OK, Json(json!({"db_name": db}))) } else { (StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))) }
-        }))
+        .route(
+            "/:db",
+            get(|Path(db): Path<String>| async move {
+                if db == "reports_documents" {
+                    (StatusCode::OK, Json(json!({"db_name": db})))
+                } else {
+                    (StatusCode::NOT_FOUND, Json(json!({"error": "not_found"})))
+                }
+            }),
+        )
         .route("/:db/_bulk_docs", post(bulk))
         .route("/:db/_find", post(find))
         .with_state(docs.clone());
@@ -144,19 +172,36 @@ async fn couchdb_adapter_is_idempotent_and_reads_back_records() {
     let couch = CouchDocuments::new(&url, "reports_documents", None, None).unwrap();
     couch.check_ready().await.unwrap();
 
-    let first = couch.insert_records(&[record("job-1", None), record("job-2", Some("sample-v1"))]).await.unwrap();
+    let first = couch
+        .insert_records(&[record("job-1", None), record("job-2", Some("sample-v1"))])
+        .await
+        .unwrap();
     assert_eq!((first.created, first.duplicates), (2, 0));
-    let retry = couch.insert_records(&[record("job-1", None)]).await.unwrap();
+    let retry = couch
+        .insert_records(&[record("job-1", None)])
+        .await
+        .unwrap();
     assert_eq!((retry.created, retry.duplicates), (0, 1));
 
     let back = couch.load_records("autodroid", "job", 10).await.unwrap();
     assert_eq!(back.len(), 2);
     assert_eq!(back[0].schema_version, 1);
     assert_eq!(back[0].payload["adapter_name"], "aiograpi");
-    assert!(couch.load_records("autodroid", "job", 1).await.is_err(), "scan limit applies");
+    assert!(
+        couch.load_records("autodroid", "job", 1).await.is_err(),
+        "scan limit applies"
+    );
 
     assert_eq!(couch.delete_fixture_records("sample-v1").await.unwrap(), 1);
-    assert_eq!(couch.load_records("autodroid", "job", 10).await.unwrap().len(), 1, "manual record stays");
+    assert_eq!(
+        couch
+            .load_records("autodroid", "job", 10)
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "manual record stays"
+    );
 }
 
 #[tokio::test]
@@ -166,7 +211,10 @@ async fn couchdb_outage_and_missing_database_are_clear() {
     let err = missing.check_ready().await.unwrap_err().to_string();
     assert!(err.contains("scripts/migrate.sh"), "{err}");
     let down = CouchDocuments::new("http://127.0.0.1:1", "reports_documents", None, None).unwrap();
-    let err = down.insert_records(&[record("job-9", None)]).await.unwrap_err();
+    let err = down
+        .insert_records(&[record("job-9", None)])
+        .await
+        .unwrap_err();
     assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(!down.health().await);
 }
@@ -177,7 +225,10 @@ async fn redis_outage_is_a_cache_miss() {
     cache.set("k", "v", 60).await;
     assert_eq!(cache.get("k").await, None);
     assert_eq!(cache.try_lock("k", "t", 5).await, LockState::Unavailable);
-    assert_eq!(cache.invalidate_tag("schema:cortex:telemetry_event").await, 0);
+    assert_eq!(
+        cache.invalidate_tag("schema:cortex:telemetry_event").await,
+        0
+    );
     assert!(!cache.health().await);
 }
 
@@ -187,13 +238,20 @@ async fn memory_cache_tags_and_locks() {
     cache.set("a", "1", 60).await;
     cache.set("b", "2", 60).await;
     cache.tag("schema:cortex:telemetry_event", "a", 60).await;
-    assert_eq!(cache.invalidate_tag("schema:cortex:telemetry_event").await, 1);
+    assert_eq!(
+        cache.invalidate_tag("schema:cortex:telemetry_event").await,
+        1
+    );
     assert_eq!(cache.get("a").await, None);
     assert_eq!(cache.get("b").await.as_deref(), Some("2"));
     assert_eq!(cache.try_lock("g", "t1", 60).await, LockState::Acquired);
     assert_eq!(cache.try_lock("g", "t2", 60).await, LockState::Busy);
     cache.unlock("g", "t2").await;
-    assert_eq!(cache.try_lock("g", "t3", 60).await, LockState::Busy, "only the owner unlocks");
+    assert_eq!(
+        cache.try_lock("g", "t3", 60).await,
+        LockState::Busy,
+        "only the owner unlocks"
+    );
     cache.unlock("g", "t1").await;
     assert_eq!(cache.try_lock("g", "t3", 60).await, LockState::Acquired);
 }

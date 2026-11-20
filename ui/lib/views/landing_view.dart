@@ -6,7 +6,6 @@ import '../l10n/strings.dart';
 import '../models/catalog.dart';
 import '../routes.dart';
 import '../services/catalog_service.dart';
-import '../themes/report_palette.dart';
 import '../widgets/catalog/catalog_widgets.dart';
 import '../widgets/charts/format.dart';
 import '../widgets/landing/project_carousel.dart';

@@ -2,25 +2,34 @@
 //! and the domain_api client (project details).
 
 pub mod cache;
+mod calculation_shape;
 pub mod calculations;
 pub mod catalog;
+mod catalog_storage;
 pub mod documents;
-pub mod embed_preview;
 pub mod domain_api;
+pub mod embed_preview;
 pub mod fixtures;
 pub mod grants;
+mod normalized;
 pub mod schemas;
 pub mod sql;
+pub mod templates;
 
 use std::sync::Arc;
 
 pub use cache::{CacheStore, LockState, MemoryCache, RedisCache};
-pub use catalog::{DatasetRecord, ProjectRole, PeriodSource, ProjectRecord, ReportMetadata, ReportRecord};
-pub use grants::Grant;
-pub use documents::{CouchDocuments, DocumentStore, InsertOutcome, MemoryDocuments, RecordDoc};
 pub use calculations::{CalculationVersion, InputRef};
+pub use catalog::{
+    DatasetRecord, PeriodSource, ProjectRecord, ProjectRole, ReportMetadata, ReportRecord,
+};
+pub use documents::{CouchDocuments, DocumentStore, InsertOutcome, MemoryDocuments, RecordDoc};
+pub use grants::Grant;
 pub use schemas::SchemaVersion;
 pub use sql::Db;
+pub use templates::{
+    CardVisualBinding, TemplateDiscoveryItem, TemplateOption, TemplateSlot, VisualTemplateVersion,
+};
 
 /// The three network stores of one engine process.
 #[derive(Clone)]

@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../models/catalog.dart';
-import '../../themes/report_palette.dart';
 import '../charts/motion.dart';
 
 /// Small chart frame of a project tile: a label and the chart below it.

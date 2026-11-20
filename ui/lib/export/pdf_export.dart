@@ -3,13 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/painting.dart' show Color;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import '../layouts/report_layout.dart';
-import '../models/report.dart';
-import '../themes/report_palette.dart';
-import '../widgets/charts/chart_parts.dart' show YRange;
 import '../widgets/charts/format.dart';
 import '../widgets/charts/sankey_layout.dart';
-import '../widgets/charts/series_colors.dart' show foldCategories, otherKey;
 import '../widgets/charts/visual_chooser.dart';
 import 'export_plan.dart';
 import 'export_rows.dart';
@@ -388,15 +383,36 @@ class _Builder {
       if (filters.isNotEmpty) ...[pw.SizedBox(height: 3), text('${t('md_filters')}: ${filters.join('; ')}', size: 7.5, color: muted)],
       pw.SizedBox(height: 8),
     ];
-    if (page.rows.isEmpty) {
+    if (!d.canView) {
+      body.add(text('Restricted chart', size: 8.5, color: muted));
+    } else if (page.rows.isEmpty) {
       body.add(text(t('no_data'), size: 8.5, color: muted));
     } else {
+      final (xAxisTitle, yAxisTitle) = ChartFrame.axisTitlesFor(page);
+      if (yAxisTitle != null && visual != Visual.kpi && visual != Visual.table && visual != Visual.donut) {
+        body.add(text(yAxisTitle, size: 7, color: muted));
+      }
       final chart = this.chart(visual, page, card.slot, notes);
-      if (chart != null) body.addAll([chart, pw.SizedBox(height: 8)]);
+      if (chart != null) body.addAll([chart, pw.SizedBox(height: 4)]);
+      if (xAxisTitle != null && visual != Visual.kpi && visual != Visual.table && visual != Visual.donut) {
+        body.add(text(xAxisTitle, size: 7, color: muted));
+      }
+      body.add(pw.SizedBox(height: 4));
       if (visual != Visual.kpi && visual != Visual.hbar && visual != Visual.donut) {
         body.add(table(page, card.slot, notes));
       }
     }
+    final meta = d.meta;
+    final footerParts = <String>[
+      if (meta != null && meta.source.isNotEmpty) 'Source: ${meta.source}',
+      if (meta != null && (meta.periodStart.isNotEmpty || meta.periodEnd.isNotEmpty))
+        'Period: ${meta.periodStart} to ${meta.periodEnd} (${meta.timezone})',
+      'Tier: ${d.dataTier}',
+    ];
+    body.addAll([
+      pw.SizedBox(height: 4),
+      text(footerParts.join('  |  '), size: 6.5, color: muted),
+    ]);
     if (notes.isNotEmpty) {
       body.add(pw.SizedBox(height: 6));
       for (var i = 0; i < notes.length; i++) {
@@ -501,15 +517,81 @@ class _Builder {
       case Visual.kpi:
         return kpi(page);
       case Visual.hbar:
+      case Visual.rankingBar:
       case Visual.donut:
+      case Visual.pie:
+      case Visual.gauge:
+      case Visual.meter:
+      case Visual.treemap:
+      case Visual.sunburst:
+      case Visual.icicle:
+      case Visual.circlePacking:
+      case Visual.waffle:
+      case Visual.nightingaleRose:
+      case Visual.funnel:
+      case Visual.histogram:
+      case Visual.boxPlot:
+      case Visual.violin:
+      case Visual.density:
+      case Visual.ridgeline:
+      case Visual.strip:
+      case Visual.ecdf:
+      case Visual.qqPlot:
+      case Visual.populationPyramid:
+      case Visual.raincloud:
+      case Visual.scatter:
+      case Visual.bubble:
+      case Visual.heatmap:
+      case Visual.correlationMatrix:
+      case Visual.hexbin:
+      case Visual.contour2d:
+      case Visual.splom:
+      case Visual.quadrant:
+      case Visual.ternary:
         final (main, second) = VisualChooser.ranked(d, slot);
         final limit = compact ? 6 : ExportRows.limitFor(page, slot);
         return bars(page.rows.length > limit ? page.rows.sublist(0, limit) : page.rows, dims.first, main, second, notes, ExportRows.total(page));
       case Visual.line:
       case Visual.curve:
+      case Visual.stepLine:
+      case Visual.area:
+      case Visual.stackedArea:
+      case Visual.stackedArea100:
+      case Visual.streamgraph:
+      case Visual.sparkline:
+      case Visual.bumpChart:
+      case Visual.candlestick:
+      case Visual.rangeBand:
+      case Visual.annotatedLine:
+      case Visual.timeline:
+      case Visual.gantt:
+      case Visual.calendarHeatmap:
+      case Visual.horizon:
+      case Visual.controlChart:
+      case Visual.burndown:
+      case Visual.cyclePlot:
         final x = dims.isNotEmpty ? dims.first : d.fields.first;
         return lines(page, x, ms, numericX: visual == Visual.curve);
       case Visual.bar:
+      case Visual.groupedBar:
+      case Visual.stackedBar100:
+      case Visual.divergingBar:
+      case Visual.floatingBar:
+      case Visual.lollipop:
+      case Visual.dotPlot:
+      case Visual.dumbbell:
+      case Visual.slope:
+      case Visual.bullet:
+      case Visual.utilizationBar:
+      case Visual.pictogram:
+      case Visual.radialBar:
+      case Visual.circularBar:
+      case Visual.radar:
+      case Visual.parallelCoordinates:
+      case Visual.marimekko:
+      case Visual.waterfall:
+      case Visual.pareto:
+      case Visual.smallMultiples:
         return columns(page, dims.first, ms.first, series(0));
       case Visual.combo:
         return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -522,8 +604,31 @@ class _Builder {
       case Visual.stackedBar:
         return stacked(page, dims[0], dims[1], ms.first);
       case Visual.map:
+      case Visual.bubbleMap:
+      case Visual.choropleth:
+      case Visual.geoHeatmap:
+      case Visual.flowMap:
+      case Visual.hexTileMap:
         return map(page, ms.first);
       case Visual.sankey:
+      case Visual.alluvial:
+      case Visual.chord:
+      case Visual.arcDiagram:
+      case Visual.flowchart:
+      case Visual.layeredDag:
+      case Visual.sequenceDiagram:
+      case Visual.stateDiagram:
+      case Visual.swimlane:
+      case Visual.treeOrg:
+      case Visual.dendrogram:
+      case Visual.mindMap:
+      case Visual.network:
+      case Visual.adjacencyMatrix:
+      case Visual.erDiagram:
+      case Visual.architectureDiagram:
+      case Visual.venn:
+      case Visual.euler:
+      case Visual.upset:
         return sankey(page, VisualChooser.sankeyStages(d, slot), ms.first, notes);
       case Visual.table:
       case Visual.auto:
@@ -553,7 +658,7 @@ class _Builder {
 
   /// Ranking rows: rank, label, bar, value (one color). Donuts print as bars too.
   pw.Widget bars(List<Map<String, dynamic>> rows, FieldInfo label, FieldInfo measure, FieldInfo? second, List<String> notes, int total) {
-    final maxV = rows.fold<double>(0, (m, r) => math.max(m, asDouble(r[measure.name]) ?? 0));
+    final maxV = rows.fold<double>(0, (m, r) => math.max(m, measureValue(r[measure.name], measure) ?? 0));
     const labelW = 170.0, valueW = 110.0, rankW = 16.0;
     final barW = inner - labelW - valueW - rankW - 12;
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -565,7 +670,10 @@ class _Builder {
             pw.SizedBox(width: labelW, child: text(cell(valueText(rows[i][label.name], label), notes), size: 7.5, maxWidth: labelW - 4)),
             pw.SizedBox(width: 6),
             pw.Container(
-              width: maxV <= 0 ? 0 : math.max(1.0, barW * (asDouble(rows[i][measure.name]) ?? 0) / maxV),
+              width: () {
+                final v = measureValue(rows[i][measure.name], measure);
+                return (v == null || maxV <= 0) ? 0.0 : math.max(1.0, barW * v / maxV);
+              }(),
               height: 6,
               color: series(0),
             ),
@@ -573,7 +681,7 @@ class _Builder {
             pw.SizedBox(
               width: valueW,
               child: text(
-                [valueWithUnit(rows[i][measure.name], measure), if (second != null) valueWithUnit(rows[i][second.name], second)].join('  '),
+                [measureValueWithUnit(rows[i][measure.name], measure), if (second != null) measureValueWithUnit(rows[i][second.name], second)].join('  '),
                 size: 7.5,
                 align: pw.TextAlign.right,
                 maxWidth: valueW,
@@ -658,8 +766,8 @@ class _Builder {
 
   pw.Widget columns(DatasetPage page, FieldInfo x, FieldInfo m, PdfColor color, {double? height}) {
     final rows = page.rows;
-    final values = [for (final r in rows) asDouble(r[m.name]) ?? 0];
-    final range = YRange.of(values, zero: true);
+    final values = [for (final r in rows) measureValue(r[m.name], m)];
+    final range = YRange.of([for (final v in values) ?v], zero: true);
     return plot(
       height: height ?? chartHeight,
       range: range,
@@ -670,7 +778,9 @@ class _Builder {
         final bw = math.max(0.6, slot * 0.7);
         g.setFillColor(color);
         for (var i = 0; i < values.length; i++) {
-          final y0 = y(0), y1 = y(values[i]);
+          final v = values[i];
+          if (v == null) continue;
+          final y0 = y(0), y1 = y(v);
           g.drawRect(i * slot + (slot - bw) / 2, math.min(y0, y1), bw, (y1 - y0).abs());
         }
         g.fillPath();
@@ -739,7 +849,8 @@ class _Builder {
       final xk = '${r[x.name]}', ck = '${r[category.name]}';
       xs.putIfAbsent(xk, () => r[x.name]);
       names[ck] = valueText(r[category.name], category);
-      final v = asDouble(r[m.name]) ?? 0;
+      final v = measureValue(r[m.name], m);
+      if (v == null) continue;
       totals[ck] = (totals[ck] ?? 0) + v;
       (values[xk] ??= {})[ck] = (values[xk]?[ck] ?? 0) + v;
     }

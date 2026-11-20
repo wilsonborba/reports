@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:reports_ui/layouts/report_layout.dart';
-import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/themes/theme_registry.dart';
 import 'package:reports_ui/models/catalog.dart';
 import 'package:reports_ui/themes/catalog_brands.dart';

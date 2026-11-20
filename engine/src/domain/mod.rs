@@ -1,12 +1,14 @@
-pub mod embeds;
 pub mod auth;
 pub mod calculations;
 pub mod catalog;
 pub mod composition;
 pub mod datasets;
+pub mod embeds;
 pub mod guardrail;
 pub mod ingest;
 pub mod models;
+pub mod owner;
+pub mod render_jobs;
 pub mod reports;
 pub mod stats;
 pub mod themes;

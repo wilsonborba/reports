@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use super::{admin, public, server, viewer, embeds};
+use super::{admin, embeds, public, server, viewer};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -42,6 +42,22 @@ it stops with a clear message when the schema is missing or outdated.
 ## Languages
 
 `?lang=en|pt-BR|th`, else `Accept-Language`, else English.
+
+## Template-only rendering and limits
+
+App-controlled statistics (such as Certifications quiz stats and Cortex `/telemetry/stats`) render directly through `reports_view` (`VisualChooser.buildTemplate`) using a published immutable template version from `GET /templates` or `GET /projects/{project}/templates`, with **no** Reports dataset, report, or catalog row created per quiz, attempt, view, or user.
+
+### Example (Certifications score distribution)
+
+1. Discover template: `GET /apps/reports/v1/projects/certifications/templates?kind=chart&lang=en`
+2. Consumer backend authorizes the caller and computes the aggregate `DatasetPage` (`fields`, `rows`, `meta`).
+3. Client binds slots (`bucket -> [score_band]`, `attempts -> [attempt_count]`) and calls `VisualChooser.buildTemplate`, which validates slot counts and `accepted_types` before drawing and shows `ChartFrameState.error` if validation fails.
+
+### Limits
+
+- Published template versions are immutable (`409 Conflict` on overwrite).
+- Slot field counts must satisfy `min_count` (when `is_required`) and `max_count`, and field types must match `accepted_types`.
+- Card preview limits: `hbar` 10 rows, `table` 8 rows, `map` 8 list items; full table page size is 50 rows.
 "#
     ),
     paths(
@@ -49,6 +65,8 @@ it stops with a clear message when the schema is missing or outdated.
         server::ready,
         super::logs::stream,
         public::list_projects,
+        public::list_templates,
+        public::list_project_templates,
         public::project_detail,
         public::project_theme,
         public::list_reports,
@@ -58,6 +76,10 @@ it stops with a clear message when the schema is missing or outdated.
         public::showcase_card,
         embeds::descriptor,
         embeds::thumbnail,
+        embeds::viewer_descriptor,
+        embeds::capture_snapshot,
+        embeds::snapshot_meta,
+        embeds::snapshot_content,
         viewer::me,
         viewer::my_reports,
         viewer::report_view,
@@ -88,6 +110,10 @@ it stops with a clear message when the schema is missing or outdated.
         admin::post_grant,
         admin::list_grants,
         admin::delete_grant,
+        super::render_jobs::create,
+        super::render_jobs::get,
+        super::render_jobs::delete,
+        super::render_jobs::cleanup,
     ),
     components(schemas(
         crate::domain::models::ProjectSummary,
@@ -128,6 +154,19 @@ it stops with a clear message when the schema is missing or outdated.
         admin::RoleBody,
         admin::FixtureRemoval,
         admin::OperationsView,
+        crate::domain::embeds::ViewerEmbedDescriptor,
+        crate::domain::embeds::EmbedPlaceholder,
+        crate::domain::embeds::CardSnapshotMeta,
+        crate::domain::embeds::CardSnapshotContent,
+        crate::dal::TemplateSlot,
+        crate::dal::TemplateOption,
+        crate::dal::VisualTemplateVersion,
+        crate::dal::TemplateDiscoveryItem,
+        crate::dal::CardVisualBinding,
+        crate::domain::render_jobs::CreateRenderJobInput,
+        crate::domain::render_jobs::RenderJob,
+        crate::domain::render_jobs::CleanupOutcome,
+        crate::domain::render_jobs::DeleteRenderJobOutcome,
         crate::domain::datasets::service::LoadedCollection,
         admin::GrantBody,
         crate::dal::Grant,

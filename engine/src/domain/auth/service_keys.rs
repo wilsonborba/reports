@@ -72,9 +72,6 @@ mod tests {
         assert_eq!(ring.identify("k-cortex"), Some("cortex-producer"));
         assert_eq!(ring.identify("k-fixture"), None);
         assert_eq!(ring.identify(""), None, "an empty key never matches");
-        assert_eq!(
-            ring.names(),
-            vec!["service", "cortex-producer", "fixtures"]
-        );
+        assert_eq!(ring.names(), vec!["service", "cortex-producer", "fixtures"]);
     }
 }

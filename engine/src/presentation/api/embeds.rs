@@ -1,4 +1,8 @@
-use super::{identity::resolve_lang, server::AppState};
+use super::{
+    identity::{require_session, resolve_lang, Caller},
+    server::AppState,
+    viewer::private,
+};
 use crate::{core::error::ReportError, domain::embeds};
 use axum::{
     extract::{Path, Query, State},
@@ -60,4 +64,126 @@ pub async fn thumbnail(
         bytes,
     )
         .into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/projects/{project}/reports/{report}/cards/{dataset}/embed",
+    summary = "Viewer-aware live or placeholder embed descriptor of one chart or table",
+    responses(
+        (status = 200, description = "Live embed descriptor or restricted placeholder", body = embeds::ViewerEmbedDescriptor),
+        (status = 404, description = "Report or card not found")
+    ),
+    tag = "Reports"
+)]
+pub async fn viewer_descriptor(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset)): Path<(String, String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
+    let body = embeds::viewer_descriptor(
+        &state.datasets,
+        &project,
+        &report,
+        &dataset,
+        &query,
+        &lang,
+        &scope,
+    )
+    .await?;
+    if scope.is_authenticated() {
+        Ok(private(body))
+    } else {
+        Ok(([(header::CACHE_CONTROL, "no-store")], axum::Json(body)).into_response())
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/projects/{project}/reports/{report}/cards/{dataset}/snapshots",
+    summary = "Capture a fixed durable snapshot of one card",
+    responses(
+        (status = 201, description = "Snapshot captured", body = embeds::CardSnapshotMeta),
+        (status = 401, description = "No session"),
+        (status = 403, description = "Access limited"),
+        (status = 404, description = "Not found")
+    ),
+    tag = "Reports"
+)]
+pub async fn capture_snapshot(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset)): Path<(String, String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    require_session(&scope)?;
+    let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
+    let meta =
+        embeds::capture_snapshot(&state.datasets, &project, &report, &dataset, &lang, &scope)
+            .await?;
+    let mut response = private(meta);
+    *response.status_mut() = StatusCode::CREATED;
+    Ok(response)
+}
+
+#[utoipa::path(
+    get,
+    path = "/projects/{project}/reports/{report}/cards/{dataset}/snapshots/{snapshot}",
+    summary = "Read metadata of one captured snapshot under source permissions",
+    responses(
+        (status = 200, description = "Snapshot metadata", body = embeds::CardSnapshotMeta),
+        (status = 401, description = "No session"),
+        (status = 403, description = "Access limited"),
+        (status = 404, description = "Not found")
+    ),
+    tag = "Reports"
+)]
+pub async fn snapshot_meta(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset, snapshot)): Path<(String, String, String, String)>,
+) -> Result<Response, ReportError> {
+    let meta = embeds::get_snapshot_meta(
+        &state.datasets,
+        &project,
+        &report,
+        &dataset,
+        &snapshot,
+        &scope,
+    )
+    .await?;
+    Ok(private(meta))
+}
+
+#[utoipa::path(
+    get,
+    path = "/projects/{project}/reports/{report}/cards/{dataset}/snapshots/{snapshot}/content",
+    summary = "Read fixed content of one captured snapshot under source permissions",
+    responses(
+        (status = 200, description = "Snapshot content", body = embeds::CardSnapshotContent),
+        (status = 401, description = "No session"),
+        (status = 403, description = "Access limited"),
+        (status = 404, description = "Not found")
+    ),
+    tag = "Reports"
+)]
+pub async fn snapshot_content(
+    State(state): State<Arc<AppState>>,
+    Caller(scope): Caller,
+    Path((project, report, dataset, snapshot)): Path<(String, String, String, String)>,
+) -> Result<Response, ReportError> {
+    let content = embeds::get_snapshot_content(
+        &state.datasets,
+        &project,
+        &report,
+        &dataset,
+        &snapshot,
+        &scope,
+    )
+    .await?;
+    Ok(private(content))
 }

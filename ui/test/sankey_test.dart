@@ -2,12 +2,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reports_ui/layouts/report_layout.dart';
-import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/themes/theme_registry.dart';
 import 'package:reports_ui/widgets/charts/data_table_view.dart';
 import 'package:reports_ui/widgets/charts/sankey_chart.dart';
 import 'package:reports_ui/widgets/charts/sankey_layout.dart';
-import 'package:reports_ui/widgets/charts/series_colors.dart' show otherKey;
 import 'package:reports_ui/widgets/charts/visual_chooser.dart';
 import 'charts_test.dart' show f, page, pumpChart;
 

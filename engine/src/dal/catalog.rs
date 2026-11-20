@@ -6,7 +6,7 @@ use sqlx::any::AnyRow;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use super::sql::{flag_col, json_col, opt, opt_col, Db};
+use super::sql::{flag_col, opt, opt_col, Db};
 use crate::core::error::ReportError;
 use crate::domain::datasets::spec::{DataTier, DatasetSpec, I18nText};
 use crate::domain::themes::ProjectTheme;
@@ -67,6 +67,18 @@ pub struct ReportMetadata {
     pub card_order: Vec<String>,
 }
 
+fn default_source_app() -> String {
+    "reports".to_string()
+}
+
+fn default_control_authority() -> String {
+    "user_owned".to_string()
+}
+
+fn default_audience() -> String {
+    "personal".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub struct ReportRecord {
     pub project: String,
@@ -84,6 +96,14 @@ pub struct ReportRecord {
     pub discoverable: bool,
     #[serde(default)]
     pub updated_at: String,
+    #[serde(default = "default_source_app")]
+    pub source_app: String,
+    #[serde(default)]
+    pub owner_id: String,
+    #[serde(default = "default_control_authority")]
+    pub control_authority: String,
+    #[serde(default = "default_audience")]
+    pub audience: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,11 +116,19 @@ pub struct DatasetRecord {
     /// Published calculation version that the card shows.
     pub calculation_id: String,
     pub calculation_version: i64,
-    /// Definition of that calculation version (read through a join; not stored on the dataset).
+    /// Definition assembled from that calculation version component rows.
     pub spec: DatasetSpec,
     pub visibility: String,
     /// A gated dataset that guests may see as a skeleton (no data).
     pub discoverable: bool,
+    #[serde(default = "default_source_app")]
+    pub source_app: String,
+    #[serde(default)]
+    pub owner_id: String,
+    #[serde(default = "default_control_authority")]
+    pub control_authority: String,
+    #[serde(default = "default_audience")]
+    pub audience: String,
 }
 
 fn tier_from(text: &str) -> DataTier {
@@ -119,21 +147,13 @@ pub fn tier_text(t: DataTier) -> &'static str {
     }
 }
 
-fn to_json<T: Serialize>(v: &T) -> Result<String, ReportError> {
-    serde_json::to_string(v).map_err(|e| ReportError::Internal(e.to_string()))
-}
-
 // --- projects ---------------------------------------------------------------
 
 fn project_select(db: &Db) -> String {
     format!(
-        "SELECT slug, {} AS name, {} AS tagline, {} AS description, {} AS theme, {} AS is_active, \
+        "SELECT slug, {} AS is_active, \
          {} AS website_url, {} AS repository_url, CAST(sort_order AS BIGINT) AS sort_order, \
          {} AS domain_project_id, {} AS updated_at FROM catalog_projects",
-        db.text("name"),
-        db.text("tagline"),
-        db.text("description"),
-        db.text("theme"),
         db.flag("is_active"),
         db.opt_text("website_url"),
         db.opt_text("repository_url"),
@@ -142,13 +162,26 @@ fn project_select(db: &Db) -> String {
     )
 }
 
-fn project_from(row: &AnyRow) -> Result<ProjectRecord, ReportError> {
+async fn project_from(db: &Db, row: &AnyRow) -> Result<ProjectRecord, ReportError> {
     Ok(ProjectRecord {
         slug: row.try_get("slug")?,
-        name: json_col(row, "name")?,
-        tagline: json_col(row, "tagline")?,
-        description: json_col(row, "description")?,
-        theme: json_col(row, "theme")?,
+        name: super::catalog_storage::texts(db, &row.try_get::<String, _>("slug")?, None, "name")
+            .await?,
+        tagline: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("slug")?,
+            None,
+            "tagline",
+        )
+        .await?,
+        description: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("slug")?,
+            None,
+            "description",
+        )
+        .await?,
+        theme: super::catalog_storage::theme(db, &row.try_get::<String, _>("slug")?).await?,
         is_active: flag_col(row, "is_active")?,
         website_url: opt_col(row, "website_url")?,
         repository_url: opt_col(row, "repository_url")?,
@@ -166,13 +199,23 @@ pub async fn list_projects(db: &Db, active_only: bool) -> Result<Vec<ProjectReco
     }
     sql.push_str(" ORDER BY sort_order, slug");
     let rows = sqlx::query(&sql).fetch_all(&db.pool).await?;
-    rows.iter().map(project_from).collect()
+    let mut out = Vec::new();
+    for r in &rows {
+        out.push(project_from(db, r).await?);
+    }
+    Ok(out)
 }
 
 pub async fn get_project(db: &Db, slug: &str) -> Result<Option<ProjectRecord>, ReportError> {
     let sql = format!("{} WHERE slug = $1", project_select(db));
-    let row = sqlx::query(&sql).bind(slug).fetch_optional(&db.pool).await?;
-    row.as_ref().map(project_from).transpose()
+    let row = sqlx::query(&sql)
+        .bind(slug)
+        .fetch_optional(&db.pool)
+        .await?;
+    match row {
+        Some(r) => Ok(Some(project_from(db, &r).await?)),
+        None => Ok(None),
+    }
 }
 
 /// Active project or 404.
@@ -184,109 +227,191 @@ pub async fn active_project(db: &Db, slug: &str) -> Result<ProjectRecord, Report
 }
 
 pub async fn upsert_project(db: &Db, p: &ProjectRecord) -> Result<(), ReportError> {
-    let sql = format!(
-        "INSERT INTO catalog_projects (slug, name, tagline, description, theme, is_active, website_url, \
-         repository_url, sort_order, domain_project_id, updated_at) \
-         VALUES ($1, {}, {}, {}, {}, $6, {}, {}, $9, {}, {now}) \
-         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, tagline = EXCLUDED.tagline, \
-         description = EXCLUDED.description, theme = EXCLUDED.theme, is_active = EXCLUDED.is_active, \
-         website_url = EXCLUDED.website_url, repository_url = EXCLUDED.repository_url, \
-         sort_order = EXCLUDED.sort_order, domain_project_id = EXCLUDED.domain_project_id, updated_at = {now}",
-        db.json_in(2),
-        db.json_in(3),
-        db.json_in(4),
-        db.json_in(5),
-        db.opt_in(7),
-        db.opt_in(8),
-        db.opt_uuid_in(10),
-        now = db.now(),
-    );
+    let mut tx = db.pool.begin().await?;
+    let sql=format!("INSERT INTO catalog_projects(slug,is_active,website_url,repository_url,sort_order,domain_project_id,updated_at) VALUES($1,$2,{}, {},$5,{}, {}) ON CONFLICT(slug) DO UPDATE SET is_active=EXCLUDED.is_active,website_url=EXCLUDED.website_url,repository_url=EXCLUDED.repository_url,sort_order=EXCLUDED.sort_order,domain_project_id=EXCLUDED.domain_project_id,updated_at=EXCLUDED.updated_at",db.opt_in(3),db.opt_in(4),db.opt_uuid_in(6),db.now());
     let result = sqlx::query(&sql)
         .bind(&p.slug)
-        .bind(to_json(&p.name)?)
-        .bind(to_json(&p.tagline)?)
-        .bind(to_json(&p.description)?)
-        .bind(to_json(&p.theme)?)
         .bind(p.is_active)
         .bind(opt(&p.website_url))
         .bind(opt(&p.repository_url))
         .bind(p.sort_order)
         .bind(opt(&p.domain_project_id))
-        .execute(&db.pool)
+        .execute(&mut *tx)
         .await;
     match result {
-        Ok(_) => Ok(()),
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(ReportError::Conflict(format!(
-            "Domain project {} is already linked to another Reports project",
-            p.domain_project_id.as_deref().unwrap_or("?")
-        ))),
-        Err(e) => Err(e.into()),
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            return Err(ReportError::Conflict(
+                "Domain project is already linked to another Reports project".into(),
+            ))
+        }
+        Err(e) => return Err(e.into()),
+        Ok(_) => {}
     }
+    for (kind, text) in [
+        ("name", &p.name),
+        ("tagline", &p.tagline),
+        ("description", &p.description),
+    ] {
+        super::catalog_storage::write_texts(&mut tx, &p.slug, None, kind, text).await?;
+    }
+    super::catalog_storage::write_theme(&mut tx, &p.slug, &p.theme).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 // --- reports ----------------------------------------------------------------
 
 fn report_select(db: &Db) -> String {
     format!(
-        "SELECT project_slug, slug, {} AS title, {} AS description, {} AS metadata, visibility, {} AS discoverable, {} AS updated_at FROM reports",
-        db.text("title"),
-        db.text("description"),
-        db.text("metadata"),
+        "SELECT project_slug, slug, CAST(sort_order AS BIGINT) AS sort_order, {} AS period_collection, {} AS period_field, visibility, {} AS discoverable, {} AS updated_at, source_app, owner_id, control_authority, audience FROM reports",
+        db.opt_text("period_collection"),
+        db.opt_text("period_field"),
         db.flag("discoverable"),
         db.text("updated_at"),
     )
 }
 
-fn report_from(row: &AnyRow) -> Result<ReportRecord, ReportError> {
+async fn report_from(db: &Db, row: &AnyRow) -> Result<ReportRecord, ReportError> {
     Ok(ReportRecord {
         project: row.try_get("project_slug")?,
         slug: row.try_get("slug")?,
-        title: json_col(row, "title")?,
-        description: json_col(row, "description")?,
-        metadata: json_col(row, "metadata")?,
+        title: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            Some(&row.try_get::<String, _>("slug")?),
+            "title",
+        )
+        .await?,
+        description: super::catalog_storage::texts(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            Some(&row.try_get::<String, _>("slug")?),
+            "description",
+        )
+        .await?,
+        metadata: super::catalog_storage::metadata(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            &row.try_get::<String, _>("slug")?,
+            row.try_get("sort_order")?,
+            opt_col(row, "period_collection")?,
+            opt_col(row, "period_field")?,
+        )
+        .await?,
         visibility: row.try_get("visibility")?,
         discoverable: flag_col(row, "discoverable")?,
         updated_at: row.try_get("updated_at")?,
+        source_app: row.try_get("source_app")?,
+        owner_id: row.try_get("owner_id")?,
+        control_authority: row.try_get("control_authority")?,
+        audience: row.try_get("audience")?,
     })
 }
 
 /// Reports of a project ordered by sort order, then slug.
 pub async fn list_reports(db: &Db, project: &str) -> Result<Vec<ReportRecord>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 ORDER BY slug", report_select(db));
+    let sql = format!(
+        "{} WHERE project_slug = $1 ORDER BY slug",
+        report_select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
-    let mut out = rows.iter().map(report_from).collect::<Result<Vec<_>, _>>()?;
-    out.sort_by(|a, b| a.metadata.sort_order.cmp(&b.metadata.sort_order).then(a.slug.cmp(&b.slug)));
+    let mut out = Vec::new();
+    for row in &rows {
+        out.push(report_from(db, row).await?);
+    }
+    out.sort_by(|a, b| {
+        a.metadata
+            .sort_order
+            .cmp(&b.metadata.sort_order)
+            .then(a.slug.cmp(&b.slug))
+    });
     Ok(out)
 }
 
-pub async fn get_report(db: &Db, project: &str, slug: &str) -> Result<Option<ReportRecord>, ReportError> {
-    let sql = format!("{} WHERE project_slug = $1 AND slug = $2", report_select(db));
-    let row = sqlx::query(&sql).bind(project).bind(slug).fetch_optional(&db.pool).await?;
-    row.as_ref().map(report_from).transpose()
+pub async fn get_report(
+    db: &Db,
+    project: &str,
+    slug: &str,
+) -> Result<Option<ReportRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE project_slug = $1 AND slug = $2",
+        report_select(db)
+    );
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(slug)
+        .fetch_optional(&db.pool)
+        .await?;
+    match row {
+        Some(r) => Ok(Some(report_from(db, &r).await?)),
+        None => Ok(None),
+    }
 }
 
 pub async fn upsert_report(db: &Db, r: &ReportRecord) -> Result<(), ReportError> {
+    let mut tx = db.pool.begin().await?;
+    let source_app = if r.source_app.is_empty() {
+        "reports"
+    } else {
+        r.source_app.as_str()
+    };
+    let authority = if r.control_authority.is_empty() {
+        "user_owned"
+    } else {
+        r.control_authority.as_str()
+    };
+    let audience = if r.audience.is_empty() {
+        crate::domain::auth::Audience::from_visibility(crate::domain::auth::Visibility::parse(
+            &r.visibility,
+        ))
+        .as_str()
+    } else {
+        r.audience.as_str()
+    };
     let sql = format!(
-        "INSERT INTO reports (project_slug, slug, title, description, metadata, visibility, discoverable, updated_at) \
-         VALUES ($1, $2, {}, {}, {}, $6, $7, {now}) \
-         ON CONFLICT (project_slug, slug) DO UPDATE SET title = EXCLUDED.title, \
-         description = EXCLUDED.description, metadata = EXCLUDED.metadata, \
-         visibility = EXCLUDED.visibility, discoverable = EXCLUDED.discoverable, updated_at = {now}",
-        db.json_in(3),
-        db.json_in(4),
-        db.json_in(5),
-        now = db.now(),
+        "INSERT INTO reports(project_slug,slug,visibility,discoverable,sort_order,period_collection,period_field,source_app,owner_id,control_authority,audience,updated_at) VALUES($1,$2,$3,$4,$5,{}, {},$8,$9,$10,$11,{}) ON CONFLICT(project_slug,slug) DO UPDATE SET visibility=EXCLUDED.visibility,discoverable=EXCLUDED.discoverable,sort_order=EXCLUDED.sort_order,period_collection=EXCLUDED.period_collection,period_field=EXCLUDED.period_field,source_app=EXCLUDED.source_app,owner_id=EXCLUDED.owner_id,control_authority=EXCLUDED.control_authority,audience=EXCLUDED.audience,updated_at=EXCLUDED.updated_at",
+        db.opt_in(6),
+        db.opt_in(7),
+        db.now()
     );
     sqlx::query(&sql)
         .bind(&r.project)
         .bind(&r.slug)
-        .bind(to_json(&r.title)?)
-        .bind(to_json(&r.description)?)
-        .bind(to_json(&r.metadata)?)
         .bind(&r.visibility)
         .bind(r.discoverable)
-        .execute(&db.pool)
+        .bind(r.metadata.sort_order)
+        .bind(
+            r.metadata
+                .period_source
+                .as_ref()
+                .map(|p| p.collection.as_str())
+                .unwrap_or(""),
+        )
+        .bind(
+            r.metadata
+                .period_source
+                .as_ref()
+                .map(|p| p.field.as_str())
+                .unwrap_or(""),
+        )
+        .bind(source_app)
+        .bind(&r.owner_id)
+        .bind(authority)
+        .bind(audience)
+        .execute(&mut *tx)
         .await?;
+    super::catalog_storage::write_texts(&mut tx, &r.project, Some(&r.slug), "title", &r.title)
+        .await?;
+    super::catalog_storage::write_texts(
+        &mut tx,
+        &r.project,
+        Some(&r.slug),
+        "description",
+        &r.description,
+    )
+    .await?;
+    super::catalog_storage::write_items(&mut tx, &r.project, &r.slug, &r.metadata).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -307,15 +432,14 @@ fn dataset_select(db: &Db) -> String {
         "SELECT d.project_slug AS project_slug, d.report_slug AS report_slug, d.dataset_id AS dataset_id, \
          d.data_tier AS data_tier, d.visibility AS visibility, {} AS discoverable, \
          {} AS calculation_id, CAST(COALESCE(d.calculation_version, 0) AS BIGINT) AS calculation_version, \
-         COALESCE(CAST(c.definition AS TEXT), '') AS spec \
-         FROM datasets d LEFT JOIN calculation_versions c ON c.project_slug = d.project_slug \
-         AND c.calculation_id = d.calculation_id AND c.version = d.calculation_version",
+         d.source_app AS source_app, d.owner_id AS owner_id, d.control_authority AS control_authority, d.audience AS audience, \
+         1 AS unused FROM datasets d",
         db.flag("d.discoverable"),
         db.opt_text("d.calculation_id"),
     )
 }
 
-fn dataset_from(row: &AnyRow) -> Result<DatasetRecord, ReportError> {
+async fn dataset_from(db: &Db, row: &AnyRow) -> Result<DatasetRecord, ReportError> {
     Ok(DatasetRecord {
         project: row.try_get("project_slug")?,
         report_slug: row.try_get("report_slug")?,
@@ -323,44 +447,108 @@ fn dataset_from(row: &AnyRow) -> Result<DatasetRecord, ReportError> {
         data_tier: tier_from(&row.try_get::<String, _>("data_tier")?),
         calculation_id: row.try_get("calculation_id")?,
         calculation_version: row.try_get("calculation_version")?,
-        spec: json_col(row, "spec")?,
+        spec: super::calculations::load_definition(
+            db,
+            &row.try_get::<String, _>("project_slug")?,
+            &row.try_get::<String, _>("calculation_id")?,
+            row.try_get("calculation_version")?,
+        )
+        .await?,
         visibility: row.try_get("visibility")?,
         discoverable: flag_col(row, "discoverable")?,
+        source_app: row.try_get("source_app")?,
+        owner_id: row.try_get("owner_id")?,
+        control_authority: row.try_get("control_authority")?,
+        audience: row.try_get("audience")?,
     })
 }
 
-pub async fn list_datasets(db: &Db, project: &str, report: &str) -> Result<Vec<DatasetRecord>, ReportError> {
+pub async fn list_datasets(
+    db: &Db,
+    project: &str,
+    report: &str,
+) -> Result<Vec<DatasetRecord>, ReportError> {
     let sql = format!(
         "{} WHERE d.project_slug = $1 AND d.report_slug = $2 ORDER BY d.dataset_id",
         dataset_select(db)
     );
-    let rows = sqlx::query(&sql).bind(project).bind(report).fetch_all(&db.pool).await?;
-    rows.iter().map(dataset_from).collect()
+    let rows = sqlx::query(&sql)
+        .bind(project)
+        .bind(report)
+        .fetch_all(&db.pool)
+        .await?;
+    let mut out = Vec::new();
+    for r in &rows {
+        out.push(dataset_from(db, r).await?);
+    }
+    Ok(out)
 }
 
 /// Every dataset of a project (statistics and cache dependencies).
-pub async fn list_project_datasets(db: &Db, project: &str) -> Result<Vec<DatasetRecord>, ReportError> {
-    let sql = format!("{} WHERE d.project_slug = $1 ORDER BY d.report_slug, d.dataset_id", dataset_select(db));
+pub async fn list_project_datasets(
+    db: &Db,
+    project: &str,
+) -> Result<Vec<DatasetRecord>, ReportError> {
+    let sql = format!(
+        "{} WHERE d.project_slug = $1 ORDER BY d.report_slug, d.dataset_id",
+        dataset_select(db)
+    );
     let rows = sqlx::query(&sql).bind(project).fetch_all(&db.pool).await?;
-    rows.iter().map(dataset_from).collect()
+    let mut out = Vec::new();
+    for r in &rows {
+        out.push(dataset_from(db, r).await?);
+    }
+    Ok(out)
 }
 
-pub async fn get_dataset(db: &Db, project: &str, report: &str, id: &str) -> Result<Option<DatasetRecord>, ReportError> {
+pub async fn get_dataset(
+    db: &Db,
+    project: &str,
+    report: &str,
+    id: &str,
+) -> Result<Option<DatasetRecord>, ReportError> {
     let sql = format!(
         "{} WHERE d.project_slug = $1 AND d.report_slug = $2 AND d.dataset_id = $3",
         dataset_select(db)
     );
-    let row = sqlx::query(&sql).bind(project).bind(report).bind(id).fetch_optional(&db.pool).await?;
-    row.as_ref().map(dataset_from).transpose()
+    let row = sqlx::query(&sql)
+        .bind(project)
+        .bind(report)
+        .bind(id)
+        .fetch_optional(&db.pool)
+        .await?;
+    match row {
+        Some(r) => Ok(Some(dataset_from(db, &r).await?)),
+        None => Ok(None),
+    }
 }
 
 pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportError> {
-    let sql = "INSERT INTO datasets (project_slug, report_slug, dataset_id, data_tier, calculation_id, calculation_version, visibility, discoverable) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+    let source_app = if d.source_app.is_empty() {
+        "reports"
+    } else {
+        d.source_app.as_str()
+    };
+    let authority = if d.control_authority.is_empty() {
+        "user_owned"
+    } else {
+        d.control_authority.as_str()
+    };
+    let audience = if d.audience.is_empty() {
+        crate::domain::auth::Audience::from_visibility(crate::domain::auth::Visibility::parse(
+            &d.visibility,
+        ))
+        .as_str()
+    } else {
+        d.audience.as_str()
+    };
+    let sql = "INSERT INTO datasets (project_slug, report_slug, dataset_id, data_tier, calculation_id, calculation_version, visibility, discoverable, source_app, owner_id, control_authority, audience) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
          ON CONFLICT (project_slug, report_slug, dataset_id) DO UPDATE SET \
          data_tier = EXCLUDED.data_tier, calculation_id = EXCLUDED.calculation_id, \
          calculation_version = EXCLUDED.calculation_version, visibility = EXCLUDED.visibility, \
-         discoverable = EXCLUDED.discoverable";
+         discoverable = EXCLUDED.discoverable, source_app = EXCLUDED.source_app, \
+         owner_id = EXCLUDED.owner_id, control_authority = EXCLUDED.control_authority, audience = EXCLUDED.audience";
     sqlx::query(sql)
         .bind(&d.project)
         .bind(&d.report_slug)
@@ -370,31 +558,50 @@ pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportErro
         .bind(d.calculation_version)
         .bind(&d.visibility)
         .bind(d.discoverable)
+        .bind(source_app)
+        .bind(&d.owner_id)
+        .bind(authority)
+        .bind(audience)
         .execute(&db.pool)
         .await?;
     Ok(())
 }
 
-pub async fn delete_dataset(db: &Db, project: &str, report: &str, id: &str) -> Result<bool, ReportError> {
-    let done = sqlx::query("DELETE FROM datasets WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3")
-        .bind(project)
-        .bind(report)
-        .bind(id)
-        .execute(&db.pool)
-        .await?;
+pub async fn delete_dataset(
+    db: &Db,
+    project: &str,
+    report: &str,
+    id: &str,
+) -> Result<bool, ReportError> {
+    let done = sqlx::query(
+        "DELETE FROM datasets WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(id)
+    .execute(&db.pool)
+    .await?;
     Ok(done.rows_affected() > 0)
 }
 
 // --- roles ------------------------------------------------------------------
 
 /// True when `user_project_roles` marks the user as admin of the project.
-pub async fn is_project_admin(db: &Db, user_uuid: &str, project: &str) -> Result<bool, ReportError> {
+pub async fn is_project_admin(
+    db: &Db,
+    user_uuid: &str,
+    project: &str,
+) -> Result<bool, ReportError> {
     let sql = format!(
         "SELECT {} AS is_admin FROM user_project_roles WHERE {} = $1 AND app_name = $2",
         db.flag("is_project_admin"),
         db.text("user_uuid"),
     );
-    let row = sqlx::query(&sql).bind(user_uuid).bind(project).fetch_optional(&db.pool).await?;
+    let row = sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .fetch_optional(&db.pool)
+        .await?;
     match row {
         Some(r) => flag_col(&r, "is_admin"),
         None => Ok(false),
@@ -407,9 +614,15 @@ pub async fn admin_projects(db: &Db, user_uuid: &str) -> Result<Vec<String>, Rep
         "SELECT app_name FROM user_project_roles WHERE {} = $1 AND is_project_admin = TRUE ORDER BY app_name",
         db.text("user_uuid"),
     );
-    let rows = sqlx::query(&sql).bind(user_uuid).fetch_all(&db.pool).await?;
+    let rows = sqlx::query(&sql)
+        .bind(user_uuid)
+        .fetch_all(&db.pool)
+        .await?;
     rows.iter()
-        .map(|r| r.try_get::<String, _>("app_name").map_err(ReportError::from))
+        .map(|r| {
+            r.try_get::<String, _>("app_name")
+                .map_err(ReportError::from)
+        })
         .collect()
 }
 
@@ -422,25 +635,247 @@ pub struct ProjectRole {
 
 /// Stores the theme tokens of a project.
 pub async fn set_theme(db: &Db, slug: &str, theme: &ProjectTheme) -> Result<bool, ReportError> {
-    let sql = format!("UPDATE catalog_projects SET theme = {}, updated_at = {} WHERE slug = $2", db.json_in(1), db.now());
-    let done = sqlx::query(&sql).bind(to_json(theme)?).bind(slug).execute(&db.pool).await?;
+    let mut tx = db.pool.begin().await?;
+    let sql = format!(
+        "UPDATE catalog_projects SET updated_at={} WHERE slug=$1",
+        db.now()
+    );
+    let done = sqlx::query(&sql).bind(slug).execute(&mut *tx).await?;
+    if done.rows_affected() > 0 {
+        super::catalog_storage::write_theme(&mut tx, slug, theme).await?;
+    }
+    tx.commit().await?;
     Ok(done.rows_affected() > 0)
 }
 
 /// Sets or clears the project admin role of a user.
-pub async fn set_project_admin(db: &Db, user_uuid: &str, project: &str, is_admin: bool) -> Result<(), ReportError> {
+pub async fn set_project_admin(
+    db: &Db,
+    user_uuid: &str,
+    project: &str,
+    is_admin: bool,
+) -> Result<(), ReportError> {
     let sql = format!(
         "INSERT INTO user_project_roles (user_uuid, app_name, is_project_admin) VALUES ({}, $2, $3) \
          ON CONFLICT (user_uuid, app_name) DO UPDATE SET is_project_admin = EXCLUDED.is_project_admin",
         db.uuid_in(1)
     );
-    sqlx::query(&sql).bind(user_uuid).bind(project).bind(is_admin).execute(&db.pool).await?;
+    sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .bind(is_admin)
+        .execute(&db.pool)
+        .await?;
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct DatasetMeta {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub period_start: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub period_end: String,
+    pub timezone: String,
+    pub freshness_mode: String,
+    pub expected_refresh_minutes: i64,
+    pub updated_at: i64,
+    pub tier: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+pub struct FieldSemantics {
+    pub field_name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub denominator_field: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub denominator_text: String,
+    pub missing_means: String,
+}
+
+pub async fn upsert_dataset_meta(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    meta: &DatasetMeta,
+) -> Result<(), ReportError> {
+    if !matches!(meta.freshness_mode.as_str(), "live" | "snapshot") {
+        return Err(ReportError::BadRequest(
+            "invalid_freshness_mode: freshness_mode must be live or snapshot".into(),
+        ));
+    }
+    if meta.expected_refresh_minutes < 0 {
+        return Err(ReportError::BadRequest(
+            "invalid_refresh: expected_refresh_minutes must be >= 0".into(),
+        ));
+    }
+    let tz = meta.timezone.trim();
+    if tz.is_empty() || (tz != "UTC" && !tz.contains('/')) {
+        return Err(ReportError::BadRequest(
+            "invalid_timezone: bucket_timezone must be UTC or an IANA timezone like Asia/Bangkok"
+                .into(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO dataset_meta(
+            project_slug, report_slug, dataset_id, source_label, source_url,
+            period_start, period_end, bucket_timezone, freshness_mode, expected_refresh_minutes, updated_at
+         ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT(project_slug, report_slug, dataset_id) DO UPDATE SET
+            source_label = EXCLUDED.source_label,
+            source_url = EXCLUDED.source_url,
+            period_start = EXCLUDED.period_start,
+            period_end = EXCLUDED.period_end,
+            bucket_timezone = EXCLUDED.bucket_timezone,
+            freshness_mode = EXCLUDED.freshness_mode,
+            expected_refresh_minutes = EXCLUDED.expected_refresh_minutes,
+            updated_at = EXCLUDED.updated_at",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .bind(meta.source.trim())
+    .bind(meta.source_url.trim())
+    .bind(meta.period_start.trim())
+    .bind(meta.period_end.trim())
+    .bind(tz)
+    .bind(&meta.freshness_mode)
+    .bind(meta.expected_refresh_minutes)
+    .bind(meta.updated_at)
+    .execute(&db.pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_dataset_meta(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    tier: DataTier,
+) -> Result<DatasetMeta, ReportError> {
+    let row = sqlx::query(
+        "SELECT source_label, source_url, period_start, period_end, bucket_timezone,
+                freshness_mode, CAST(expected_refresh_minutes AS BIGINT) AS expected_refresh_minutes, updated_at
+         FROM dataset_meta
+         WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_optional(&db.pool)
+    .await?;
+    match row {
+        Some(r) => Ok(DatasetMeta {
+            source: r.try_get("source_label")?,
+            source_url: r.try_get("source_url")?,
+            period_start: r.try_get("period_start")?,
+            period_end: r.try_get("period_end")?,
+            timezone: r.try_get("bucket_timezone")?,
+            freshness_mode: r.try_get("freshness_mode")?,
+            expected_refresh_minutes: r.try_get("expected_refresh_minutes")?,
+            updated_at: r.try_get("updated_at")?,
+            tier: tier_text(tier).to_string(),
+        }),
+        None => Ok(DatasetMeta {
+            source: String::new(),
+            source_url: String::new(),
+            period_start: String::new(),
+            period_end: String::new(),
+            timezone: "UTC".to_string(),
+            freshness_mode: "live".to_string(),
+            expected_refresh_minutes: 60,
+            updated_at: 0,
+            tier: tier_text(tier).to_string(),
+        }),
+    }
+}
+
+pub async fn upsert_field_semantics(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    items: &[FieldSemantics],
+) -> Result<(), ReportError> {
+    for item in items {
+        if item.field_name.trim().is_empty() {
+            return Err(ReportError::BadRequest(
+                "invalid_field_name: field_name must be non-empty".into(),
+            ));
+        }
+        if !matches!(item.missing_means.as_str(), "no_data" | "zero") {
+            return Err(ReportError::BadRequest(
+                "invalid_missing_means: missing_means must be no_data or zero".into(),
+            ));
+        }
+        sqlx::query(
+            "INSERT INTO dataset_field_semantics(
+                project_slug, report_slug, dataset_id, field_name, denominator_field, denominator_text, missing_means
+             ) VALUES($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT(project_slug, report_slug, dataset_id, field_name) DO UPDATE SET
+                denominator_field = EXCLUDED.denominator_field,
+                denominator_text = EXCLUDED.denominator_text,
+                missing_means = EXCLUDED.missing_means",
+        )
+        .bind(project)
+        .bind(report)
+        .bind(dataset)
+        .bind(item.field_name.trim())
+        .bind(item.denominator_field.trim())
+        .bind(item.denominator_text.trim())
+        .bind(&item.missing_means)
+        .execute(&db.pool)
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn list_field_semantics(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+) -> Result<std::collections::HashMap<String, FieldSemantics>, ReportError> {
+    let rows = sqlx::query(
+        "SELECT field_name, denominator_field, denominator_text, missing_means
+         FROM dataset_field_semantics
+         WHERE project_slug = $1 AND report_slug = $2 AND dataset_id = $3",
+    )
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_all(&db.pool)
+    .await?;
+    let mut map = std::collections::HashMap::new();
+    for r in rows {
+        let name: String = r.try_get("field_name")?;
+        map.insert(
+            name.clone(),
+            FieldSemantics {
+                field_name: name,
+                denominator_field: r.try_get("denominator_field")?,
+                denominator_text: r.try_get("denominator_text")?,
+                missing_means: r.try_get("missing_means")?,
+            },
+        );
+    }
+    Ok(map)
+}
+
 pub async fn delete_role(db: &Db, user_uuid: &str, project: &str) -> Result<bool, ReportError> {
-    let sql = format!("DELETE FROM user_project_roles WHERE {} = $1 AND app_name = $2", db.text("user_uuid"));
-    let done = sqlx::query(&sql).bind(user_uuid).bind(project).execute(&db.pool).await?;
+    let sql = format!(
+        "DELETE FROM user_project_roles WHERE {} = $1 AND app_name = $2",
+        db.text("user_uuid")
+    );
+    let done = sqlx::query(&sql)
+        .bind(user_uuid)
+        .bind(project)
+        .execute(&db.pool)
+        .await?;
     Ok(done.rows_affected() > 0)
 }
 
@@ -458,6 +893,89 @@ pub async fn list_roles(db: &Db, project: &str) -> Result<Vec<ProjectRole>, Repo
                 project: r.try_get("app_name")?,
                 is_project_admin: flag_col(r, "is_admin")?,
             })
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardSnapshotRow {
+    pub id: String,
+    pub project_slug: String,
+    pub report_slug: String,
+    pub dataset_id: String,
+    pub captured_by: String,
+    pub captured_at: String,
+    pub couch_doc_id: String,
+    pub total_rows: i64,
+}
+
+pub async fn insert_card_snapshot(db: &Db, s: &CardSnapshotRow) -> Result<(), ReportError> {
+    sqlx::query(
+        "INSERT INTO card_snapshots(id, project_slug, report_slug, dataset_id, captured_by, captured_at, couch_doc_id, total_rows)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(&s.id)
+    .bind(&s.project_slug)
+    .bind(&s.report_slug)
+    .bind(&s.dataset_id)
+    .bind(&s.captured_by)
+    .bind(&s.captured_at)
+    .bind(&s.couch_doc_id)
+    .bind(s.total_rows)
+    .execute(&db.pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_card_snapshot(
+    db: &Db,
+    project: &str,
+    report: &str,
+    dataset: &str,
+    id: &str,
+) -> Result<Option<CardSnapshotRow>, ReportError> {
+    let row = sqlx::query(
+        "SELECT id, project_slug, report_slug, dataset_id, captured_by, captured_at, couch_doc_id, CAST(total_rows AS BIGINT) AS total_rows
+         FROM card_snapshots
+         WHERE id = $1 AND project_slug = $2 AND report_slug = $3 AND dataset_id = $4",
+    )
+    .bind(id)
+    .bind(project)
+    .bind(report)
+    .bind(dataset)
+    .fetch_optional(&db.pool)
+    .await?;
+    row.map(|r| {
+        Ok(CardSnapshotRow {
+            id: r.try_get("id")?,
+            project_slug: r.try_get("project_slug")?,
+            report_slug: r.try_get("report_slug")?,
+            dataset_id: r.try_get("dataset_id")?,
+            captured_by: r.try_get("captured_by")?,
+            captured_at: r.try_get("captured_at")?,
+            couch_doc_id: r.try_get("couch_doc_id")?,
+            total_rows: r.try_get("total_rows")?,
+        })
+    })
+    .transpose()
+}
+
+pub async fn report_chart_types(
+    db: &Db,
+    project: &str,
+    report: &str,
+) -> Result<Vec<String>, ReportError> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT template_id FROM user_chart_items WHERE project_slug = $1 AND report_slug = $2 ORDER BY template_id",
+    )
+    .bind(project)
+    .bind(report)
+    .fetch_all(&db.pool)
+    .await?;
+    rows.iter()
+        .map(|r| {
+            r.try_get::<String, _>("template_id")
+                .map_err(ReportError::from)
         })
         .collect()
 }

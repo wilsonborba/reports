@@ -26,9 +26,10 @@ pub const MAX_ROW_LIMIT: usize = 5000;
 /// Session responses must never be stored by a shared cache.
 pub fn private<T: Serialize>(body: T) -> Response {
     let mut response = Json(body).into_response();
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
     response
 }
 
@@ -78,7 +79,15 @@ pub async fn my_reports(
 ) -> Result<Response, ReportError> {
     require_session(&scope)?;
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), q.tier, &scope).await?;
+    let items = reports::report_summaries(
+        &state.datasets,
+        &project,
+        &lang,
+        q.q.as_deref(),
+        q.tier,
+        &scope,
+    )
+    .await?;
     Ok(private(paginate(items, q.page, q.page_size, &lang)))
 }
 
@@ -104,7 +113,9 @@ pub async fn report_view(
     headers: HeaderMap,
 ) -> Result<Response, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(private(reports::report_view(&state.datasets, &project, &report, &lang, q.tier, &scope).await?))
+    Ok(private(
+        reports::report_view(&state.datasets, &project, &report, &lang, q.tier, &scope).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -137,7 +148,18 @@ pub async fn dataset_page(
     let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
     let (offset, limit) = paging(&query)?;
     let filters = FilterParam::parse_query(&query);
-    let page = reports::dataset_page(&state.datasets, &project, &report, &dataset, &filters, &lang, offset, limit, &scope).await?;
+    let page = reports::dataset_page(
+        &state.datasets,
+        &project,
+        &report,
+        &dataset,
+        &filters,
+        &lang,
+        offset,
+        limit,
+        &scope,
+    )
+    .await?;
     Ok(private(page))
 }
 
@@ -145,9 +167,14 @@ pub fn paging(query: &HashMap<String, String>) -> Result<(usize, usize), ReportE
     let parse = |k: &str| -> Result<Option<usize>, ReportError> {
         query
             .get(k)
-            .map(|v| v.parse::<usize>().map_err(|_| ReportError::BadRequest(format!("'{k}' must be a number"))))
+            .map(|v| {
+                v.parse::<usize>()
+                    .map_err(|_| ReportError::BadRequest(format!("'{k}' must be a number")))
+            })
             .transpose()
     };
-    let limit = parse("limit")?.unwrap_or(DEFAULT_ROW_LIMIT).clamp(1, MAX_ROW_LIMIT);
+    let limit = parse("limit")?
+        .unwrap_or(DEFAULT_ROW_LIMIT)
+        .clamp(1, MAX_ROW_LIMIT);
     Ok((parse("offset")?.unwrap_or(0), limit))
 }

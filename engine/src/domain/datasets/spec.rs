@@ -70,7 +70,7 @@ pub fn first_double_name(text: &I18nText) -> Option<String> {
 }
 
 /// Backend-only calculation definition of one dataset.
-/// It is stored in `datasets.spec` and never sent to the client.
+/// It is stored in normalized calculation component rows and never sent to the client.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DatasetSpec {
     pub title: I18nText,
@@ -272,6 +272,16 @@ pub struct FieldSpec {
     pub unit: Option<String>,
     #[serde(default)]
     pub decimals: Option<u32>,
+    #[serde(default = "default_missing_means")]
+    pub missing_means: String,
+    #[serde(default)]
+    pub denominator_field: Option<String>,
+    #[serde(default)]
+    pub denominator_text: Option<String>,
+}
+
+fn default_missing_means() -> String {
+    "no_data".to_string()
 }
 
 fn default_role() -> String {
@@ -395,12 +405,30 @@ mod tests {
         // Empty defaults to sample
         assert_eq!(DataTier::aggregate(vec![]), DataTier::Sample);
         // All agree -> common tier
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Real]), DataTier::Real);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Sample, DataTier::Sample]), DataTier::Sample);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Hybrid, DataTier::Hybrid]), DataTier::Hybrid);
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Real]),
+            DataTier::Real
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Sample, DataTier::Sample]),
+            DataTier::Sample
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Hybrid, DataTier::Hybrid]),
+            DataTier::Hybrid
+        );
         // Mixed -> Hybrid regardless of order
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Sample]), DataTier::Hybrid);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Sample, DataTier::Real]), DataTier::Hybrid);
-        assert_eq!(DataTier::aggregate(vec![DataTier::Real, DataTier::Hybrid]), DataTier::Hybrid);
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Sample]),
+            DataTier::Hybrid
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Sample, DataTier::Real]),
+            DataTier::Hybrid
+        );
+        assert_eq!(
+            DataTier::aggregate(vec![DataTier::Real, DataTier::Hybrid]),
+            DataTier::Hybrid
+        );
     }
 }

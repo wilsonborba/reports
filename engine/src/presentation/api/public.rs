@@ -18,12 +18,12 @@ use crate::core::error::ReportError;
 use crate::dal::catalog;
 use crate::domain::auth::ViewerScope;
 use crate::domain::composition::domain_index;
+use crate::domain::datasets::spec::DataTier;
 use crate::domain::datasets::{DatasetPage, FilterParam};
 use crate::domain::models::{paginate, Paged, ProjectSummary, ReportSummary};
 use crate::domain::reports::ShowcaseView;
 use crate::domain::stats::{GlobalStats, ProjectStats};
 use crate::domain::themes::{asodya_theme, ProjectTheme};
-use crate::domain::datasets::spec::DataTier;
 use crate::domain::{reports, stats};
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -70,7 +70,13 @@ pub async fn list_projects(
     headers: HeaderMap,
 ) -> Result<Json<Paged<ProjectSummary>>, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    let items = reports::project_summaries(&state.datasets, &lang, &ViewerScope::guest(), state.settings.domain_cache_ttl_secs).await?;
+    let items = reports::project_summaries(
+        &state.datasets,
+        &lang,
+        &ViewerScope::guest(),
+        state.settings.domain_cache_ttl_secs,
+    )
+    .await?;
     Ok(Json(paginate(items, q.page, q.page_size, &lang)))
 }
 
@@ -95,7 +101,9 @@ pub async fn project_detail(
     let lang = resolve_lang(q.lang.as_deref(), &headers);
     let p = catalog::active_project(&state.stores.db, &project).await?;
     let index = domain_index(&state.stores, state.settings.domain_cache_ttl_secs).await;
-    Ok(Json(reports::project_summary(&state.datasets, p, &lang, &ViewerScope::guest(), &index).await?))
+    Ok(Json(
+        reports::project_summary(&state.datasets, p, &lang, &ViewerScope::guest(), &index).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -135,7 +143,15 @@ pub async fn list_reports(
     headers: HeaderMap,
 ) -> Result<Json<Paged<ReportSummary>>, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    let items = reports::report_summaries(&state.datasets, &project, &lang, q.q.as_deref(), q.tier, &ViewerScope::guest()).await?;
+    let items = reports::report_summaries(
+        &state.datasets,
+        &project,
+        &lang,
+        q.q.as_deref(),
+        q.tier,
+        &ViewerScope::guest(),
+    )
+    .await?;
     Ok(Json(paginate(items, q.page, q.page_size, &lang)))
 }
 
@@ -153,7 +169,9 @@ pub async fn global_stats(
     headers: HeaderMap,
 ) -> Result<Json<GlobalStats>, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(Json(stats::global_stats(&state.datasets, &lang, &ViewerScope::guest()).await?))
+    Ok(Json(
+        stats::global_stats(&state.datasets, &lang, &ViewerScope::guest()).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -171,15 +189,18 @@ pub async fn project_stats(
     headers: HeaderMap,
 ) -> Result<Json<ProjectStats>, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(Json(stats::project_stats(&state.datasets, &project, &lang, &ViewerScope::guest()).await?))
+    Ok(Json(
+        stats::project_stats(&state.datasets, &project, &lang, &ViewerScope::guest()).await?,
+    ))
 }
 
 /// Guest responses are the same for everyone, so a shared cache may keep them briefly.
 pub fn public<T: serde::Serialize>(body: T) -> Response {
     let mut response = Json(body).into_response();
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=30"));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=30"),
+    );
     response
 }
 
@@ -199,7 +220,9 @@ pub async fn showcase(
     headers: HeaderMap,
 ) -> Result<Response, ReportError> {
     let lang = resolve_lang(q.lang.as_deref(), &headers);
-    Ok(public(reports::showcase(&state.datasets, &project, &report, &lang, q.tier).await?))
+    Ok(public(
+        reports::showcase(&state.datasets, &project, &report, &lang, q.tier).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -225,5 +248,63 @@ pub async fn showcase_card(
     let lang = resolve_lang(query.get("lang").map(String::as_str), &headers);
     let (offset, limit) = super::viewer::paging(&query)?;
     let filters = FilterParam::parse_query(&query);
-    Ok(public(reports::showcase_card(&state.datasets, &project, &report, &card, &filters, &lang, offset, limit).await?))
+    Ok(public(
+        reports::showcase_card(
+            &state.datasets,
+            &project,
+            &report,
+            &card,
+            &filters,
+            &lang,
+            offset,
+            limit,
+        )
+        .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateQuery {
+    pub kind: Option<String>,
+    pub lang: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/templates",
+    summary = "Published visual templates with slots and options",
+    params(("kind" = Option<String>, Query, description = "chart or diagram"), ("lang" = Option<String>, Query)),
+    responses((status = 200, description = "Published template versions", body = Vec<crate::dal::TemplateDiscoveryItem>)),
+    tag = "Catalog"
+)]
+pub async fn list_templates(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<TemplateQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    let lang = resolve_lang(q.lang.as_deref(), &headers);
+    let items =
+        crate::dal::templates::list_published(&state.stores.db, q.kind.as_deref(), &lang).await?;
+    Ok(public(serde_json::json!({ "templates": items })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/projects/{project}/templates",
+    summary = "Published visual templates for consumers of a project",
+    params(("project" = String, Path), ("kind" = Option<String>, Query), ("lang" = Option<String>, Query)),
+    responses((status = 200, description = "Published template versions", body = Vec<crate::dal::TemplateDiscoveryItem>)),
+    tag = "Catalog"
+)]
+pub async fn list_project_templates(
+    State(state): State<Arc<AppState>>,
+    Path(project): Path<String>,
+    Query(q): Query<TemplateQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ReportError> {
+    crate::dal::catalog::active_project(&state.stores.db, &project).await?;
+    let lang = resolve_lang(q.lang.as_deref(), &headers);
+    let items =
+        crate::dal::templates::list_published(&state.stores.db, q.kind.as_deref(), &lang).await?;
+    Ok(public(serde_json::json!({ "templates": items })))
 }

@@ -74,12 +74,26 @@ fn last_detail_key(id: &str) -> String {
 }
 
 /// Fetches one project detail and stores the fresh and last-known copies.
-pub async fn refresh_detail(stores: &Stores, ttl_secs: u64, id: &str, slug: &str) -> Result<(), ReportError> {
+pub async fn refresh_detail(
+    stores: &Stores,
+    ttl_secs: u64,
+    id: &str,
+    slug: &str,
+) -> Result<(), ReportError> {
     let detail = stores.domain.project_detail(slug).await?;
-    let snapshot = DetailSnapshot { fetched_at: chrono::Utc::now().to_rfc3339(), detail };
+    let snapshot = DetailSnapshot {
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        detail,
+    };
     if let Ok(text) = serde_json::to_string(&snapshot) {
-        stores.cache.set(&fresh_detail_key(id), &text, ttl_secs).await;
-        stores.cache.set(&last_detail_key(id), &text, LAST_TTL_SECS).await;
+        stores
+            .cache
+            .set(&fresh_detail_key(id), &text, ttl_secs)
+            .await;
+        stores
+            .cache
+            .set(&last_detail_key(id), &text, LAST_TTL_SECS)
+            .await;
     }
     Ok(())
 }
@@ -111,7 +125,11 @@ fn spawn_refresh(stores: &Stores, ttl_secs: u64, id: &str, slug: &str) {
 pub async fn attach_detail(stores: &Stores, ttl_secs: u64, details: &mut DomainDetails) {
     let id = details.project.id.clone();
     let read = |key: String| async move {
-        stores.cache.get(&key).await.and_then(|t| serde_json::from_str::<DetailSnapshot>(&t).ok())
+        stores
+            .cache
+            .get(&key)
+            .await
+            .and_then(|t| serde_json::from_str::<DetailSnapshot>(&t).ok())
     };
     if let Some(s) = read(fresh_detail_key(&id)).await {
         details.detail = Some(s.detail);
@@ -140,9 +158,17 @@ impl DomainIndex {
         let Some(snapshot) = &self.snapshot else {
             return (DomainStatus::Unavailable, None);
         };
-        match snapshot.projects.iter().find(|p| p.id.eq_ignore_ascii_case(id)) {
+        match snapshot
+            .projects
+            .iter()
+            .find(|p| p.id.eq_ignore_ascii_case(id))
+        {
             Some(p) => (
-                if self.stale { DomainStatus::Stale } else { DomainStatus::Fresh },
+                if self.stale {
+                    DomainStatus::Stale
+                } else {
+                    DomainStatus::Fresh
+                },
                 Some(DomainDetails {
                     project: p.clone(),
                     fetched_at: snapshot.fetched_at.clone(),
@@ -164,25 +190,43 @@ impl DomainIndex {
 /// Reads the Domain index from Redis, or asks domain_api once and stores the answer.
 pub async fn domain_index(stores: &Stores, ttl_secs: u64) -> DomainIndex {
     if let Some(snapshot) = read(stores, FRESH_KEY).await {
-        return DomainIndex { snapshot: Some(snapshot), stale: false };
+        return DomainIndex {
+            snapshot: Some(snapshot),
+            stale: false,
+        };
     }
     match refresh(stores, ttl_secs).await {
-        Ok(snapshot) => DomainIndex { snapshot: Some(snapshot), stale: false },
+        Ok(snapshot) => DomainIndex {
+            snapshot: Some(snapshot),
+            stale: false,
+        },
         Err(e) => {
-            tracing::warn!("domain_api failed, using the last-known Domain details: {}", e);
-            DomainIndex { snapshot: read(stores, LAST_KEY).await, stale: true }
+            tracing::warn!(
+                "domain_api failed, using the last-known Domain details: {}",
+                e
+            );
+            DomainIndex {
+                snapshot: read(stores, LAST_KEY).await,
+                stale: true,
+            }
         }
     }
 }
 
 /// Asks domain_api now (no cache) and stores the answer. Admin writes use it to verify a link.
 pub async fn refresh_index(stores: &Stores, ttl_secs: u64) -> Result<DomainIndex, ReportError> {
-    Ok(DomainIndex { snapshot: Some(refresh(stores, ttl_secs).await?), stale: false })
+    Ok(DomainIndex {
+        snapshot: Some(refresh(stores, ttl_secs).await?),
+        stale: false,
+    })
 }
 
 async fn refresh(stores: &Stores, ttl_secs: u64) -> Result<Snapshot, ReportError> {
     let projects = stores.domain.list_projects().await?;
-    let snapshot = Snapshot { fetched_at: chrono::Utc::now().to_rfc3339(), projects };
+    let snapshot = Snapshot {
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        projects,
+    };
     if let Ok(text) = serde_json::to_string(&snapshot) {
         stores.cache.set(FRESH_KEY, &text, ttl_secs).await;
         stores.cache.set(LAST_KEY, &text, LAST_TTL_SECS).await;
@@ -191,5 +235,9 @@ async fn refresh(stores: &Stores, ttl_secs: u64) -> Result<Snapshot, ReportError
 }
 
 async fn read(stores: &Stores, key: &str) -> Option<Snapshot> {
-    stores.cache.get(key).await.and_then(|t| serde_json::from_str(&t).ok())
+    stores
+        .cache
+        .get(key)
+        .await
+        .and_then(|t| serde_json::from_str(&t).ok())
 }

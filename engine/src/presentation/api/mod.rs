@@ -1,8 +1,10 @@
-pub mod logs;
-pub mod embeds;
 pub mod admin;
 pub mod docs;
+pub mod embeds;
 pub mod identity;
+pub mod logs;
+pub mod owner;
 pub mod public;
+pub mod render_jobs;
 pub mod server;
 pub mod viewer;
