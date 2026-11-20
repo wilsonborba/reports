@@ -1576,3 +1576,64 @@ pub async fn seed_diagram_templates(db: &Db) -> Result<(), ReportError> {
     }
     Ok(())
 }
+
+/// Sets catalog templates (catalog items 90 to 92: venn, euler, upset).
+pub fn sets_catalog_templates() -> Vec<VisualTemplateVersion> {
+    let specs: &[(&str, &str, &str, &str)] = &[
+        ("venn", "Venn diagram", "Diagrama de Venn", "แผนภาพเวนน์"),
+        ("euler", "Euler diagram", "Diagrama de Euler", "แผนภาพออยเลอร์"),
+        ("upset", "UpSet plot", "Gráfico UpSet", "แผนภาพ UpSet"),
+    ];
+
+    specs
+        .iter()
+        .map(|&(id, en, pt, th)| {
+            let mut title = HashMap::new();
+            title.insert("en".to_string(), en.to_string());
+            title.insert("pt-BR".to_string(), pt.to_string());
+            title.insert("th".to_string(), th.to_string());
+            VisualTemplateVersion {
+                template_id: id.to_string(),
+                version: 1,
+                kind: "diagram".to_string(),
+                status: "draft".to_string(),
+                visual: id.to_string(),
+                title,
+                slots: vec![
+                    TemplateSlot {
+                        slot_name: "category".to_string(),
+                        role: "dimension".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec!["string".to_string(), "enum".to_string()],
+                    },
+                    TemplateSlot {
+                        slot_name: "value".to_string(),
+                        role: "measure".to_string(),
+                        is_required: true,
+                        min_count: 1,
+                        max_count: 1,
+                        accepted_types: vec!["integer".to_string(), "float".to_string()],
+                    },
+                ],
+                options: vec![],
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
+/// Idempotently saves and publishes all 3 sets catalog templates.
+pub async fn seed_sets_templates(db: &Db) -> Result<(), ReportError> {
+    for tpl in sets_catalog_templates() {
+        if get_version(db, &tpl.template_id, tpl.version)
+            .await?
+            .is_none()
+        {
+            save_draft(db, &tpl).await?;
+            publish(db, &tpl.template_id, tpl.version).await?;
+        }
+    }
+    Ok(())
+}
