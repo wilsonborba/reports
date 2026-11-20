@@ -630,6 +630,11 @@ class _Builder {
       case Visual.euler:
       case Visual.upset:
         return sankey(page, VisualChooser.sankeyStages(d, slot), ms.first, notes);
+      case Visual.kpiSparkline:
+        return kpi(page);
+      case Visual.heatTable:
+      case Visual.statusScorecard:
+      case Visual.wordCloud:
       case Visual.table:
       case Visual.auto:
         return null;
