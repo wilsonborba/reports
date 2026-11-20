@@ -635,6 +635,16 @@ class _Builder {
       case Visual.heatTable:
       case Visual.statusScorecard:
       case Visual.wordCloud:
+      case Visual.topKProb:
+      case Visual.calibration:
+      case Visual.confusionMatrix:
+      case Visual.rocPr:
+      case Visual.learningCurve:
+      case Visual.irtIcc:
+      case Visual.irtIif:
+      case Visual.wrightMap:
+      case Visual.itemDiffDisc:
+      case Visual.kaplanMeier:
       case Visual.table:
       case Visual.auto:
         return null;
