@@ -11,6 +11,13 @@ async fn all_11_part_whole_templates_publish_and_discover_in_all_languages() {
 
     let catalog = part_whole_catalog_templates();
     assert_eq!(catalog.len(), 11);
+    for id in ["treemap", "sunburst", "icicle", "circle_packing"] {
+        let tpl = catalog.iter().find(|t| t.template_id == id).unwrap();
+        assert!(
+            tpl.slots.iter().any(|s| s.slot_name == "parent"),
+            "{id} must declare hierarchical parent slot"
+        );
+    }
 
     seed_part_whole_templates(&t.state.stores.db).await.unwrap();
     seed_part_whole_templates(&t.state.stores.db).await.unwrap();
