@@ -653,7 +653,8 @@ class _Builder {
 
   pw.Widget kpi(DatasetPage page) {
     final row = page.rows.first;
-    final fields = page.descriptor.fields;
+    final numericMeasures = [for (final f in page.descriptor.fields) if (!f.isDimension && f.isNumeric) f];
+    final fields = numericMeasures.isNotEmpty ? numericMeasures : page.descriptor.fields;
     final per = fields.length >= 3 ? 3 : fields.length;
     final w = (inner - (per - 1) * 6) / per;
     return pw.Wrap(spacing: 6, runSpacing: 6, children: [
