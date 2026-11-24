@@ -99,6 +99,22 @@ pub const DEFINITION: Shape = Shape {
             },
         ),
         (
+            "latest_snapshot",
+            Shape {
+                table: "calculation_latest_snapshots",
+                mode: "object",
+                scalar: false,
+                dynamic: false,
+                optional: true,
+                fields: &[
+                    ("order_field", "s"),
+                    ("complete_field", "s"),
+                    ("id_field", "s"),
+                ],
+                children: &[],
+            },
+        ),
+        (
             "buckets",
             Shape {
                 table: "calculation_buckets",
@@ -600,6 +616,21 @@ pub const REQUIRED: &[(&str, &[&str])] = &[
             "unit",
             "name",
             "utc_offset_minutes",
+        ],
+    ),
+    (
+        "calculation_latest_snapshots",
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "order_field",
+            "complete_field",
+            "id_field",
         ],
     ),
     (

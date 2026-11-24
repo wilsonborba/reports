@@ -202,6 +202,63 @@ pub fn check_definition(
         )),
         None => {}
     }
+    if let Some(snapshot) = &def.latest_snapshot {
+        if !def.union.is_empty()
+            || !def.lookups.is_empty()
+            || !def.buckets.is_empty()
+            || !def.row_derived.is_empty()
+        {
+            errors.push(err(
+                "latest_snapshot",
+                "latest snapshot selection requires direct source rows before transformations",
+            ));
+        }
+        match fields.get(&snapshot.order_field).map(String::as_str) {
+            Some("integer") => {}
+            Some(other) => errors.push(err(
+                "latest_snapshot.order_field",
+                format!(
+                    "'{}' must be an integer, but is {other}",
+                    snapshot.order_field
+                ),
+            )),
+            None => require(
+                &mut errors,
+                &fields,
+                &snapshot.order_field,
+                "latest_snapshot.order_field",
+            ),
+        }
+        match fields.get(&snapshot.complete_field).map(String::as_str) {
+            Some("boolean") => {}
+            Some(other) => errors.push(err(
+                "latest_snapshot.complete_field",
+                format!(
+                    "'{}' must be a boolean, but is {other}",
+                    snapshot.complete_field
+                ),
+            )),
+            None => require(
+                &mut errors,
+                &fields,
+                &snapshot.complete_field,
+                "latest_snapshot.complete_field",
+            ),
+        }
+        match fields.get(&snapshot.id_field).map(String::as_str) {
+            Some("string") => {}
+            Some(other) => errors.push(err(
+                "latest_snapshot.id_field",
+                format!("'{}' must be a string, but is {other}", snapshot.id_field),
+            )),
+            None => require(
+                &mut errors,
+                &fields,
+                &snapshot.id_field,
+                "latest_snapshot.id_field",
+            ),
+        }
+    }
     for (i, u) in def.union.iter().enumerate() {
         match latest.get(u) {
             Some(s) => {

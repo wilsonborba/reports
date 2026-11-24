@@ -877,8 +877,34 @@ pub fn select_rows<'a>(
     spec: &DatasetSpec,
     filters: &[FilterParam],
 ) -> Result<Vec<&'a Row>, EngineError> {
+    let latest_snapshot = spec.latest_snapshot.as_ref().map(|snapshot| {
+        base.iter()
+            .filter(|row| row.get(&snapshot.complete_field) == Some(&Value::Bool(true)))
+            .filter_map(|row| {
+                Some((
+                    row.get(&snapshot.order_field)?.as_i64()?,
+                    row.get(&snapshot.id_field)?.as_str()?.to_string(),
+                ))
+            })
+            .max()
+    });
+    if latest_snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.is_none())
+    {
+        return Ok(Vec::new());
+    }
     let mut out = Vec::new();
     for r in base {
+        if let (Some(snapshot), Some(Some((order, id)))) =
+            (&spec.latest_snapshot, latest_snapshot.as_ref())
+        {
+            if r.get(&snapshot.order_field).and_then(Value::as_i64) != Some(*order)
+                || r.get(&snapshot.id_field).and_then(Value::as_str) != Some(id.as_str())
+            {
+                continue;
+            }
+        }
         if !matches_all(r, &spec.where_)? {
             continue;
         }

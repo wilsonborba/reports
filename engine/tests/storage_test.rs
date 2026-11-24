@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, State};
@@ -84,6 +85,12 @@ async fn database_outage_is_a_clear_error() {
 
 type Docs = Arc<Mutex<HashMap<String, Value>>>;
 
+#[derive(Clone)]
+struct PartialBatchState {
+    docs: Docs,
+    calls: Arc<AtomicUsize>,
+}
+
 async fn bulk(
     State(docs): State<Docs>,
     Path(_db): Path<String>,
@@ -106,6 +113,25 @@ async fn bulk(
         }
     }
     (StatusCode::CREATED, Json(json!(out)))
+}
+
+async fn fail_second_bulk(
+    State(state): State<PartialBatchState>,
+    Path(_db): Path<String>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    if state.calls.fetch_add(1, Ordering::SeqCst) == 1 {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "temporary"})),
+        );
+    }
+    bulk(
+        State(state.docs),
+        Path("reports_documents".into()),
+        Json(body),
+    )
+    .await
 }
 
 /// `_find` with equality selectors and bookmark pagination (bookmark = offset).
@@ -148,6 +174,28 @@ async fn mock_couch() -> (String, Docs) {
         .route("/:db/_bulk_docs", post(bulk))
         .route("/:db/_find", post(find))
         .with_state(docs.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), docs)
+}
+
+async fn mock_couch_failing_second_bulk() -> (String, Docs) {
+    let docs: Docs = Arc::default();
+    let state = PartialBatchState {
+        docs: docs.clone(),
+        calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let app =
+        Router::new()
+            .route(
+                "/:db",
+                get(|Path(db): Path<String>| async move {
+                    (StatusCode::OK, Json(json!({"db_name": db})))
+                }),
+            )
+            .route("/:db/_bulk_docs", post(fail_second_bulk))
+            .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -202,6 +250,52 @@ async fn couchdb_adapter_is_idempotent_and_reads_back_records() {
         1,
         "manual record stays"
     );
+}
+
+#[tokio::test]
+async fn a_partial_data_batch_never_makes_its_snapshot_marker_visible() {
+    let (url, docs) = mock_couch_failing_second_bulk().await;
+    let couch = CouchDocuments::new(&url, "reports_documents", None, None).unwrap();
+    let data: Vec<_> = (0..1000)
+        .map(|i| {
+            RecordDoc::new(
+                "domain",
+                "aggregate_snapshot",
+                1,
+                &format!("v1:snapshot:data-{i}"),
+                Some("2026-11-24T00:00:00Z".into()),
+                None,
+                json!({"snapshot_id": "snapshot", "snapshot_complete": false}),
+            )
+        })
+        .collect();
+    let marker = RecordDoc::new(
+        "domain",
+        "aggregate_snapshot",
+        1,
+        "v1:snapshot:complete",
+        Some("2026-11-24T00:00:00Z".into()),
+        None,
+        json!({"snapshot_id": "snapshot", "snapshot_complete": true}),
+    );
+    let mut one_bad_request = data.clone();
+    one_bad_request.push(marker.clone());
+    assert!(couch.insert_records(&one_bad_request).await.is_err());
+    {
+        let saved = docs.lock().unwrap();
+        assert_eq!(saved.len(), 1000);
+        assert!(!saved
+            .values()
+            .any(|row| row["idempotency_key"] == "v1:snapshot:complete"));
+    }
+    let retry = couch.insert_records(&data).await.unwrap();
+    assert_eq!((retry.created, retry.duplicates), (0, 1000));
+    couch.insert_records(&[marker]).await.unwrap();
+    let saved = docs.lock().unwrap();
+    assert_eq!(saved.len(), 1001);
+    assert!(saved
+        .values()
+        .any(|row| row["idempotency_key"] == "v1:snapshot:complete"));
 }
 
 #[tokio::test]
