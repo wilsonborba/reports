@@ -5,10 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:reports_ui/l10n/strings.dart';
+import 'package:reports_ui/layouts/report_layout.dart';
 import 'package:reports_ui/models/report.dart';
 import 'package:reports_ui/services/api_client.dart';
+import 'package:reports_ui/services/report_service.dart';
+import 'package:reports_ui/services/session_store.dart';
 import 'package:reports_ui/themes/theme_registry.dart';
 import 'package:reports_ui/widgets/report/dataset_card.dart';
+import 'package:reports_ui/widgets/report/dataset_slot.dart';
 
 const _desc = DatasetDescriptor(
   datasetId: 'ds-1',
@@ -124,44 +128,215 @@ void main() {
   );
 
   test(
-    'ApiClient patches visibility and handles delete confirmation outcome',
+    'ApiClient sends CSRF headers, encodes item IDs, and handles strict 409 reuse confirmation',
     () async {
       final mock = MockClient((req) async {
-        if (req.method == 'PATCH' && req.url.path == '/me/items/item-1') {
+        if (req.method == 'PATCH' && req.url.path == '/me/items/item%2F1') {
+          expect(req.headers['X-CSRF-Token'], 'csrf-tok-1');
+          expect(req.headers['X-CSRFToken'], 'csrf-tok-1');
           expect(jsonDecode(req.body), {'visibility': 'personal'});
           return http.Response(
             jsonEncode({
-              'item': {'id': 'item-1'},
+              'item': {'id': 'item/1'},
             }),
             200,
           );
         }
-        if (req.method == 'DELETE' && req.url.path == '/me/items/item-1') {
+        if (req.method == 'DELETE' && req.url.path == '/me/items/item%2F1') {
+          expect(req.headers['X-CSRF-Token'], 'csrf-tok-1');
           final confirm = req.url.queryParameters['confirm'] == 'true';
+          if (!confirm) {
+            return http.Response(
+              jsonEncode({
+                'deleted': false,
+                'requires_confirmation': true,
+                'reference_count': 2,
+                'message': 'Used in 2 notes',
+              }),
+              409,
+            );
+          }
           return http.Response(
             jsonEncode({
-              'deleted': confirm,
-              'requires_confirmation': !confirm,
+              'deleted': true,
+              'requires_confirmation': false,
               'reference_count': 2,
-              'message': confirm ? 'Deleted' : 'Used in 2 notes',
+              'message': 'Deleted',
+            }),
+            200,
+          );
+        }
+        if (req.method == 'DELETE' && req.url.path == '/me/items/forbidden-1') {
+          return http.Response('{"error":"forbidden"}', 403);
+        }
+        return http.Response('not found', 404);
+      });
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (name) => name == 'csrf' ? 'csrf-tok-1' : null,
+      );
+      final patched = await api.patchOwnerItemVisibility('item/1', 'personal');
+      expect(patched['item']['id'], 'item/1');
+
+      final first = await api.deleteOwnerItem('item/1', confirm: false);
+      expect(first.deleted, isFalse);
+      expect(first.requiresConfirmation, isTrue);
+      expect(first.referenceCount, 2);
+      expect(first.message, 'Used in 2 notes');
+
+      final second = await api.deleteOwnerItem('item/1', confirm: true);
+      expect(second.deleted, isTrue);
+
+      await expectLater(
+        api.deleteOwnerItem('forbidden-1'),
+        throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)),
+      );
+    },
+  );
+
+  testWidgets(
+    'DatasetSlot probes server ownership, sends CSRF PATCH, and handles 409 confirm flow',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}?${req.url.query}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(jsonEncode({'user_id': 'u-owner'}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-1') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-owned-1',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' &&
+            req.url.path == '/projects/p1/reports/r1/datasets/ds-1') {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'ds-1',
+              'rows': [
+                {'x': 'a', 'y': 10},
+              ],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        if (req.method == 'PATCH' && req.url.path == '/me/items/item-owned-1') {
+          expect(req.headers['X-CSRF-Token'], 'csrf-live');
+          return http.Response(
+            jsonEncode({'item': {'id': 'item-owned-1'}}),
+            200,
+          );
+        }
+        if (req.method == 'DELETE' &&
+            req.url.path == '/me/items/item-owned-1') {
+          expect(req.headers['X-CSRF-Token'], 'csrf-live');
+          if (req.url.queryParameters['confirm'] != 'true') {
+            return http.Response(
+              jsonEncode({
+                'deleted': false,
+                'requires_confirmation': true,
+                'reference_count': 1,
+                'message': 'Referenced by 1 note',
+              }),
+              409,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'deleted': true,
+              'requires_confirmation': false,
+              'reference_count': 1,
+              'message': 'Deleted',
             }),
             200,
           );
         }
         return http.Response('not found', 404);
       });
-      final api = ApiClient(baseUrl: 'https://reports.invalid', client: mock);
-      final patched = await api.patchOwnerItemVisibility('item-1', 'personal');
-      expect(patched['item']['id'], 'item-1');
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-live' : null,
+      );
+      SessionStore.instance = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-live' : null,
+      );
+      await SessionStore.instance.refresh();
+      try {
+        final view = ReportView(
+          project: 'p1',
+          report: 'r1',
+          title: 'R1',
+          description: '',
+          tags: const [],
+          period: null,
+          updatedAt: '',
+          datasets: const [_desc],
+        );
+        await tester.pumpWidget(
+          _wrap(
+            DatasetSlot(
+              project: 'p1',
+              report: 'r1',
+              view: view,
+              slot: const Slot(
+                'ds-1',
+                visual: Visual.bar,
+                measures: ['y'],
+              ),
+              service: ReportService(api),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      final first = await api.deleteOwnerItem('item-1', confirm: false);
-      expect(first.deleted, isFalse);
-      expect(first.requiresConfirmation, isTrue);
-      expect(first.referenceCount, 2);
-      expect(first.message, 'Used in 2 notes');
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_visibility_personal')));
+        await tester.pumpAndSettle();
+        expect(
+          calls.any((c) => c.startsWith('PATCH /me/items/item-owned-1')),
+          isTrue,
+        );
 
-      final second = await api.deleteOwnerItem('item-1', confirm: true);
-      expect(second.deleted, isTrue);
+        // Delete hits 409 first -> shows second explicit confirm dialog -> confirm=true deletes.
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+        expect(find.text('Referenced by 1 note'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+        expect(
+          calls.any(
+            (c) => c.contains('DELETE /me/items/item-owned-1?confirm=false'),
+          ),
+          isTrue,
+        );
+        expect(
+          calls.any(
+            (c) => c.contains('DELETE /me/items/item-owned-1?confirm=true'),
+          ),
+          isTrue,
+        );
+      } finally {
+        SessionStore.instance = prevStore;
+      }
     },
   );
 }

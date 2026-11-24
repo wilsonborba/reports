@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../l10n/strings.dart';
 import '../../export/card_filter_state.dart';
+import '../../services/api_client.dart';
 import '../../services/report_service.dart';
+import '../../services/session_store.dart';
 import '../charts/data_table_view.dart';
 import '../charts/format.dart';
 import '../charts/visual_chooser.dart';
@@ -34,7 +36,9 @@ class DatasetSlot extends StatefulWidget {
   final bool interactive;
   final String? language;
   final ReportService? service;
+  final ApiClient? apiClient;
   final VoidCallback? onReady;
+  final VoidCallback? onMutated;
 
   const DatasetSlot({
     super.key,
@@ -49,7 +53,9 @@ class DatasetSlot extends StatefulWidget {
     this.interactive = true,
     this.language,
     this.service,
+    this.apiClient,
     this.onReady,
+    this.onMutated,
   });
 
   @override
@@ -71,6 +77,148 @@ class _DatasetSlotState extends State<DatasetSlot> {
       );
   bool _filtersOpen = false;
   late bool _asTable = widget.initialTable;
+  String? _ownerItemId;
+  bool _resolvedOwner = false;
+  int _ownerRefCount = 0;
+  String? _ownerVisibility;
+  bool _mutating = false;
+  bool _deleted = false;
+
+  ApiClient get _api => widget.apiClient ?? ApiClient();
+
+  @override
+  void initState() {
+    super.initState();
+    _probeOwnership();
+  }
+
+  Future<void> _probeOwnership() async {
+    if (!widget.interactive ||
+        widget.controls.isOwner ||
+        !SessionStore.instance.hasSession) {
+      return;
+    }
+    try {
+      final res = await _api.getOwnerItem(widget.slot.datasetId);
+      final item = res['item'];
+      if (!mounted || item is! Map<String, dynamic>) return;
+      if (item['control_authority'] == 'user_owned') {
+        setState(() {
+          _resolvedOwner = true;
+          _ownerItemId = item['id'] as String?;
+          _ownerRefCount = (item['reference_count'] as num?)?.toInt() ?? 0;
+        });
+      }
+    } catch (_) {
+      // 403/404 or static catalog card: viewer is not owner.
+    }
+  }
+
+  Future<void> _handleVisibilityChange(String next) async {
+    final itemId = _ownerItemId;
+    if (itemId == null || _mutating) return;
+    setState(() => _mutating = true);
+    try {
+      await _api.patchOwnerItemVisibility(itemId, next);
+      if (!mounted) return;
+      setState(() {
+        _ownerVisibility = next;
+        _mutating = false;
+      });
+      widget.onMutated?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mutating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${context.tr('error_loading')}: $e'),
+          action: SnackBarAction(
+            label: context.tr('retry'),
+            onPressed: () => _handleVisibilityChange(next),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleDelete() async {
+    final itemId = _ownerItemId;
+    if (itemId == null || _mutating) return;
+    setState(() => _mutating = true);
+    try {
+      var outcome = await _api.deleteOwnerItem(itemId, confirm: false);
+      if (!mounted) return;
+      if (outcome.requiresConfirmation) {
+        setState(() => _mutating = false);
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            key: const Key('card_delete_dialog'),
+            title: Text(ctx.tr('delete_confirm_title')),
+            content: Text(
+              outcome.message.isNotEmpty
+                  ? outcome.message
+                  : ctx.tr('delete_confirm_body'),
+              key: const Key('card_delete_reuse_warning'),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('card_delete_cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(ctx.tr('cancel')),
+              ),
+              FilledButton(
+                key: const Key('card_delete_confirm'),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(ctx.tr('delete_card')),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+        setState(() => _mutating = true);
+        outcome = await _api.deleteOwnerItem(itemId, confirm: true);
+        if (!mounted) return;
+      }
+      setState(() {
+        _mutating = false;
+        if (outcome.deleted) _deleted = true;
+      });
+      if (outcome.deleted) widget.onMutated?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _mutating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${context.tr('error_loading')}: $e'),
+          action: SnackBarAction(
+            label: context.tr('retry'),
+            onPressed: _handleDelete,
+          ),
+        ),
+      );
+    }
+  }
+
+  CardControls _effectiveControls(DatasetDescriptor descriptor) {
+    if (widget.controls.isOwner || !_resolvedOwner || _ownerItemId == null) {
+      return widget.controls;
+    }
+    return CardControls(
+      minimized: widget.controls.minimized,
+      onToggleMinimize: widget.controls.onToggleMinimize,
+      onMove: widget.controls.onMove,
+      isOwner: true,
+      isLive:
+          widget.controls.isLive ??
+          (descriptor.meta?.freshnessMode == 'live'),
+      onChangeVisibility: _mutating ? null : _handleVisibilityChange,
+      onCheckDelete: _ownerRefCount > 0
+          ? () async => context.tr('delete_confirm_body')
+          : null,
+      onDelete: _mutating ? null : _handleDelete,
+    );
+  }
 
   @override
   void didUpdateWidget(DatasetSlot oldWidget) {
@@ -79,6 +227,12 @@ class _DatasetSlotState extends State<DatasetSlot> {
     if (oldWidget.project != widget.project ||
         oldWidget.report != widget.report ||
         oldWidget.slot.key != widget.slot.key) {
+      _ownerItemId = null;
+      _resolvedOwner = false;
+      _ownerRefCount = 0;
+      _ownerVisibility = null;
+      _deleted = false;
+      _probeOwnership();
       _filters =
           widget.initialFilters ??
           CardFilterState.instance.get(
@@ -177,7 +331,24 @@ class _DatasetSlotState extends State<DatasetSlot> {
   Widget build(BuildContext context) {
     _load(widget.language ?? context.langCode);
     final p = context.palette;
-    final descriptor = widget.view.dataset(widget.slot.datasetId)!;
+    final rawDescriptor = widget.view.dataset(widget.slot.datasetId)!;
+    final descriptor = _ownerVisibility == null
+        ? rawDescriptor
+        : DatasetDescriptor(
+            datasetId: rawDescriptor.datasetId,
+            title: rawDescriptor.title,
+            description: rawDescriptor.description,
+            equation: rawDescriptor.equation,
+            fields: rawDescriptor.fields,
+            filters: rawDescriptor.filters,
+            dataTier: rawDescriptor.dataTier,
+            canView: rawDescriptor.canView,
+            visibility: _ownerVisibility!,
+            meta: rawDescriptor.meta,
+          );
+    if (_deleted) {
+      return const SizedBox.shrink();
+    }
     if (!descriptor.canView) {
       return _GatedChartSkeleton(descriptor: descriptor, fill: widget.fill);
     }
@@ -280,8 +451,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
         return DatasetCard(
           descriptor: descriptor,
           body: body,
-          loading: loading,
-          controls: widget.controls,
+          loading: loading || _mutating,
+          controls: _effectiveControls(descriptor),
           fill: widget.fill,
           tableView: _asTable,
           onToggleTable: widget.interactive

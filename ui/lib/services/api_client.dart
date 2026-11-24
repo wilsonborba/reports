@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/config.dart';
+import '../utils/browser.dart';
 import 'client_telemetry_service.dart';
 import 'http_client.dart';
 
@@ -65,10 +66,22 @@ class ApiClient {
 
   /// Name of the service in telemetry reports.
   final String service;
+  final String? Function(String) _cookieReader;
 
-  ApiClient({String? baseUrl, http.Client? client, this.service = 'reports'})
-    : baseUrl = baseUrl ?? ReportsConfig.apiBaseUrl,
-      _client = client ?? createCredentialsClient();
+  ApiClient({
+    String? baseUrl,
+    http.Client? client,
+    this.service = 'reports',
+    String? Function(String) cookieReader = readCookie,
+  }) : baseUrl = baseUrl ?? ReportsConfig.apiBaseUrl,
+       _client = client ?? createCredentialsClient(),
+       _cookieReader = cookieReader;
+
+  Map<String, String> _csrfHeaders() {
+    final csrf = _cookieReader('csrf');
+    if (csrf == null || csrf.isEmpty) return const {};
+    return {'X-CSRF-Token': csrf, 'X-CSRFToken': csrf};
+  }
 
   Uri uri(String path, [Map<String, String> query = const {}]) => Uri.parse(
     '$baseUrl$path',
@@ -95,7 +108,7 @@ class ApiClient {
       path,
       () => _client.patch(
         uri(path),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', ..._csrfHeaders()},
         body: jsonEncode(body),
       ),
     );
@@ -110,25 +123,43 @@ class ApiClient {
     final value = await _send(
       'DELETE',
       path,
-      () => _client.delete(uri(path, query)),
+      () => _client.delete(uri(path, query), headers: _csrfHeaders()),
     );
     if (value is Map<String, dynamic>) return value;
     throw ApiException(500, 'unexpected answer of $path');
   }
 
+  Future<Map<String, dynamic>> getOwnerItem(String itemOrDatasetId) =>
+      getJson('/me/items/${Uri.encodeComponent(itemOrDatasetId)}');
+
   Future<Map<String, dynamic>> patchOwnerItemVisibility(
     String itemId,
     String visibility,
-  ) => patchJson('/me/items/$itemId', {'visibility': visibility});
+  ) => patchJson('/me/items/${Uri.encodeComponent(itemId)}', {
+    'visibility': visibility,
+  });
 
   Future<OwnerDeleteOutcome> deleteOwnerItem(
     String itemId, {
     bool confirm = false,
   }) async {
-    final data = await deleteJson('/me/items/$itemId', {
-      'confirm': confirm ? 'true' : 'false',
-    });
-    return OwnerDeleteOutcome.fromJson(data);
+    final encoded = Uri.encodeComponent(itemId);
+    try {
+      final data = await deleteJson('/me/items/$encoded', {
+        'confirm': confirm ? 'true' : 'false',
+      });
+      return OwnerDeleteOutcome.fromJson(data);
+    } on ApiException catch (e) {
+      if (e.status == 409) {
+        try {
+          final parsed = jsonDecode(e.message);
+          if (parsed is Map<String, dynamic>) {
+            return OwnerDeleteOutcome.fromJson(parsed);
+          }
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 
   Future<dynamic> _send(

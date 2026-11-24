@@ -456,7 +456,7 @@ pub async fn get_item(
     let row = sqlx::query(
         "SELECT id, project_slug, report_slug, dataset_id, owner_id, source_app, template_id, template_version,
                 audience, control_authority, couch_doc_id, etag, reference_count, created_at, updated_at
-         FROM user_chart_items WHERE id = $1",
+         FROM user_chart_items WHERE id = $1 OR dataset_id = $1",
     )
     .bind(item_id)
     .fetch_optional(&stores.db.pool)
