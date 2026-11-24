@@ -13,10 +13,34 @@ class CardControls {
   /// Starts the edit layout mode of the section.
   final VoidCallback? onMove;
 
+  /// True when the signed-in viewer owns this card; non-owners never see owner actions.
+  final bool isOwner;
+
+  /// True for live cards, false for static cards, null when unspecified.
+  final bool? isLive;
+
+  /// Changes card visibility (`public`, `asodya`, `personal`); null hides owner visibility items.
+  final ValueChanged<String>? onChangeVisibility;
+
+  /// Optional pre-delete reuse check returning a warning string if the item is referenced elsewhere.
+  final Future<String?> Function()? onCheckDelete;
+
+  /// Optional static reuse warning shown in the delete confirmation dialog.
+  final String? deleteReuseWarning;
+
+  /// Deletes the owned card after confirmation; null hides the delete item.
+  final VoidCallback? onDelete;
+
   const CardControls({
     this.minimized = false,
     this.onToggleMinimize,
     this.onMove,
+    this.isOwner = false,
+    this.isLive,
+    this.onChangeVisibility,
+    this.onCheckDelete,
+    this.deleteReuseWarning,
+    this.onDelete,
   });
 
   static const none = CardControls();
@@ -131,9 +155,67 @@ class _DatasetCardState extends State<DatasetCard> {
     );
   }
 
+  Future<void> _confirmDelete() async {
+    final c = widget.controls;
+    String? warning = c.deleteReuseWarning;
+    if (c.onCheckDelete != null) {
+      warning = await c.onCheckDelete!();
+    }
+    if (!mounted) return;
+    final p = context.palette;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('card_delete_dialog'),
+        title: Text(ctx.tr('delete_confirm_title')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(ctx.tr('delete_confirm_body')),
+            if (warning != null && warning.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                key: const Key('card_delete_reuse_warning'),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: p.warning.withValues(alpha: 0.16),
+                  border: Border.all(color: p.warning),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  warning,
+                  style: TextStyle(fontSize: 12.5, color: p.textPrimary),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const Key('card_delete_cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.tr('cancel')),
+          ),
+          FilledButton(
+            key: const Key('card_delete_confirm'),
+            style: FilledButton.styleFrom(backgroundColor: p.negative),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.tr('delete_card')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      c.onDelete?.call();
+    }
+  }
+
   Widget _menu(BuildContext context) {
     final c = widget.controls;
     final p = context.palette;
+    final showOwnerActions =
+        c.isOwner && (c.onChangeVisibility != null || c.onDelete != null);
     return track(
       'dataset.menu.open',
       PopupMenuButton<String>(
@@ -153,6 +235,14 @@ class _DatasetCardState extends State<DatasetCard> {
               widget.onToggleTable?.call();
             case 'share':
               widget.onShare?.call();
+            case 'visibility_public':
+              c.onChangeVisibility?.call('public');
+            case 'visibility_asodya':
+              c.onChangeVisibility?.call('asodya');
+            case 'visibility_personal':
+              c.onChangeVisibility?.call('personal');
+            case 'delete':
+              _confirmDelete();
           }
         },
         itemBuilder: (context) => [
@@ -212,18 +302,76 @@ class _DatasetCardState extends State<DatasetCard> {
                 _menuRow(context, Icons.open_with_rounded, context.tr('move')),
               ),
             ),
+          if (showOwnerActions) const PopupMenuDivider(),
+          if (c.isOwner && c.onChangeVisibility != null) ...[
+            for (final vis in const ['public', 'asodya', 'personal'])
+              PopupMenuItem(
+                value: 'visibility_$vis',
+                key: Key('card_menu_visibility_$vis'),
+                child: _menuRow(
+                  context,
+                  widget.descriptor.visibility == vis
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  '${context.tr('visibility_label')}: ${context.tr('visibility_$vis')}',
+                ),
+              ),
+          ],
+          if (c.isOwner && c.onDelete != null)
+            PopupMenuItem(
+              value: 'delete',
+              key: const Key('card_menu_delete'),
+              child: _menuRow(
+                context,
+                Icons.delete_outline_rounded,
+                context.tr('delete_card'),
+                color: p.negative,
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _menuRow(BuildContext context, IconData icon, String text) => Row(
+  Widget _menuRow(
+    BuildContext context,
+    IconData icon,
+    String text, {
+    Color? color,
+  }) => Row(
+    mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icon, size: 18, color: context.palette.textMuted),
+      Icon(icon, size: 18, color: color ?? context.palette.textMuted),
       const SizedBox(width: 10),
-      Text(text),
+      Flexible(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: color == null ? null : TextStyle(color: color),
+        ),
+      ),
     ],
   );
+
+  Widget _smallMark(BuildContext context, Key key, String text, Color color) =>
+      Container(
+        key: key,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          border: Border.all(color: color.withValues(alpha: 0.55)),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +425,26 @@ class _DatasetCardState extends State<DatasetCard> {
                         if (d.visibility != 'public') ...[
                           const SizedBox(width: 8),
                           AccessTag(visibility: d.visibility),
+                        ],
+                        if (c.isLive != null) ...[
+                          const SizedBox(width: 6),
+                          _smallMark(
+                            context,
+                            Key(
+                              c.isLive! ? 'card_mark_live' : 'card_mark_static',
+                            ),
+                            context.tr(c.isLive! ? 'mark_live' : 'mark_static'),
+                            c.isLive! ? p.positive : p.textMuted,
+                          ),
+                        ],
+                        if (c.isOwner) ...[
+                          const SizedBox(width: 6),
+                          _smallMark(
+                            context,
+                            const Key('card_mark_owner'),
+                            context.tr('mark_owner'),
+                            p.info,
+                          ),
                         ],
                       ],
                     ),

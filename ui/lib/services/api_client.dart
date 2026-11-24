@@ -6,6 +6,28 @@ import '../core/config.dart';
 import 'client_telemetry_service.dart';
 import 'http_client.dart';
 
+class OwnerDeleteOutcome {
+  final bool deleted;
+  final bool requiresConfirmation;
+  final int referenceCount;
+  final String message;
+
+  const OwnerDeleteOutcome({
+    required this.deleted,
+    required this.requiresConfirmation,
+    required this.referenceCount,
+    required this.message,
+  });
+
+  factory OwnerDeleteOutcome.fromJson(Map<String, dynamic> j) =>
+      OwnerDeleteOutcome(
+        deleted: j['deleted'] as bool? ?? false,
+        requiresConfirmation: j['requires_confirmation'] as bool? ?? false,
+        referenceCount: (j['reference_count'] as num?)?.toInt() ?? 0,
+        message: (j['message'] ?? '') as String,
+      );
+}
+
 class ApiException implements Exception {
   /// HTTP status; 0 when the service did not answer.
   final int status;
@@ -45,13 +67,17 @@ class ApiClient {
   final String service;
 
   ApiClient({String? baseUrl, http.Client? client, this.service = 'reports'})
-      : baseUrl = baseUrl ?? ReportsConfig.apiBaseUrl,
-        _client = client ?? createCredentialsClient();
+    : baseUrl = baseUrl ?? ReportsConfig.apiBaseUrl,
+      _client = client ?? createCredentialsClient();
 
-  Uri uri(String path, [Map<String, String> query = const {}]) =>
-      Uri.parse('$baseUrl$path').replace(queryParameters: query.isEmpty ? null : query);
+  Uri uri(String path, [Map<String, String> query = const {}]) => Uri.parse(
+    '$baseUrl$path',
+  ).replace(queryParameters: query.isEmpty ? null : query);
 
-  Future<Map<String, dynamic>> getJson(String path, [Map<String, String> query = const {}]) async {
+  Future<Map<String, dynamic>> getJson(
+    String path, [
+    Map<String, String> query = const {},
+  ]) async {
     final value = await getAny(path, query);
     if (value is Map<String, dynamic>) return value;
     throw ApiException(500, 'unexpected answer of $path');
@@ -60,12 +86,67 @@ class ApiClient {
   Future<dynamic> getAny(String path, [Map<String, String> query = const {}]) =>
       _send('GET', path, () => _client.get(uri(path, query)));
 
-  Future<dynamic> _send(String method, String path, Future<http.Response> Function() request) async {
+  Future<Map<String, dynamic>> patchJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final value = await _send(
+      'PATCH',
+      path,
+      () => _client.patch(
+        uri(path),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      ),
+    );
+    if (value is Map<String, dynamic>) return value;
+    throw ApiException(500, 'unexpected answer of $path');
+  }
+
+  Future<Map<String, dynamic>> deleteJson(
+    String path, [
+    Map<String, String> query = const {},
+  ]) async {
+    final value = await _send(
+      'DELETE',
+      path,
+      () => _client.delete(uri(path, query)),
+    );
+    if (value is Map<String, dynamic>) return value;
+    throw ApiException(500, 'unexpected answer of $path');
+  }
+
+  Future<Map<String, dynamic>> patchOwnerItemVisibility(
+    String itemId,
+    String visibility,
+  ) => patchJson('/me/items/$itemId', {'visibility': visibility});
+
+  Future<OwnerDeleteOutcome> deleteOwnerItem(
+    String itemId, {
+    bool confirm = false,
+  }) async {
+    final data = await deleteJson('/me/items/$itemId', {
+      'confirm': confirm ? 'true' : 'false',
+    });
+    return OwnerDeleteOutcome.fromJson(data);
+  }
+
+  Future<dynamic> _send(
+    String method,
+    String path,
+    Future<http.Response> Function() request,
+  ) async {
     http.Response res;
     try {
       res = await request().timeout(const Duration(seconds: 30));
     } catch (e) {
-      ClientTelemetryService.instance.reportServiceFailure(service: service, method: method, path: path, status: 0, message: '$e');
+      ClientTelemetryService.instance.reportServiceFailure(
+        service: service,
+        method: method,
+        path: path,
+        status: 0,
+        message: '$e',
+      );
       throw ApiException(0, '$e');
     }
     final body = utf8.decode(res.bodyBytes);
@@ -73,7 +154,12 @@ class ApiClient {
       final error = ApiException(res.statusCode, body);
       if (res.statusCode != 401 && res.statusCode != 403) {
         ClientTelemetryService.instance.reportServiceFailure(
-            service: service, method: method, path: path, status: res.statusCode, code: error.code);
+          service: service,
+          method: method,
+          path: path,
+          status: res.statusCode,
+          code: error.code,
+        );
       }
       throw error;
     }
