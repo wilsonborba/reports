@@ -1501,21 +1501,69 @@ pub async fn seed_relation_templates(db: &Db) -> Result<(), ReportError> {
 pub fn diagram_catalog_templates() -> Vec<VisualTemplateVersion> {
     let specs: &[(&str, &str, &str, &str, i64)] = &[
         ("sankey", "Sankey", "Diagrama de Sankey", "แผนภาพแซงคีย์", 2),
-        ("alluvial", "Alluvial", "Diagrama aluvial", "แผนภาพอลูเวียล", 2),
+        (
+            "alluvial",
+            "Alluvial",
+            "Diagrama aluvial",
+            "แผนภาพอลูเวียล",
+            2,
+        ),
         ("chord", "Chord", "Diagrama de cordas", "แผนภาพคอร์ด", 1),
-        ("arc_diagram", "Arc diagram", "Diagrama de arcos", "แผนภาพส่วนโค้ง", 1),
+        (
+            "arc_diagram",
+            "Arc diagram",
+            "Diagrama de arcos",
+            "แผนภาพส่วนโค้ง",
+            1,
+        ),
         ("flowchart", "Flowchart", "Fluxograma", "ผังงาน", 1),
-        ("layered_dag", "Layered DAG", "DAG em camadas", "กราฟ DAG แบบชั้น", 1),
-        ("sequence_diagram", "Sequence diagram", "Diagrama de sequência", "แผนภาพลำดับ", 1),
-        ("state_diagram", "State diagram", "Diagrama de estados", "แผนภาพสถานะ", 1),
+        (
+            "layered_dag",
+            "Layered DAG",
+            "DAG em camadas",
+            "กราฟ DAG แบบชั้น",
+            1,
+        ),
+        (
+            "sequence_diagram",
+            "Sequence diagram",
+            "Diagrama de sequência",
+            "แผนภาพลำดับ",
+            1,
+        ),
+        (
+            "state_diagram",
+            "State diagram",
+            "Diagrama de estados",
+            "แผนภาพสถานะ",
+            1,
+        ),
         ("swimlane", "Swimlane", "Raias de processo", "สวิมเลน", 1),
-        ("tree_org", "Tree / org chart", "Organograma / árvore", "แผนภูมิโครงสร้าง", 1),
+        (
+            "tree_org",
+            "Tree / org chart",
+            "Organograma / árvore",
+            "แผนภูมิโครงสร้าง",
+            1,
+        ),
         ("dendrogram", "Dendrogram", "Dendrograma", "เดนโดรแกรม", 1),
         ("mind_map", "Mind map", "Mapa mental", "แผนผังความคิด", 1),
         ("network", "Network", "Rede", "แผนภาพเครือข่าย", 1),
-        ("adjacency_matrix", "Adjacency matrix", "Matriz de adjacência", "เมทริกซ์ประชิด", 1),
+        (
+            "adjacency_matrix",
+            "Adjacency matrix",
+            "Matriz de adjacência",
+            "เมทริกซ์ประชิด",
+            1,
+        ),
         ("er_diagram", "ER diagram", "Diagrama ER", "แผนภาพอีอาร์", 1),
-        ("architecture_diagram", "Architecture diagram", "Diagrama de arquitetura", "แผนภาพสถาปัตยกรรม", 1),
+        (
+            "architecture_diagram",
+            "Architecture diagram",
+            "Diagrama de arquitetura",
+            "แผนภาพสถาปัตยกรรม",
+            1,
+        ),
     ];
 
     specs
@@ -1539,10 +1587,7 @@ pub fn diagram_catalog_templates() -> Vec<VisualTemplateVersion> {
                         is_required: true,
                         min_count: min_d,
                         max_count: 3,
-                        accepted_types: vec![
-                            "string".to_string(),
-                            "enum".to_string(),
-                        ],
+                        accepted_types: vec!["string".to_string(), "enum".to_string()],
                     },
                     TemplateSlot {
                         slot_name: "value".to_string(),
@@ -1550,10 +1595,7 @@ pub fn diagram_catalog_templates() -> Vec<VisualTemplateVersion> {
                         is_required: true,
                         min_count: 1,
                         max_count: 1,
-                        accepted_types: vec![
-                            "integer".to_string(),
-                            "float".to_string(),
-                        ],
+                        accepted_types: vec!["integer".to_string(), "float".to_string()],
                     },
                 ],
                 options: vec![],
@@ -1581,7 +1623,12 @@ pub async fn seed_diagram_templates(db: &Db) -> Result<(), ReportError> {
 pub fn sets_catalog_templates() -> Vec<VisualTemplateVersion> {
     let specs: &[(&str, &str, &str, &str)] = &[
         ("venn", "Venn diagram", "Diagrama de Venn", "แผนภาพเวนน์"),
-        ("euler", "Euler diagram", "Diagrama de Euler", "แผนภาพออยเลอร์"),
+        (
+            "euler",
+            "Euler diagram",
+            "Diagrama de Euler",
+            "แผนภาพออยเลอร์",
+        ),
         ("upset", "UpSet plot", "Gráfico UpSet", "แผนภาพ UpSet"),
     ];
 
@@ -1643,10 +1690,25 @@ pub fn geo_catalog_templates() -> Vec<VisualTemplateVersion> {
     let specs: &[(&str, &str, &str, &str)] = &[
         ("map", "Point map", "Mapa de pontos", "แผนที่จุด"),
         ("bubble_map", "Bubble map", "Mapa de bolhas", "แผนที่ฟอง"),
-        ("choropleth", "Choropleth", "Mapa coroplético", "แผนที่โคโรเพลท"),
-        ("geo_heatmap", "Geographic heatmap", "Mapa de calor geográfico", "แผนที่ความหนาแน่นเชิงพื้นที่"),
+        (
+            "choropleth",
+            "Choropleth",
+            "Mapa coroplético",
+            "แผนที่โคโรเพลท",
+        ),
+        (
+            "geo_heatmap",
+            "Geographic heatmap",
+            "Mapa de calor geográfico",
+            "แผนที่ความหนาแน่นเชิงพื้นที่",
+        ),
         ("flow_map", "Flow map", "Mapa de fluxo", "แผนที่การไหล"),
-        ("hex_tile_map", "Hex tile map", "Mapa hexagonal", "แผนที่หกเหลี่ยม"),
+        (
+            "hex_tile_map",
+            "Hex tile map",
+            "Mapa hexagonal",
+            "แผนที่หกเหลี่ยม",
+        ),
     ];
 
     specs
@@ -1707,11 +1769,39 @@ pub async fn seed_geo_templates(db: &Db) -> Result<(), ReportError> {
 pub fn indicator_table_catalog_templates() -> Vec<VisualTemplateVersion> {
     let specs: &[(&str, &str, &str, &str, i64, i64)] = &[
         ("kpi", "KPI Tile", "Bloco KPI", "การ์ดตัวชี้วัด KPI", 0, 1),
-        ("kpi_sparkline", "KPI with Sparkline", "KPI com Sparkline", "KPI พร้อมกราฟเส้นย่อ", 0, 1),
+        (
+            "kpi_sparkline",
+            "KPI with Sparkline",
+            "KPI com Sparkline",
+            "KPI พร้อมกราฟเส้นย่อ",
+            0,
+            1,
+        ),
         ("table", "Data Table", "Tabela de Dados", "ตารางข้อมูล", 0, 1),
-        ("heat_table", "Heat Table", "Tabela de Calor", "ตารางความร้อน", 1, 1),
-        ("status_scorecard", "Status Scorecard", "Matriz de Status", "ตารางคะแนนสถานะ", 1, 1),
-        ("word_cloud", "Word Cloud", "Nuvem de Palavras", "กลุ่มคำ", 1, 1),
+        (
+            "heat_table",
+            "Heat Table",
+            "Tabela de Calor",
+            "ตารางความร้อน",
+            1,
+            1,
+        ),
+        (
+            "status_scorecard",
+            "Status Scorecard",
+            "Matriz de Status",
+            "ตารางคะแนนสถานะ",
+            1,
+            1,
+        ),
+        (
+            "word_cloud",
+            "Word Cloud",
+            "Nuvem de Palavras",
+            "กลุ่มคำ",
+            1,
+            1,
+        ),
     ];
     specs
         .iter()
@@ -1773,16 +1863,61 @@ pub async fn seed_indicator_table_templates(db: &Db) -> Result<(), ReportError> 
 /// Science, AI, and assessment catalog templates (items 105 to 114).
 pub fn science_ai_catalog_templates() -> Vec<VisualTemplateVersion> {
     let specs: &[(&str, &str, &str, &str)] = &[
-        ("top_k_prob", "Top-k probability bar", "Barras de probabilidade top-k", "กราฟแท่งความน่าจะเป็น top-k"),
-        ("calibration", "Calibration diagram", "Diagrama de calibração", "แผนภาพการปรับเทียบ"),
-        ("confusion_matrix", "Confusion matrix", "Matriz de confusão", "เมทริกซ์ความสับสน"),
-        ("roc_pr", "ROC and PR curve", "Curva ROC e PR", "เส้นโค้ง ROC และ PR"),
-        ("learning_curve", "Learning / loss curve", "Curva de aprendizado", "กราฟการเรียนรู้"),
-        ("irt_icc", "Item characteristic curve", "Curva característica do item", "เส้นโค้งคุณลักษณะข้อสอบ"),
-        ("irt_iif", "Test information curve", "Curva de informação do teste", "เส้นโค้งสารสนเทศแบบทดสอบ"),
+        (
+            "top_k_prob",
+            "Top-k probability bar",
+            "Barras de probabilidade top-k",
+            "กราฟแท่งความน่าจะเป็น top-k",
+        ),
+        (
+            "calibration",
+            "Calibration diagram",
+            "Diagrama de calibração",
+            "แผนภาพการปรับเทียบ",
+        ),
+        (
+            "confusion_matrix",
+            "Confusion matrix",
+            "Matriz de confusão",
+            "เมทริกซ์ความสับสน",
+        ),
+        (
+            "roc_pr",
+            "ROC and PR curve",
+            "Curva ROC e PR",
+            "เส้นโค้ง ROC และ PR",
+        ),
+        (
+            "learning_curve",
+            "Learning / loss curve",
+            "Curva de aprendizado",
+            "กราฟการเรียนรู้",
+        ),
+        (
+            "irt_icc",
+            "Item characteristic curve",
+            "Curva característica do item",
+            "เส้นโค้งคุณลักษณะข้อสอบ",
+        ),
+        (
+            "irt_iif",
+            "Test information curve",
+            "Curva de informação do teste",
+            "เส้นโค้งสารสนเทศแบบทดสอบ",
+        ),
         ("wright_map", "Wright map", "Mapa de Wright", "แผนที่ไรท์"),
-        ("item_diff_disc", "Difficulty x discrimination", "Dificuldade x discriminação", "ความยาก x อำนาจจำแนก"),
-        ("kaplan_meier", "Kaplan-Meier survival curve", "Curva de sobrevivência", "เส้นโค้งการรอดชีพ"),
+        (
+            "item_diff_disc",
+            "Difficulty x discrimination",
+            "Dificuldade x discriminação",
+            "ความยาก x อำนาจจำแนก",
+        ),
+        (
+            "kaplan_meier",
+            "Kaplan-Meier survival curve",
+            "Curva de sobrevivência",
+            "เส้นโค้งการรอดชีพ",
+        ),
     ];
     specs
         .iter()

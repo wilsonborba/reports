@@ -224,3 +224,10 @@ The existing error-service interface delegates to the shared package. It keeps i
 short duplicate throttle and safe service summaries. Injected mock clients disable
 periodic delivery by default. Tests remain offline. The app detaches its tracker on
 disposal so repeated widget fixtures restore their error handlers.
+
+## Third-party map boundaries (`reports_view`)
+
+Geographic charts bundle simplified Natural Earth 1:110m admin-0 (174 countries) and
+1:10m admin-1 (77 Thailand provinces, 27 Brazil states) boundaries via `reports_view`
+(`169,864` bytes in `lib/src/geo/natural_earth_boundaries.dart`), joined by ISO 3166-1
+and ISO 3166-2 codes. Source: Natural Earth (Public Domain).

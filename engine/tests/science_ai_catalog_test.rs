@@ -2,9 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use common::*;
-use reports::dal::templates::{
-    science_ai_catalog_templates, seed_science_ai_templates,
-};
+use reports::dal::templates::{science_ai_catalog_templates, seed_science_ai_templates};
 
 #[tokio::test]
 async fn all_10_science_ai_templates_publish_and_discover_in_all_languages() {
