@@ -981,9 +981,21 @@ pub async fn seed_time_templates(db: &Db) -> Result<(), ReportError> {
     Ok(())
 }
 
+/// Slot constraints and localized title metadata for a part-of-a-whole template.
+type PartWholeSpec = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    i64,
+    i64,
+    i64,
+    i64,
+);
+
 /// Catalog templates for part-of-a-whole visuals (catalog items 44 to 54).
 pub fn part_whole_catalog_templates() -> Vec<VisualTemplateVersion> {
-    let specs: &[(&str, &str, &str, &str, i64, i64, i64, i64)] = &[
+    let specs: &[PartWholeSpec] = &[
         (
             "donut",
             "Donut Chart",
