@@ -260,6 +260,11 @@ and exposes the unrounded numeric percentage with denominator semantics in datas
 metadata. Bytes are not lines of code. Producers send no preformatted percentages or
 synthetic monthly rows.
 
+Reproducible schema, `technical-aggregates` report, and 7 dataset/card definitions live in
+`scripts/catalog/aggregates.py` (`scripts/catalog/populate_aggregates.sh --project <slug>`
+or `REPORTS_AGGREGATE_PROJECT`). When no project slug is configured, the initializer
+remains unconfigured and does not assume a deployed project slug.
+
 ## Frontend observability
 
 The UI uses the shared [`screen_trail`](https://pub.dev/packages/screen_trail)

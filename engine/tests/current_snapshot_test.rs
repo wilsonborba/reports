@@ -564,3 +564,199 @@ async fn latest_snapshot_selector_rejects_mistyped_source_fields() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert!(body.to_string().contains("latest_snapshot.order_field"));
 }
+
+#[tokio::test]
+async fn real_consumer_aggregate_catalog_definitions_and_wilson_metrics_work_end_to_end() {
+    let out = std::process::Command::new("python3")
+        .args(["../scripts/catalog/aggregates.py", "--dump-json"])
+        .output()
+        .expect("run aggregates.py --dump-json");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bundle: Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    let t = TestApp::new().await;
+    let (status, _) = t
+        .service(
+            "PUT",
+            &format!("/projects/{PROJECT}/admin/project"),
+            json!({"name": {"en": "Domain"}}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Publish schema from bundle.
+    let schema = &bundle["schema"];
+    let (status, body) = t
+        .service(
+            "POST",
+            &format!("/projects/{PROJECT}/admin/schemas"),
+            json!({
+                "schema_name": schema["schema_name"],
+                "fields": schema["fields"]
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = t
+        .service(
+            "POST",
+            &format!(
+                "/projects/{PROJECT}/admin/schemas/{}/versions/{}/publish",
+                schema["schema_name"].as_str().unwrap(),
+                schema["version"]
+            ),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Publish technical-aggregates report & all 7 calculations/cards/meta.
+    let report = &bundle["report"];
+    let report_id = report["id"].as_str().unwrap();
+    let (status, body) = t
+        .service(
+            "PUT",
+            &format!("/projects/{PROJECT}/admin/reports/{report_id}"),
+            json!({
+                "title": report["title"],
+                "visibility": report["visibility"]
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let datasets = bundle["datasets"].as_array().unwrap();
+    assert_eq!(datasets.len(), 7);
+    for (idx, ds) in datasets.iter().enumerate() {
+        let id = ds["id"].as_str().unwrap();
+        let (status, body) = t
+            .service(
+                "POST",
+                &format!("/projects/{PROJECT}/admin/calculations"),
+                json!({"calculation_id": id, "definition": ds["calculation"]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        let (status, body) = t
+            .service(
+                "POST",
+                &format!("/projects/{PROJECT}/admin/calculations/{id}/versions/1/publish"),
+                json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, body) = t
+            .service(
+                "PUT",
+                &format!("/projects/{PROJECT}/admin/reports/{report_id}/datasets/{id}"),
+                json!({
+                    "visibility": "public",
+                    "calculation_id": id,
+                    "calculation_version": 1,
+                    "visual": ds["visual"],
+                    "card_order": idx + 1
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, body) = t
+            .service(
+                "PUT",
+                &format!("/projects/{PROJECT}/admin/reports/{report_id}/datasets/{id}/meta"),
+                ds["meta"].clone(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    // Ingest real Domain + Wilson producer-shaped snapshot + stable retry.
+    let payloads = vec![
+        row("snap-1", 1000, "projects_by_status", "", "active", 4, None),
+        row(
+            "snap-1",
+            1000,
+            "categories_distribution",
+            "",
+            "Platform",
+            3,
+            None,
+        ),
+        row(
+            "snap-1",
+            1000,
+            "languages_distribution",
+            "",
+            "Rust",
+            2,
+            None,
+        ),
+        row(
+            "snap-1",
+            1000,
+            "project_language_bytes",
+            "domain",
+            "Python",
+            6000,
+            Some(10000),
+        ),
+        row(
+            "snap-1",
+            1000,
+            "project_language_bytes",
+            "domain",
+            "Dart",
+            4000,
+            Some(10000),
+        ),
+        row("snap-1", 1000, "skill_frequency", "", "Rust", 5, None),
+        row("snap-1", 1000, "issuer_counts", "", "AWS", 2, None),
+        row(
+            "snap-1",
+            1000,
+            "certification_type_counts",
+            "",
+            "professional",
+            3,
+            None,
+        ),
+    ];
+    let first = ingest_snapshot(&t, "snap-1", 1000, payloads.clone()).await;
+    assert_eq!(first["created"], 9);
+    let retry = ingest_snapshot(&t, "snap-1", 1000, payloads).await;
+    assert_eq!(retry["created"], 0);
+    assert_eq!(retry["duplicates"], 9);
+
+    // Verify public catalog report lists all 7 cards and Wilson/Domain measures render cleanly.
+    let (status, showcase) = t
+        .get(&format!("/projects/{PROJECT}/showcase/{report_id}"), &[])
+        .await;
+    assert_eq!(status, StatusCode::OK, "{showcase}");
+    assert_eq!(showcase["cards"].as_array().unwrap().len(), 7);
+
+    let (status, skill_card) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/{report_id}/cards/skill-frequency"),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{skill_card}");
+    assert_eq!(skill_card["rows"][0]["count"], json!(5.0));
+
+    let (status, lang_card) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/{report_id}/cards/project-language-bytes"),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{lang_card}");
+    assert_eq!(
+        lang_card["fields"][4]["denominator_field"],
+        json!("total_bytes")
+    );
+    assert_eq!(lang_card["rows"][0]["percentage"], json!(40.0));
+    assert_eq!(lang_card["rows"][1]["percentage"], json!(60.0));
+}
