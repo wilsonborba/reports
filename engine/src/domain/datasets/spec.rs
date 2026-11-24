@@ -87,6 +87,9 @@ pub struct DatasetSpec {
     pub union: Vec<String>,
     #[serde(default)]
     pub lookups: Vec<LookupSpec>,
+    /// Keep only rows in the newest complete source snapshot before filters run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_snapshot: Option<LatestSnapshotSpec>,
     /// Time buckets added to every source row after the lookups (before `row_derived`).
     #[serde(default)]
     pub buckets: Vec<BucketSpec>,
@@ -121,6 +124,14 @@ pub struct DatasetSpec {
     /// Calculate this public dataset again right after new records arrive (high-traffic KPI).
     #[serde(default)]
     pub warm: bool,
+}
+
+/// Source fields that identify the order and completion marker of a full snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatestSnapshotSpec {
+    pub order_field: String,
+    pub complete_field: String,
+    pub id_field: String,
 }
 
 /// Truncates a date or RFC 3339 time field to a bucket.

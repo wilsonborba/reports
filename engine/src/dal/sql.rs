@@ -79,6 +79,21 @@ pub const REQUIRED_SCHEMA: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "calculation_latest_snapshots",
+        &[
+            "project_slug",
+            "calculation_id",
+            "version",
+            "row_key",
+            "parent_key",
+            "position",
+            "map_key",
+            "order_field",
+            "complete_field",
+            "id_field",
+        ],
+    ),
+    (
         "user_project_roles",
         &["user_uuid", "app_name", "is_project_admin"],
     ),

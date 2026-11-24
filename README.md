@@ -203,6 +203,63 @@ never connects to appdb or changes its schema.
 
 Development follows `APP_ENV=development|dev|local|test`; production disables debug.
 
+## Current aggregate snapshots
+
+The `aggregate_snapshot` schema stores current producer aggregates as append-only rows.
+Schema version 1 has required fields `snapshot_id` (string), `snapshot_order` (integer),
+`snapshot_complete` (boolean), `availability` (string), `metric` (string),
+`group_key` (string), `key` (string), and `value` (integer). `denominator` is an
+optional integer. `snapshot_order` is a safe UTC epoch timestamp in microseconds.
+Every row in one logical snapshot shares its id and order. Producers post value and
+state rows first, then post exactly one `snapshot_complete=true` marker in a separate
+ingest call only after all data calls succeed. Ingest can persist earlier chunks when a
+later chunk fails, so an incomplete attempt remains invisible until its marker is written.
+A retry uses the same snapshot id, order, and row keys. A valid empty snapshot contains
+its state rows and marker but no value rows.
+
+The marker uses availability `complete`, metric `snapshot`, empty group and key, and
+value zero. Data rows use `snapshot_complete=false`. Value rows use availability
+`available`; a language state row has empty key and availability `empty` or
+`unavailable`, distinguishing a successful empty response from a missing or failed
+source. Its group key is the stable project slug. A producer reuses the same snapshot id
+and order when it retries. Idempotency keys include the schema version, snapshot id,
+metric and a hash of the natural key. New observations use a new id and a higher order,
+including when content returns to an earlier value.
+
+A calculation opts into current-state selection with:
+
+```json
+"latest_snapshot": {
+  "order_field": "snapshot_order",
+  "complete_field": "snapshot_complete",
+  "id_field": "snapshot_id"
+}
+```
+
+The engine finds the greatest `(snapshot_order, snapshot_id)` among complete markers,
+selects rows from exactly that snapshot, then applies calculation filters. The ID resolves
+equal timestamps deterministically. The calculation filters markers and selects one metric
+before grouping. An empty latest snapshot therefore cannot restore historical values.
+Calculations without `latest_snapshot` keep their existing behavior.
+
+The approved metric keys are:
+
+| Producer | Metric | Key | Group key | Value and unit |
+| --- | --- | --- | --- | --- |
+| Domain | `projects_by_status` | status | empty | project count |
+| Domain | `categories_distribution` | category | empty | distinct project count |
+| Domain | `languages_distribution` | primary language | empty | project count |
+| Domain | `project_language_bytes` | GitHub language | project slug | raw bytes; denominator is total language bytes |
+| Wilson | `skill_frequency` | skill | empty | skill occurrences |
+| Wilson | `issuer_counts` | issuer | empty | visible credential count |
+| Wilson | `certification_type_counts` | stored type | empty | visible credential count |
+
+Reports derives the language percentage as `100 * value / denominator` only when the
+denominator is positive. It keeps integer bytes and the denominator as separate measures,
+and exposes the unrounded numeric percentage with denominator semantics in dataset
+metadata. Bytes are not lines of code. Producers send no preformatted percentages or
+synthetic monthly rows.
+
 ## Frontend observability
 
 The UI uses the shared [`screen_trail`](https://pub.dev/packages/screen_trail)
