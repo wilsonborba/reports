@@ -184,7 +184,12 @@ class _DatasetFullViewState extends State<DatasetFullView> {
           content: Text('${context.tr('error_loading')}: $e'),
           action: SnackBarAction(
             label: context.tr('retry'),
-            onPressed: () => _handleVisibilityChange(next),
+            onPressed: () {
+              if (!mounted || _probeGeneration != gen || _ownerItemId != itemId || SessionStore.instance.user?.userId != currentUserId) {
+                return;
+              }
+              _handleVisibilityChange(next);
+            },
           ),
         ),
       );
@@ -258,7 +263,12 @@ class _DatasetFullViewState extends State<DatasetFullView> {
           content: Text('${context.tr('error_loading')}: $e'),
           action: SnackBarAction(
             label: context.tr('retry'),
-            onPressed: _handleDelete,
+            onPressed: () {
+              if (!mounted || _probeGeneration != gen || _ownerItemId != itemId || SessionStore.instance.user?.userId != currentUserId) {
+                return;
+              }
+              _handleDelete();
+            },
           ),
         ),
       );

@@ -1332,4 +1332,289 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'stale retry on SnackBar does not issue mutation after navigation to another card',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(
+            jsonEncode({'user_id': 'user-1'}),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-chart-a') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-a',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-chart-b') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-b',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/projects/p1/reports/r1') {
+          return http.Response(
+            jsonEncode({
+              'project': 'p1',
+              'report': 'r1',
+              'title': 'R1',
+              'description': '',
+              'tags': [],
+              'period': null,
+              'updated_at': '',
+              'datasets': [
+                {
+                  'dataset_id': 'ds-chart-a',
+                  'title': 'Chart A',
+                  'description': '',
+                  'equation': null,
+                  'fields': [],
+                  'filters': [],
+                  'visibility': 'personal',
+                },
+                {
+                  'dataset_id': 'ds-chart-b',
+                  'title': 'Chart B',
+                  'description': '',
+                  'equation': null,
+                  'fields': [],
+                  'filters': [],
+                  'visibility': 'personal',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path.contains('/datasets/')) {
+          final id = req.url.path.split('/').last;
+          return http.Response(
+            jsonEncode({
+              'dataset_id': id,
+              'rows': [
+                {'x': 'a', 'y': 10}
+              ],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        if (req.method == 'DELETE' && req.url.path == '/me/items/item-a') {
+          return http.Response('server error', 500);
+        }
+        if (req.method == 'DELETE' && req.url.path == '/me/items/item-b') {
+          return http.Response(jsonEncode({'deleted': true}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        await sessionStore.refresh();
+        final router = GoRouter(
+          initialLocation: '/v1/menu/p1/r1/cards/ds-chart-a',
+          routes: [
+            GoRoute(
+              path: '/v1/menu/:project/:report/cards/:dataset',
+              builder: (_, s) => Scaffold(
+                body: DatasetFullView(
+                  project: s.pathParameters['project']!,
+                  report: s.pathParameters['report']!,
+                  datasetId: s.pathParameters['dataset']!,
+                  visual: Visual.bar,
+                  compact: true,
+                  service: ReportService(api),
+                  apiClient: api,
+                ),
+              ),
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          LanguageScope(
+            controller: LanguageController(),
+            child: MaterialApp.router(
+              theme: ThemeRegistry.theme('cortex', Brightness.light),
+              routerConfig: router,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Initial chart A probed
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 2. Trigger delete on chart A which fails (500)
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+
+        // Error SnackBar with Retry button appears
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(calls.contains('DELETE /me/items/item-a'), isTrue);
+        final initialDeleteCalls =
+            calls.where((c) => c.startsWith('DELETE')).length;
+
+        // 3. Navigate to chart B while SnackBar is still visible
+        router.go('/v1/menu/p1/r1/cards/ds-chart-b');
+        await tester.pumpAndSettle();
+
+        // Verify chart B is loaded and SnackBar Retry is still displayed
+        expect(calls.contains('GET /me/items/ds-chart-b'), isTrue);
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        // 4. Tap the stale Retry action from chart A
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pump();
+
+        // 5. Assert ZERO destructive request against item-b or item-a
+        final postRetryDeleteCalls =
+            calls.where((c) => c.startsWith('DELETE')).length;
+        expect(postRetryDeleteCalls, equals(initialDeleteCalls));
+        expect(calls.any((c) => c.contains('DELETE /me/items/item-b')), isFalse);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'valid same-card retry on SnackBar re-issues mutation when target remains unchanged',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+      var failDelete = true;
+
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(
+            jsonEncode({'user_id': 'user-1'}),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-slot') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-slot-1',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'DELETE' && req.url.path == '/me/items/item-slot-1') {
+          if (failDelete) {
+            failDelete = false;
+            return http.Response('server error', 500);
+          }
+          return http.Response(jsonEncode({'deleted': true}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        await sessionStore.refresh();
+
+        await tester.pumpWidget(
+          _wrap(
+            DatasetSlot(
+              project: 'p1',
+              report: 'r1',
+              slot: const Slot('ds-slot'),
+              view: ReportView.fromJson({
+                'project': 'p1',
+                'report': 'r1',
+                'title': 'R1',
+                'datasets': [
+                  {
+                    'dataset_id': 'ds-slot',
+                    'title': 'Slot Chart',
+                    'visibility': 'personal',
+                  },
+                ],
+              }),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Initial slot probed
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 2. Trigger delete which fails initially
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(
+          calls.where((c) => c == 'DELETE /me/items/item-slot-1').length,
+          equals(1),
+        );
+
+        // 3. Tap Retry on valid same card
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        // 4. Assert re-issued delete succeeded on same card
+        expect(
+          calls.where((c) => c == 'DELETE /me/items/item-slot-1').length,
+          equals(2),
+        );
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
 }
