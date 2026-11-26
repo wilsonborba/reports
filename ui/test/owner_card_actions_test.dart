@@ -16,6 +16,7 @@ import 'package:reports_ui/services/session_store.dart';
 import 'package:reports_ui/themes/theme_registry.dart';
 import 'package:reports_ui/widgets/report/dataset_card.dart';
 import 'package:reports_ui/widgets/report/dataset_slot.dart';
+import 'package:reports_ui/views/dataset_full_view.dart';
 
 const _desc = DatasetDescriptor(
   datasetId: 'ds-1',
@@ -324,7 +325,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('card_delete_reuse_warning')), findsOneWidget);
         expect(
-          find.text('This item is referenced by 1 note(s). Deleting it will remove it from those notes.'),
+          find.text('This item is referenced by 1 note(s). Deleting it removes the source item and makes it unavailable in those notes.'),
           findsOneWidget,
         );
         await tester.tap(find.byKey(const Key('card_delete_confirm')));
@@ -683,6 +684,369 @@ void main() {
 
         // Owner badge is cleared immediately on sign out
         expect(find.byKey(const Key('card_mark_owner')), findsNothing);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'DatasetSlot clears owner state on User A -> User B identity transition',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      String currentUserId = 'u-user-a';
+      final mock = MockClient((req) async {
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(jsonEncode({'user_id': currentUserId}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-dynamic') {
+          if (currentUserId == 'u-user-a') {
+            return http.Response(
+              jsonEncode({
+                'item': {
+                  'id': 'item-a-1',
+                  'control_authority': 'user_owned',
+                  'reference_count': 0,
+                },
+              }),
+              200,
+            );
+          } else {
+            return http.Response(
+              jsonEncode({
+                'item': {
+                  'id': 'item-b-1',
+                  'control_authority': 'viewer',
+                  'reference_count': 0,
+                },
+              }),
+              200,
+            );
+          }
+        }
+        if (req.method == 'GET' &&
+            req.url.path == '/projects/p1/reports/r1/datasets/ds-dynamic') {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'ds-dynamic',
+              'rows': [{'x': 'a', 'y': 10}],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-active' : null,
+      );
+
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-active' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        final desc = DatasetDescriptor(
+          datasetId: 'ds-dynamic',
+          title: 'Dynamic Chart',
+          description: '',
+          equation: null,
+          fields: const [],
+          filters: const [],
+          visibility: 'public',
+        );
+        final view = ReportView(
+          project: 'p1',
+          report: 'r1',
+          title: 'Dynamic Report',
+          description: '',
+          tags: const [],
+          period: null,
+          updatedAt: '',
+          datasets: [desc],
+        );
+
+        // 1. Initial load under User A (owner)
+        await sessionStore.refresh();
+        await tester.pumpWidget(
+          _wrap(
+            DatasetSlot(
+              project: 'p1',
+              report: 'r1',
+              view: view,
+              slot: const Slot('ds-dynamic', visual: Visual.bar, measures: ['y']),
+              service: ReportService(api),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 2. Identity transition to User B (viewer)
+        currentUserId = 'u-user-b';
+        await sessionStore.refresh();
+        await tester.pumpAndSettle();
+
+        // Owner mark is immediately cleared and does not return
+        expect(find.byKey(const Key('card_mark_owner')), findsNothing);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'Canonical snapshot freshness displays Static mark on slot and full view, and unknown meta is null',
+    (tester) async {
+      final mock = MockClient((req) async {
+        if (req.method == 'GET' &&
+            (req.url.path.contains('/datasets/ds-snapshot') ||
+                req.url.path.contains('/cards/ds-snapshot'))) {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'ds-snapshot',
+              'rows': [{'x': 'a', 'y': 10}],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/projects/p1/showcase/r1') {
+          return http.Response(
+            jsonEncode({
+              'project': 'p1',
+              'report': 'r1',
+              'title': 'R1',
+              'cards': [
+                {
+                  'dataset_id': 'ds-snapshot',
+                  'title': 'Snapshot Chart',
+                  'visibility': 'public',
+                  'descriptor': {
+                    'dataset_id': 'ds-snapshot',
+                    'title': 'Snapshot Chart',
+                    'meta': {'freshness_mode': 'snapshot'},
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/projects/p1/reports/r1') {
+          return http.Response(
+            jsonEncode({
+              'project': 'p1',
+              'report': 'r1',
+              'title': 'R1',
+              'datasets': [
+                {
+                  'dataset_id': 'ds-snapshot',
+                  'title': 'Snapshot Chart',
+                  'visibility': 'public',
+                  'meta': {'freshness_mode': 'snapshot'},
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+      );
+      final service = ReportService(api);
+
+      final desc = DatasetDescriptor(
+        datasetId: 'ds-snapshot',
+        title: 'Snapshot Chart',
+        description: '',
+        equation: null,
+        fields: const [],
+        filters: const [],
+        visibility: 'public',
+        meta: const DatasetMeta(freshnessMode: 'snapshot'),
+      );
+      final view = ReportView(
+        project: 'p1',
+        report: 'r1',
+        title: 'Report',
+        description: '',
+        tags: const [],
+        period: null,
+        updatedAt: '',
+        datasets: [desc],
+      );
+
+      // 1. Check slot displays mark_static and 'Static'
+      await tester.pumpWidget(
+        _wrap(
+          DatasetSlot(
+            project: 'p1',
+            report: 'r1',
+            view: view,
+            slot: const Slot('ds-snapshot', visual: Visual.bar, measures: ['y']),
+            service: service,
+            apiClient: api,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('card_mark_static')), findsOneWidget);
+      expect(find.text('Static'), findsOneWidget);
+
+      // 2. Check full view displays mark_static
+      await tester.pumpWidget(
+        _wrap(
+          DatasetFullView(
+            project: 'p1',
+            report: 'r1',
+            datasetId: 'ds-snapshot',
+            visual: Visual.bar,
+            compact: true,
+            service: service,
+            apiClient: api,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('card_mark_static')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'DatasetFullView provides owner controls, visibility changes and delete flow',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}${req.url.hasQuery ? '?${req.url.query}' : ''}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(jsonEncode({'user_id': 'u-owner-full'}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-full') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-full-1',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'PATCH' && req.url.path == '/me/items/item-full-1') {
+          return http.Response(jsonEncode({'success': true}), 200);
+        }
+        if (req.method == 'DELETE' && req.url.path == '/me/items/item-full-1') {
+          return http.Response(jsonEncode({'deleted': true}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/projects/p1/reports/r1') {
+          return http.Response(
+            jsonEncode({
+              'project': 'p1',
+              'report': 'r1',
+              'title': 'R1',
+              'description': '',
+              'tags': [],
+              'period': null,
+              'updated_at': '',
+              'datasets': [
+                {
+                  'dataset_id': 'ds-full',
+                  'title': 'Full Chart',
+                  'description': '',
+                  'equation': null,
+                  'fields': [],
+                  'filters': [],
+                  'visibility': 'personal',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' &&
+            req.url.path.contains('/datasets/ds-full')) {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'ds-full',
+              'rows': [{'x': 'a', 'y': 10}],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        await sessionStore.refresh();
+        await tester.pumpWidget(
+          _wrap(
+            DatasetFullView(
+              project: 'p1',
+              report: 'r1',
+              datasetId: 'ds-full',
+              visual: Visual.bar,
+              compact: true,
+              service: ReportService(api),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Owner mark displayed in full view
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 2. Open options menu and verify owner actions
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('card_menu_visibility_public')), findsOneWidget);
+        expect(find.byKey(const Key('card_menu_delete')), findsOneWidget);
+
+        // 3. Change visibility to public
+        await tester.tap(find.byKey(const Key('card_menu_visibility_public')));
+        await tester.pumpAndSettle();
+        expect(
+          calls.any((c) => c.contains('PATCH /me/items/item-full-1')),
+          isTrue,
+        );
+
+        // 4. Delete item
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_delete')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('card_delete_dialog')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+        expect(
+          calls.any((c) => c.contains('DELETE /me/items/item-full-1')),
+          isTrue,
+        );
       } finally {
         SessionStore.instance = prevStore;
       }

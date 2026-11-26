@@ -4,8 +4,10 @@ import '../l10n/strings.dart';
 import '../layouts/report_layout.dart';
 import '../models/catalog.dart';
 import '../routes.dart';
+import '../services/api_client.dart';
 import '../services/catalog_service.dart';
 import '../services/report_service.dart';
+import '../services/session_store.dart';
 import '../widgets/catalog/catalog_widgets.dart';
 import '../widgets/charts/format.dart';
 import '../widgets/charts/visual_chooser.dart';
@@ -31,6 +33,7 @@ class DatasetFullView extends StatefulWidget {
   final bool compact;
   final String? language;
   final ReportService? service;
+  final ApiClient? apiClient;
   final VoidCallback? onReady;
 
   const DatasetFullView({
@@ -44,6 +47,7 @@ class DatasetFullView extends StatefulWidget {
     this.compact = false,
     this.language,
     this.service,
+    this.apiClient,
     this.onReady,
   });
 
@@ -63,6 +67,182 @@ class _DatasetFullViewState extends State<DatasetFullView> {
   Future<(DatasetPage, Map<String, DatasetPage>)>? _rows;
   String? _key;
   (DatasetPage, Map<String, DatasetPage>)? _last;
+
+  ApiClient get _api => widget.apiClient ?? widget.service?.api ?? ApiClient();
+  String? _ownerItemId;
+  bool _resolvedOwner = false;
+  int _ownerRefCount = 0;
+  String? _ownerVisibility;
+  bool _mutating = false;
+  bool _deleted = false;
+  int _probeGeneration = 0;
+  String? _probedUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    SessionStore.instance.addListener(_onSessionChanged);
+    _probeOwnership();
+  }
+
+  @override
+  void dispose() {
+    SessionStore.instance.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (!mounted) return;
+    final currentUserId = SessionStore.instance.user?.userId;
+    if (!SessionStore.instance.hasSession || currentUserId == null) {
+      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null) {
+        setState(() {
+          _resolvedOwner = false;
+          _ownerItemId = null;
+          _ownerRefCount = 0;
+          _ownerVisibility = null;
+          _probedUserId = null;
+          _probeGeneration++;
+        });
+      }
+    } else if (currentUserId != _probedUserId) {
+      setState(() {
+        _resolvedOwner = false;
+        _ownerItemId = null;
+        _ownerRefCount = 0;
+        _ownerVisibility = null;
+        _probedUserId = currentUserId;
+        _probeGeneration++;
+      });
+      _probeOwnership();
+    }
+  }
+
+  Future<void> _probeOwnership() async {
+    if (!SessionStore.instance.hasSession) return;
+    final gen = ++_probeGeneration;
+    final datasetId = widget.datasetId;
+    final currentUserId = SessionStore.instance.user?.userId;
+    _probedUserId = currentUserId;
+    try {
+      final res = await _api.getOwnerItem(datasetId);
+      final item = res['item'];
+      if (!mounted || gen != _probeGeneration || !SessionStore.instance.hasSession) return;
+      if (SessionStore.instance.user?.userId != currentUserId) return;
+      if (item is! Map<String, dynamic>) return;
+      if (item['control_authority'] == 'user_owned') {
+        setState(() {
+          _resolvedOwner = true;
+          _ownerItemId = item['id'] as String?;
+          _ownerRefCount = (item['reference_count'] as num?)?.toInt() ?? 0;
+        });
+      }
+    } catch (_) {
+      // Viewer is not owner or static card.
+    }
+  }
+
+  Future<void> _handleVisibilityChange(String next) async {
+    final itemId = _ownerItemId;
+    final currentUserId = SessionStore.instance.user?.userId;
+    final gen = _probeGeneration;
+    if (itemId == null || _mutating || currentUserId == null) return;
+    setState(() => _mutating = true);
+    try {
+      await _api.patchOwnerItemVisibility(itemId, next);
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
+      setState(() {
+        _ownerVisibility = next;
+        _mutating = false;
+      });
+    } catch (e) {
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
+      setState(() => _mutating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${context.tr('error_loading')}: $e'),
+          action: SnackBarAction(
+            label: context.tr('retry'),
+            onPressed: () => _handleVisibilityChange(next),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleDelete() async {
+    final itemId = _ownerItemId;
+    final currentUserId = SessionStore.instance.user?.userId;
+    final gen = _probeGeneration;
+    if (itemId == null || _mutating || currentUserId == null) return;
+    setState(() => _mutating = true);
+    try {
+      var outcome = await _api.deleteOwnerItem(itemId, confirm: false);
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
+      if (outcome.requiresConfirmation) {
+        setState(() => _mutating = false);
+        final count = outcome.referenceCount > 0 ? outcome.referenceCount : _ownerRefCount;
+        final warningText = count > 0
+            ? context.tr('delete_reuse_warning', {'n': count})
+            : context.tr('delete_confirm_body');
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            key: const Key('card_delete_dialog'),
+            title: Text(ctx.tr('delete_confirm_title')),
+            content: Text(
+              warningText,
+              key: const Key('card_delete_reuse_warning'),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('card_delete_cancel'),
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(ctx.tr('cancel')),
+              ),
+              FilledButton(
+                key: const Key('card_delete_confirm'),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(ctx.tr('delete_card')),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) {
+          if (mounted && gen == _probeGeneration && SessionStore.instance.user?.userId == currentUserId) {
+            setState(() => _mutating = false);
+          }
+          return;
+        }
+        setState(() => _mutating = true);
+        outcome = await _api.deleteOwnerItem(itemId, confirm: true);
+        if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
+      }
+      setState(() {
+        _mutating = false;
+        if (outcome.deleted) _deleted = true;
+      });
+      if (outcome.deleted && mounted) {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AppRoutes.report(widget.project, widget.report));
+        }
+      }
+    } catch (e) {
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
+      setState(() => _mutating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${context.tr('error_loading')}: $e'),
+          action: SnackBarAction(
+            label: context.tr('retry'),
+            onPressed: _handleDelete,
+          ),
+        ),
+      );
+    }
+  }
 
   Slot _slot(ReportView view) {
     for (final section in LayoutRegistry.sectionsFor(view)) {
@@ -114,12 +294,33 @@ class _DatasetFullViewState extends State<DatasetFullView> {
         if (vs.hasError) {
           return ApiErrorState(error: vs.error, onRetry: () => setState(() => _key = null), returnTo: AppRoutes.report(widget.project, widget.report));
         }
+        if (_deleted) {
+          return StateMessage(
+            key: const Key('full_view_deleted_state'),
+            icon: Icons.delete_outline_rounded,
+            title: context.tr('delete_card'),
+          );
+        }
         if (!vs.hasData) return const Center(child: CircularProgressIndicator());
         final view = vs.data!;
-        final descriptor = view.dataset(widget.datasetId);
-        if (descriptor == null) {
+        final rawDescriptor = view.dataset(widget.datasetId);
+        if (rawDescriptor == null) {
           return StateMessage(icon: Icons.search_off_rounded, title: context.tr('not_found'));
         }
+        final descriptor = _ownerVisibility == null
+            ? rawDescriptor
+            : DatasetDescriptor(
+                datasetId: rawDescriptor.datasetId,
+                title: rawDescriptor.title,
+                description: rawDescriptor.description,
+                equation: rawDescriptor.equation,
+                fields: rawDescriptor.fields,
+                filters: rawDescriptor.filters,
+                dataTier: rawDescriptor.dataTier,
+                canView: rawDescriptor.canView,
+                visibility: _ownerVisibility!,
+                meta: rawDescriptor.meta,
+              );
         final slot = _slot(view);
         return SingleChildScrollView(
           padding: EdgeInsets.all(widget.compact ? 12 : 24),
@@ -174,11 +375,21 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                   body: body,
                   loading: loading,
                   controls: CardControls(
+                    isOwner: _resolvedOwner && _ownerItemId != null,
                     isLive: descriptor.meta?.freshnessMode == 'live'
                         ? true
-                        : descriptor.meta?.freshnessMode == 'static'
+                        : (descriptor.meta?.freshnessMode == 'snapshot' ||
+                                descriptor.meta?.freshnessMode == 'static')
                             ? false
                             : null,
+                    onChangeVisibility: _mutating ? null : _handleVisibilityChange,
+                    onCheckDelete: _ownerRefCount > 0
+                        ? () async => context.tr('delete_confirm_body')
+                        : null,
+                    deleteReuseWarning: _ownerRefCount > 0
+                        ? context.tr('delete_reuse_warning', {'n': _ownerRefCount})
+                        : null,
+                    onDelete: _mutating ? null : _handleDelete,
                   ),
                   tableView: widget.table,
                   onToggleTable: widget.compact ? null : () => context.go(_path(table: !widget.table)),

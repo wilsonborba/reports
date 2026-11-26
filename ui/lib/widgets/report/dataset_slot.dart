@@ -84,6 +84,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
   bool _mutating = false;
   bool _deleted = false;
   int _probeGeneration = 0;
+  String? _probedUserId;
 
   ApiClient get _api => widget.apiClient ?? ApiClient();
 
@@ -102,16 +103,27 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   void _onSessionChanged() {
     if (!mounted) return;
-    if (!SessionStore.instance.hasSession) {
-      if (_resolvedOwner || _ownerItemId != null) {
+    final currentUserId = SessionStore.instance.user?.userId;
+    if (!SessionStore.instance.hasSession || currentUserId == null) {
+      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null) {
         setState(() {
           _resolvedOwner = false;
           _ownerItemId = null;
           _ownerRefCount = 0;
           _ownerVisibility = null;
+          _probedUserId = null;
+          _probeGeneration++;
         });
       }
-    } else if (!_resolvedOwner) {
+    } else if (currentUserId != _probedUserId) {
+      setState(() {
+        _resolvedOwner = false;
+        _ownerItemId = null;
+        _ownerRefCount = 0;
+        _ownerVisibility = null;
+        _probedUserId = currentUserId;
+        _probeGeneration++;
+      });
       _probeOwnership();
     }
   }
@@ -125,6 +137,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final gen = ++_probeGeneration;
     final datasetId = widget.slot.datasetId;
     final currentUserId = SessionStore.instance.user?.userId;
+    _probedUserId = currentUserId;
     try {
       final res = await _api.getOwnerItem(datasetId);
       final item = res['item'];
@@ -145,18 +158,20 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   Future<void> _handleVisibilityChange(String next) async {
     final itemId = _ownerItemId;
-    if (itemId == null || _mutating) return;
+    final currentUserId = SessionStore.instance.user?.userId;
+    final gen = _probeGeneration;
+    if (itemId == null || _mutating || currentUserId == null) return;
     setState(() => _mutating = true);
     try {
       await _api.patchOwnerItemVisibility(itemId, next);
-      if (!mounted) return;
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
       setState(() {
         _ownerVisibility = next;
         _mutating = false;
       });
       widget.onMutated?.call();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
       setState(() => _mutating = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -172,11 +187,13 @@ class _DatasetSlotState extends State<DatasetSlot> {
 
   Future<void> _handleDelete() async {
     final itemId = _ownerItemId;
-    if (itemId == null || _mutating) return;
+    final currentUserId = SessionStore.instance.user?.userId;
+    final gen = _probeGeneration;
+    if (itemId == null || _mutating || currentUserId == null) return;
     setState(() => _mutating = true);
     try {
       var outcome = await _api.deleteOwnerItem(itemId, confirm: false);
-      if (!mounted) return;
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
       if (outcome.requiresConfirmation) {
         setState(() => _mutating = false);
         final count = outcome.referenceCount > 0 ? outcome.referenceCount : _ownerRefCount;
@@ -206,10 +223,15 @@ class _DatasetSlotState extends State<DatasetSlot> {
             ],
           ),
         );
-        if (confirmed != true || !mounted) return;
+        if (confirmed != true || !mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) {
+          if (mounted && gen == _probeGeneration && SessionStore.instance.user?.userId == currentUserId) {
+            setState(() => _mutating = false);
+          }
+          return;
+        }
         setState(() => _mutating = true);
         outcome = await _api.deleteOwnerItem(itemId, confirm: true);
-        if (!mounted) return;
+        if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
       }
       setState(() {
         _mutating = false;
@@ -217,7 +239,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       });
       if (outcome.deleted) widget.onMutated?.call();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _probeGeneration || SessionStore.instance.user?.userId != currentUserId) return;
       setState(() => _mutating = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -235,7 +257,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final bool? isLive = widget.controls.isLive ??
         (descriptor.meta?.freshnessMode == 'live'
             ? true
-            : descriptor.meta?.freshnessMode == 'static'
+            : (descriptor.meta?.freshnessMode == 'snapshot' ||
+                    descriptor.meta?.freshnessMode == 'static')
                 ? false
                 : null);
 
