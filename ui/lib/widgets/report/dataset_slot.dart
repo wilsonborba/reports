@@ -105,13 +105,14 @@ class _DatasetSlotState extends State<DatasetSlot> {
     if (!mounted) return;
     final currentUserId = SessionStore.instance.user?.userId;
     if (!SessionStore.instance.hasSession || currentUserId == null) {
-      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null) {
+      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null || _mutating) {
         setState(() {
           _resolvedOwner = false;
           _ownerItemId = null;
           _ownerRefCount = 0;
           _ownerVisibility = null;
           _probedUserId = null;
+          _mutating = false;
           _probeGeneration++;
         });
       }
@@ -122,6 +123,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
         _ownerRefCount = 0;
         _ownerVisibility = null;
         _probedUserId = currentUserId;
+        _mutating = false;
         _probeGeneration++;
       });
       _probeOwnership();
@@ -303,7 +305,9 @@ class _DatasetSlotState extends State<DatasetSlot> {
       _resolvedOwner = false;
       _ownerRefCount = 0;
       _ownerVisibility = null;
+      _mutating = false;
       _deleted = false;
+      _probeGeneration++;
       _probeOwnership();
       _filters =
           widget.initialFilters ??

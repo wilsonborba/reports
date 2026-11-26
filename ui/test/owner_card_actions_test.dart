@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -5,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:reports_ui/l10n/strings.dart';
@@ -1047,6 +1049,284 @@ void main() {
           calls.any((c) => c.contains('DELETE /me/items/item-full-1')),
           isTrue,
         );
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'parameterized route navigation in DatasetFullView re-probes and mutates only target card',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(
+            jsonEncode({'user_id': 'user-1'}),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-chart-a') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-a',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-chart-b') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-b',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'PATCH' && req.url.path == '/me/items/item-b') {
+          return http.Response(jsonEncode({'success': true}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/projects/p1/reports/r1') {
+          return http.Response(
+            jsonEncode({
+              'project': 'p1',
+              'report': 'r1',
+              'title': 'R1',
+              'description': '',
+              'tags': [],
+              'period': null,
+              'updated_at': '',
+              'datasets': [
+                {
+                  'dataset_id': 'ds-chart-a',
+                  'title': 'Chart A',
+                  'description': '',
+                  'equation': null,
+                  'fields': [],
+                  'filters': [],
+                  'visibility': 'personal',
+                },
+                {
+                  'dataset_id': 'ds-chart-b',
+                  'title': 'Chart B',
+                  'description': '',
+                  'equation': null,
+                  'fields': [],
+                  'filters': [],
+                  'visibility': 'personal',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path.contains('/datasets/')) {
+          final id = req.url.path.split('/').last;
+          return http.Response(
+            jsonEncode({
+              'dataset_id': id,
+              'rows': [{'x': 'a', 'y': 10}],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        await sessionStore.refresh();
+        final router = GoRouter(
+          initialLocation: '/v1/menu/p1/r1/cards/ds-chart-a',
+          routes: [
+            GoRoute(
+              path: '/v1/menu/:project/:report/cards/:dataset',
+              builder: (_, s) => Scaffold(
+                body: DatasetFullView(
+                  project: s.pathParameters['project']!,
+                  report: s.pathParameters['report']!,
+                  datasetId: s.pathParameters['dataset']!,
+                  visual: Visual.bar,
+                  compact: true,
+                  service: ReportService(api),
+                  apiClient: api,
+                ),
+              ),
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          LanguageScope(
+            controller: LanguageController(),
+            child: MaterialApp.router(
+              theme: ThemeRegistry.theme('cortex', Brightness.light),
+              routerConfig: router,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Initial chart A probed and owner mark visible
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+        expect(calls.contains('GET /me/items/ds-chart-a'), isTrue);
+
+        // 2. Navigate to chart B using GoRouter context.go
+        router.go('/v1/menu/p1/r1/cards/ds-chart-b');
+        await tester.pumpAndSettle();
+
+        // Verify chart B probed
+        expect(calls.contains('GET /me/items/ds-chart-b'), isTrue);
+
+        // 3. Mutate visibility on chart B
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_visibility_public')));
+        await tester.pumpAndSettle();
+
+        // 4. Assert only item-b was mutated, item-a was NEVER mutated
+        expect(calls.contains('PATCH /me/items/item-b'), isTrue);
+        expect(calls.any((c) => c.contains('PATCH /me/items/item-a')), isFalse);
+        expect(calls.any((c) => c.contains('DELETE /me/items/item-a')), isFalse);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'pending mutation during session invalidation clears busy state and fences old completion',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+      final patchCompleter = Completer<http.Response>();
+      var currentUserId = 'user-1';
+
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          if (currentUserId.isEmpty) {
+            return http.Response('unauthorized', 401);
+          }
+          return http.Response(
+            jsonEncode({'user_id': currentUserId}),
+            200,
+          );
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-slot') {
+          if (currentUserId.isEmpty) {
+            return http.Response(jsonEncode({}), 403);
+          }
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-slot-1',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'PATCH' && req.url.path == '/me/items/item-slot-1') {
+          return await patchCompleter.future;
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-owner' : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        await sessionStore.refresh();
+
+        await tester.pumpWidget(
+          _wrap(
+            DatasetSlot(
+              project: 'p1',
+              report: 'r1',
+              slot: const Slot('ds-slot'),
+              view: ReportView.fromJson({
+                'project': 'p1',
+                'report': 'r1',
+                'title': 'R1',
+                'datasets': [
+                  {
+                    'dataset_id': 'ds-slot',
+                    'title': 'Slot Chart',
+                    'visibility': 'personal',
+                  },
+                ],
+              }),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Owner mark visible on initial probe
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 2. Start visibility mutation which hangs on patchCompleter
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_visibility_public')));
+        await tester.pump();
+        expect(calls.contains('PATCH /me/items/item-slot-1'), isTrue);
+
+        // 3. Invalidate session by logging out while mutation is pending
+        currentUserId = '';
+        await sessionStore.refresh();
+        await tester.pumpAndSettle();
+
+        // Owner mark gone, options menu has no owner actions
+        expect(find.byKey(const Key('card_mark_owner')), findsNothing);
+
+        // 4. Log back in as user-1
+        currentUserId = 'user-1';
+        await sessionStore.refresh();
+        await tester.pumpAndSettle();
+
+        // Re-probed and owner mark restored
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 5. Release the old stalled response
+        patchCompleter.complete(http.Response(jsonEncode({'success': true}), 200));
+        await tester.pumpAndSettle();
+
+        // 6. Action button is NOT disabled by stale _mutating state: can open menu and mutate again
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('card_menu_visibility_public')), findsOneWidget);
       } finally {
         SessionStore.instance = prevStore;
       }

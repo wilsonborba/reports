@@ -86,6 +86,25 @@ class _DatasetFullViewState extends State<DatasetFullView> {
   }
 
   @override
+  void didUpdateWidget(DatasetFullView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.project != widget.project ||
+        oldWidget.report != widget.report ||
+        oldWidget.datasetId != widget.datasetId) {
+      setState(() {
+        _ownerItemId = null;
+        _resolvedOwner = false;
+        _ownerRefCount = 0;
+        _ownerVisibility = null;
+        _mutating = false;
+        _deleted = false;
+        _probeGeneration++;
+      });
+      _probeOwnership();
+    }
+  }
+
+  @override
   void dispose() {
     SessionStore.instance.removeListener(_onSessionChanged);
     super.dispose();
@@ -95,13 +114,14 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     if (!mounted) return;
     final currentUserId = SessionStore.instance.user?.userId;
     if (!SessionStore.instance.hasSession || currentUserId == null) {
-      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null) {
+      if (_resolvedOwner || _ownerItemId != null || _probedUserId != null || _mutating) {
         setState(() {
           _resolvedOwner = false;
           _ownerItemId = null;
           _ownerRefCount = 0;
           _ownerVisibility = null;
           _probedUserId = null;
+          _mutating = false;
           _probeGeneration++;
         });
       }
@@ -112,6 +132,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
         _ownerRefCount = 0;
         _ownerVisibility = null;
         _probedUserId = currentUserId;
+        _mutating = false;
         _probeGeneration++;
       });
       _probeOwnership();
