@@ -2,6 +2,7 @@ import 'core/tracking_manifest.dart';
 import 'widgets/shell/tracking_header.dart';
 import 'views/embed_view.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:go_router/go_router.dart';
 import 'l10n/strings.dart';
@@ -211,6 +212,9 @@ class _ReportsAppState extends State<ReportsApp> {
       builder: (context, _) => MaterialApp.router(
         title: 'Reports',
         debugShowCheckedModeBanner: false,
+        locale: _language.locale,
+        supportedLocales: reportsSupportedLocales,
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         // Screens outside a project use the Reports theme; project screens
         // apply their own static theme in the same brightness.
         theme: ThemeRegistry.theme(null, _theme.brightness),

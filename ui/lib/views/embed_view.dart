@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/strings.dart';
 import '../layouts/report_layout.dart';
 import '../models/report.dart';
 import '../services/catalog_service.dart';
@@ -23,7 +24,14 @@ class _EmbedViewState extends State<EmbedView> {
     await CatalogService.instance.project(widget.project,lang:widget.language);
     return service.report(widget.project,widget.report,lang:widget.language);
   }
-  @override Widget build(BuildContext context) => FutureBuilder<ReportView>(future:report,builder:(context,snapshot) {
+  @override
+  Widget build(BuildContext context) => Localizations.override(
+    context: context,
+    locale: reportLocaleForCode(widget.language),
+    child: Builder(builder: _buildContent),
+  );
+
+  Widget _buildContent(BuildContext context) => FutureBuilder<ReportView>(future:report,builder:(context,snapshot) {
     if(snapshot.hasError) return const Scaffold(body:Center(child:Icon(Icons.error_outline)));
     if(!snapshot.hasData) return const Scaffold(body:Center(child:CircularProgressIndicator()));
     final view=snapshot.data!;

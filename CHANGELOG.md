@@ -1,38 +1,76 @@
-## [Unreleased]
+# Changelog
 
-- Format the existing Rust engine and tests with rustfmt (#67).
+All notable changes to this project are listed here. The list comes from the commit history.
+
+## [Unreleased]
 
 ### Features
 
-- *(datasets)* Add normalized `dataset_meta` and `dataset_field_semantics` tables, validation, `meta` block, and field semantics in dataset responses (#48)
-- *(owner-api)* Add owner APIs to create, replace dataset with If-Match/idempotency, change visibility, and delete user charts/diagrams with reuse warning (#42)
-- *(access)* Add per-user ownership, source app, control authority, audiences, user-scoped caches, and visibility cache invalidation (#41)
 - *(logs)* Stream redacted engine logs from the journald writer
 - *(telemetry)* Track mapped Reports controls through shared SQL telemetry
+- *(storage)* Save unfinished normalized storage work (#40)
+- *(access)* Add per-user ownership, source app, control authority, audiences, and user-scoped caches (#41)
+- *(owner-api)* Add owner APIs for user charts/diagrams with If-Match, idempotency, limits, and reuse warning (#42)
+- *(datasets)* Add dataset_meta and dataset_field_semantics tables, validation, and API meta block (#48)
+- *(embeds)* Add identity-aware search, viewer embeds and immutable snapshots (#43)
+- *(templates)* Add normalized versioned visual templates and card bindings (#52)
+- *(render-jobs)* Add temporary question visual render jobs (#54)
+- *(package)* Extract chart renderer into reports_view package (#45)
+- *(catalog)* Add comparison templates (catalog items 1 to 23) (#55)
+- *(catalog)* Add change over time templates (catalog items 24 to 43) (#56)
+- *(catalog)* Add part of a whole templates (catalog items 44 to 54) (#57)
+- *(catalog)* Add distribution templates (catalog items 55 to 64) (#58)
+- *(catalog)* Add relation and correlation templates (catalog items 65 to 73) (#59)
+- *(catalog)* Add flow, process, and structure diagram templates (items 74 to 89) (#60)
+- *(catalog)* Add sets templates (items 90 to 92) and bump reports_view for #60/#61
+- *(catalog)* Add geographic catalog templates (items 93 to 98) (#62)
+- *(catalog)* Add indicators and tables catalog templates (items 99 to 104) (#63)
+- *(catalog)* Add science, AI, and assessment catalog templates (items 105 to 114) (#64)
+- *(reports)* Support complete aggregate snapshots
+- *(reports#70)* Add reproducible aggregate_snapshot v1 schema, technical-aggregates report, and 7 dataset/card definitions
+- *(ingest)* Merge aggregate consumer catalog definitions (#70)
 
 ### Bug fixes
 
 - *(telemetry)* Replace tracking dependency with screen_trail (#39)
+- *(storage)* Preserve applied migrations and legacy upgrade paths (#40)
+- *(charts)* Apply null, zero, negative and missing_means rules in PDF export (#47)
+- *(export)* Add restricted placeholder, axis titles, and card metadata for #51
+- *(catalog)* Update reports_view goldens/layouts and add hierarchical parent slot (#55, #56, #57)
+- *(distribution)* Bump reports_view to 288651e for theoretical normal qqPlot (#58)
+- *(goldens)* Bump reports_view to 09e61b4 with real Ubuntu Sans and IBM Plex Sans Thai fonts (#55-#58)
+- *(catalog)* Update reports_view ref and KPI PDF export (#62 #63 #64)
+- *(reports)* Fix templates clippy type_complexity (#69) and bump reports_view (#62, #64)
+- *(ui)* Bind report locale to framework localization
+- *(locale)* Integrate reviewed host and embed locale binding (#65)
 
 ### Documentation
 
 - *(changelog)* Record engine logging changes
+- *(changelog)* Record Reports shared telemetry adoption
+- *(templates)* Document template-only rendering and pin reports_view 7f001eb (#53)
+- *(changelog)* Record aggregate consumer contracts (#70)
 
-### Refactoring
+### Maintenance
 
-- *(storage)* Normalize catalog and calculations with tested rollback while preserving applied migrations (#40)
+- Bump reports_view to 93f8025 for real relation chart renderers (#59)
+- *(ui)* Pin hosted reports_view 0.2.0
+- *(ui)* Bump reports_view for C12 contrast, ROC unavailability, and C8 nulls (#62, #64)
 
 ### Other
 
 - Back-merge v3.1.2 into feature/main
 - Add Reports engine log stream (#37)
+- Add shared Reports frontend telemetry (#38)
+- Switch Reports telemetry to screen_trail (#39)
+- Normalize storage without changing applied migrations (#40)
+- Format the Rust engine and tests (#67)
+- Restore the engine formatting gate (#67)
+- Add HTTP cache isolation and visibility invalidation tests
+- Publish owner dataset records and add two-item visibility isolation route test
+- Bump reports_view to b8bc4e8 (C23 localization and learning-curve null gap)
 
-
-# Changelog
-
-All notable changes to this project are listed here. The list comes from the commit history.
-
-## [3.1.2] - 2026-10-27
+## [3.1.2] - 2026-10-26
 
 ### Bug fixes
 
@@ -44,9 +82,9 @@ All notable changes to this project are listed here. The list comes from the com
 - Back-merge v3.1.1 into development
 - Back-merge v3.1.1 into feature/main
 - Promote feature/main to development for v3.1.2
+- Promote v3.1.2
 
-
-## [3.1.1] - 2026-10-27
+## [3.1.1] - 2026-10-26
 
 ### Bug fixes
 
@@ -72,7 +110,7 @@ All notable changes to this project are listed here. The list comes from the com
 
 - Promote release/v3.1.0 to development
 - Promote feature/main to development for v3.1.1
-
+- Promote v3.1.1
 
 ## [3.1.0] - 2026-10-26
 
@@ -92,7 +130,7 @@ All notable changes to this project are listed here. The list comes from the com
 
 - Back-merge v3.0.0 into development
 - Back-merge v3.0.0 into feature/main
-
+- Promote v3.1.0
 
 ## [3.0.0] - 2026-10-25
 
@@ -124,109 +162,3 @@ All notable changes to this project are listed here. The list comes from the com
 
 - Promote feature/main to development for v3.0.0
 - Promote v3.0.0
-
-
-
-## [3.0.0] - 2026-10-25
-
-### Features
-
-- *(dal)* [**breaking**] Persist reports in PostgreSQL, CouchDB and Redis
-- *(access)* Add discoverable placeholders, grants, roles and the guest showcase
-- *(catalog)* Add project links, Domain UUID composition and durable themes
-- *(calc)* Version calculations, add common operators, lineage and snapshots
-- *(catalog)* Add cached Domain project details and keep engine start minimal
-- *(fixtures)* Own sample data by manifest and add scripts for five projects
-- *(ui)* Asodya login, real engine routes, Architecture tab and full pt-BR
-- *(engine)* Tier filter and caller access counts
-- *(engine)* Card order of a report
-- *(fixtures)* 4 reports of 4 sections with 4 charts per project
-- *(ui)* Navigation, guest prompt, tier filters, chart share and brand colors
-- Access tags, toolbar filter, soft chart colors
-
-### Bug fixes
-
-- *(dal)* Bind optional values as plain values for PostgreSQL
-- *(population)* Compare schema fields by path so a rerun reuses the published version
-- *(export)* Leave out sections without a readable card
-- *(fixtures)* Fixed access cases in the sample data
-- *(ui)* Remove the gradient behind the hero bands
-- *(ui)* Asodya.com palette, lime with black and purple with white
-- *(ui)* Opening another report from the sidebar draws its cards
-- *(ui)* Calmer dashboard accents, full-width chart titles
-
-### Performance
-
-- *(cache)* Avoid redundant loads and calculations, add operations view
-
-### Documentation
-
-- Rewrite README for the Reports engine
-- Generate the CHANGELOG from the commit history with git-cliff
-
-### Tests
-
-- *(engine)* Cover durable stores, ingestion, access and caching
-- *(access)* Cover showcase skeletons, hidden resources, grants and roles
-- *(catalog)* Cover Domain links, caching, outages, themes and report tier
-- *(calc)* Representative metrics of the five projects and version history
-- *(e2e)* Live gateway check, guest browser check and access matrix gaps
-
-### Maintenance
-
-- *(scripts)* Add explicit migrate.sh and a service-only installer
-- Remove old project scripts and untrack local assistant docs
-- Ignore local assistant docs in engine/alignment
-- Remove the Scalar API docs
-
-### Other
-
-- Promote feature/main to development for v3.0.0
-
-## [2.0.0] - 2026-10-24
-
-### Features
-
-- Initial commit of domain-agnostic reports platform
-- Implement Asodya reports platform
-- Expose network readiness status
-- Align runtime defaults with Asodya infrastructure
-- Use Asodya gateway SSO identity
-- Hydrate network catalog on startup
-- *(ui)* Show deployment timestamp in public footer
-- *(ui)* Adopt Asodya Ubuntu Sans typography
-- *(platform)* Decouple reports platform with guest discovery and synthetic launch fixtures
-
-### Bug fixes
-
-- Align package imports and test assertions with reports namespace
-- Reconcile Cloudflare Pages DNS during deploy
-- Make Cloudflare deploy find Flutter under sudo
-- Proxy reports Pages domain like Asodya apps
-- Verify Pages domain before enabling proxy
-- *(ui)* Make Reports landing public and fully branded
-- *(engine)* Align gateway routes and network config
-- Keep Reports catalog available in browser
-
-### Refactoring
-
-- Retire embedded storage engines
-- Separate catalog population from migrations
-
-### Documentation
-
-- Add Asodya reports architectural alignment
-- Align SSO and network storage guidance
-
-### Tests
-
-- *(auth)* Sort provider keys assertion to match BTreeMap ordering
-
-### Maintenance
-
-- Format reports authentication errors
-- Add explicit network storage provisioning
-- Add reports install and deployment scripts
-- Use Reports service naming
-- *(dal)* Remove architecture schema from migrations
-

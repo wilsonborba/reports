@@ -7,6 +7,15 @@ import '../widgets/charts/format.dart';
 /// this file holds only static interface text.
 enum AppLanguage { en, th, pt }
 
+const reportsSupportedLocales = <Locale>[Locale('en'), Locale('pt', 'BR'), Locale('th')];
+
+Locale reportLocaleForCode(String code) {
+  final normalized = code.replaceAll('_', '-').toLowerCase();
+  if (normalized == 'pt' || normalized.startsWith('pt-')) return const Locale('pt', 'BR');
+  if (normalized == 'th' || normalized.startsWith('th-')) return const Locale('th');
+  return const Locale('en');
+}
+
 /// App-level language. One controller for every screen; the choice persists in the browser
 /// and every API call sends it as `lang`.
 class LanguageController extends ChangeNotifier {
@@ -24,6 +33,7 @@ class LanguageController extends ChangeNotifier {
     AppLanguage.pt => 'pt-BR',
     AppLanguage.en => 'en',
   };
+  Locale get locale => reportLocaleForCode(code);
 
   Future<void> load() async {
     try {
@@ -143,6 +153,7 @@ class Strings {
     'delete_card': 'Excluir',
     'delete_confirm_title': 'Excluir item?',
     'delete_confirm_body': 'Esta ação remove o cartão do relatório.',
+    'delete_reuse_warning': 'Este item é referenciado por {n} nota(s). A exclusão o removerá dessas notas.',
     'mark_live': 'Ao vivo',
     'mark_static': 'Estático',
     'mark_owner': 'Proprietário',
@@ -1430,6 +1441,10 @@ class Strings {
     'delete_confirm_body': {
       'en': 'This removes the card from the report.',
       'th': 'การดำเนินการนี้จะลบการ์ดออกจากรายงาน',
+    },
+    'delete_reuse_warning': {
+      'en': 'This item is referenced by {n} note(s). Deleting it will remove it from those notes.',
+      'th': 'รายการนี้ถูกอ้างอิงโดย {n} บันทึก การลบจะนำรายการนี้ออกจากบันทึกเหล่านั้น',
     },
     'mark_live': {'en': 'Live', 'th': 'สด'},
     'mark_static': {'en': 'Static', 'th': 'คงที่'},
