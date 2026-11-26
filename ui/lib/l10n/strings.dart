@@ -7,6 +7,15 @@ import '../widgets/charts/format.dart';
 /// this file holds only static interface text.
 enum AppLanguage { en, th, pt }
 
+const reportsSupportedLocales = <Locale>[Locale('en'), Locale('pt', 'BR'), Locale('th')];
+
+Locale reportLocaleForCode(String code) {
+  final normalized = code.replaceAll('_', '-').toLowerCase();
+  if (normalized == 'pt' || normalized.startsWith('pt-')) return const Locale('pt', 'BR');
+  if (normalized == 'th' || normalized.startsWith('th-')) return const Locale('th');
+  return const Locale('en');
+}
+
 /// App-level language. One controller for every screen; the choice persists in the browser
 /// and every API call sends it as `lang`.
 class LanguageController extends ChangeNotifier {
@@ -19,6 +28,7 @@ class LanguageController extends ChangeNotifier {
 
   AppLanguage get language => _language;
   String get code => switch (_language) { AppLanguage.th => 'th', AppLanguage.pt => 'pt-BR', AppLanguage.en => 'en' };
+  Locale get locale => reportLocaleForCode(code);
 
   Future<void> load() async {
     try {
