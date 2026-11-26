@@ -83,13 +83,37 @@ class _DatasetSlotState extends State<DatasetSlot> {
   String? _ownerVisibility;
   bool _mutating = false;
   bool _deleted = false;
+  int _probeGeneration = 0;
 
   ApiClient get _api => widget.apiClient ?? ApiClient();
 
   @override
   void initState() {
     super.initState();
+    SessionStore.instance.addListener(_onSessionChanged);
     _probeOwnership();
+  }
+
+  @override
+  void dispose() {
+    SessionStore.instance.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (!mounted) return;
+    if (!SessionStore.instance.hasSession) {
+      if (_resolvedOwner || _ownerItemId != null) {
+        setState(() {
+          _resolvedOwner = false;
+          _ownerItemId = null;
+          _ownerRefCount = 0;
+          _ownerVisibility = null;
+        });
+      }
+    } else if (!_resolvedOwner) {
+      _probeOwnership();
+    }
   }
 
   Future<void> _probeOwnership() async {
@@ -98,10 +122,15 @@ class _DatasetSlotState extends State<DatasetSlot> {
         !SessionStore.instance.hasSession) {
       return;
     }
+    final gen = ++_probeGeneration;
+    final datasetId = widget.slot.datasetId;
+    final currentUserId = SessionStore.instance.user?.userId;
     try {
-      final res = await _api.getOwnerItem(widget.slot.datasetId);
+      final res = await _api.getOwnerItem(datasetId);
       final item = res['item'];
-      if (!mounted || item is! Map<String, dynamic>) return;
+      if (!mounted || gen != _probeGeneration || !SessionStore.instance.hasSession) return;
+      if (SessionStore.instance.user?.userId != currentUserId) return;
+      if (item is! Map<String, dynamic>) return;
       if (item['control_authority'] == 'user_owned') {
         setState(() {
           _resolvedOwner = true;
@@ -150,15 +179,17 @@ class _DatasetSlotState extends State<DatasetSlot> {
       if (!mounted) return;
       if (outcome.requiresConfirmation) {
         setState(() => _mutating = false);
+        final count = outcome.referenceCount > 0 ? outcome.referenceCount : _ownerRefCount;
+        final warningText = count > 0
+            ? context.tr('delete_reuse_warning', {'n': count})
+            : context.tr('delete_confirm_body');
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             key: const Key('card_delete_dialog'),
             title: Text(ctx.tr('delete_confirm_title')),
             content: Text(
-              outcome.message.isNotEmpty
-                  ? outcome.message
-                  : ctx.tr('delete_confirm_body'),
+              warningText,
               key: const Key('card_delete_reuse_warning'),
             ),
             actions: [
@@ -201,7 +232,27 @@ class _DatasetSlotState extends State<DatasetSlot> {
   }
 
   CardControls _effectiveControls(DatasetDescriptor descriptor) {
+    final bool? isLive = widget.controls.isLive ??
+        (descriptor.meta?.freshnessMode == 'live'
+            ? true
+            : descriptor.meta?.freshnessMode == 'static'
+                ? false
+                : null);
+
     if (widget.controls.isOwner || !_resolvedOwner || _ownerItemId == null) {
+      if (isLive != widget.controls.isLive) {
+        return CardControls(
+          minimized: widget.controls.minimized,
+          onToggleMinimize: widget.controls.onToggleMinimize,
+          onMove: widget.controls.onMove,
+          isOwner: widget.controls.isOwner,
+          isLive: isLive,
+          onChangeVisibility: widget.controls.onChangeVisibility,
+          onCheckDelete: widget.controls.onCheckDelete,
+          deleteReuseWarning: widget.controls.deleteReuseWarning,
+          onDelete: widget.controls.onDelete,
+        );
+      }
       return widget.controls;
     }
     return CardControls(
@@ -209,9 +260,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       onToggleMinimize: widget.controls.onToggleMinimize,
       onMove: widget.controls.onMove,
       isOwner: true,
-      isLive:
-          widget.controls.isLive ??
-          (descriptor.meta?.freshnessMode == 'live'),
+      isLive: isLive,
       onChangeVisibility: _mutating ? null : _handleVisibilityChange,
       onCheckDelete: _ownerRefCount > 0
           ? () async => context.tr('delete_confirm_body')

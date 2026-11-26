@@ -173,6 +173,13 @@ class _DatasetFullViewState extends State<DatasetFullView> {
                   descriptor: descriptor,
                   body: body,
                   loading: loading,
+                  controls: CardControls(
+                    isLive: descriptor.meta?.freshnessMode == 'live'
+                        ? true
+                        : descriptor.meta?.freshnessMode == 'static'
+                            ? false
+                            : null,
+                  ),
                   tableView: widget.table,
                   onToggleTable: widget.compact ? null : () => context.go(_path(table: !widget.table)),
                   onShare: !widget.compact && descriptor.visibility == 'public' ? () => showShareDialog(context, _path(), full: true) : null,

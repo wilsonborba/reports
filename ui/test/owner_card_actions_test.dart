@@ -322,7 +322,11 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('card_delete_confirm')));
         await tester.pumpAndSettle();
-        expect(find.text('Referenced by 1 note'), findsOneWidget);
+        expect(find.byKey(const Key('card_delete_reuse_warning')), findsOneWidget);
+        expect(
+          find.text('This item is referenced by 1 note(s). Deleting it will remove it from those notes.'),
+          findsOneWidget,
+        );
         await tester.tap(find.byKey(const Key('card_delete_confirm')));
         await tester.pumpAndSettle();
         expect(
@@ -570,6 +574,115 @@ void main() {
           }
         }
         await tester.binding.setSurfaceSize(null);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
+
+  testWidgets(
+    'DatasetSlot reacts to SessionStore dynamic transitions and shows freshnessMode independently',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final mock = MockClient((req) async {
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(jsonEncode({'user_id': 'u-dynamic'}), 200);
+        }
+        if (req.method == 'GET' && req.url.path == '/me/items/ds-dynamic') {
+          return http.Response(
+            jsonEncode({
+              'item': {
+                'id': 'item-dyn-1',
+                'control_authority': 'user_owned',
+                'reference_count': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (req.method == 'GET' &&
+            req.url.path == '/projects/p1/reports/r1/datasets/ds-dynamic') {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'ds-dynamic',
+              'rows': [{'x': 'a', 'y': 10}],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+      String? dynamicCsrf;
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? dynamicCsrf : null,
+      );
+
+      // Start with signedOut (no session)
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? dynamicCsrf : null,
+      );
+      SessionStore.instance = sessionStore;
+
+      try {
+        final desc = DatasetDescriptor(
+          datasetId: 'ds-dynamic',
+          title: 'Dynamic Chart',
+          description: '',
+          equation: null,
+          fields: const [],
+          filters: const [],
+          visibility: 'public',
+          meta: const DatasetMeta(freshnessMode: 'live'),
+        );
+        final view = ReportView(
+          project: 'p1',
+          report: 'r1',
+          title: 'Dynamic Report',
+          description: '',
+          tags: const [],
+          period: null,
+          updatedAt: '',
+          datasets: [desc],
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            DatasetSlot(
+              project: 'p1',
+              report: 'r1',
+              view: view,
+              slot: const Slot('ds-dynamic', visual: Visual.bar, measures: ['y']),
+              service: ReportService(api),
+              apiClient: api,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Freshness mode 'live' badge displays even without owner session
+        expect(find.byKey(const Key('card_mark_live')), findsOneWidget);
+        // Owner badge must NOT be present
+        expect(find.byKey(const Key('card_mark_owner')), findsNothing);
+
+        // 2. Transition session to signed in: refresh sets signedIn state
+        dynamicCsrf = 'csrf-live';
+        await sessionStore.refresh();
+        await tester.pumpAndSettle();
+
+        // Owner badge is now displayed after session sign-in
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 3. Transition session back to signedOut
+        dynamicCsrf = null;
+        sessionStore.clear();
+        await tester.pumpAndSettle();
+
+        // Owner badge is cleared immediately on sign out
+        expect(find.byKey(const Key('card_mark_owner')), findsNothing);
       } finally {
         SessionStore.instance = prevStore;
       }
