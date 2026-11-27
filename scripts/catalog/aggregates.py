@@ -215,7 +215,7 @@ def build_calculation(spec: dict) -> dict:
                         "th": "สัดส่วน (%)",
                     },
                     "type": "percent",
-                    "unit": "percent",
+                    "unit": "%",
                     "role": "measure",
                 },
             ],

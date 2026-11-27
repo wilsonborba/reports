@@ -66,4 +66,29 @@ void main() {
     await service.dataset('cortex', 'report_1', 'a1', lang: 'en');
     expect(api.calls['/projects/cortex/showcase/report_1/cards/a1'], greaterThan(callsBefore));
   });
+
+  test('derived preview entry carries source timestamp and expires at original TTL', () async {
+    final api = FakeApi()..withReport('cortex', 'report_1', 1, prefix: 'a');
+    api.install(withSession: false);
+
+    // TTL of 40 milliseconds
+    final service = ReportService(ApiClient(client: api.client), ttl: const Duration(milliseconds: 40));
+
+    // Warm up showcase inline dataset with showcaseRows (500)
+    await service.dataset('cortex', 'report_1', 'a1', lang: 'en', limit: 500);
+    final initialCalls = api.calls['/projects/cortex/showcase/report_1/cards/a1'] ?? 0;
+
+    // Access at t=25ms with smaller limit (10) -> uses inline, caches derived entry with original timestamp
+    await Future.delayed(const Duration(milliseconds: 25));
+    final previewPage = await service.dataset('cortex', 'report_1', 'a1', lang: 'en', limit: 10);
+    expect(previewPage.rows.length, lessThanOrEqualTo(10));
+    expect(api.calls['/projects/cortex/showcase/report_1/cards/a1'], equals(initialCalls));
+
+    // Wait 25ms more (total 50ms > original 40ms TTL)
+    await Future.delayed(const Duration(milliseconds: 25));
+
+    // Accessing smaller limit now must be expired and refetch from network (not extended to 2*TTL)
+    await service.dataset('cortex', 'report_1', 'a1', lang: 'en', limit: 10);
+    expect(api.calls['/projects/cortex/showcase/report_1/cards/a1'], greaterThan(initialCalls));
+  });
 }

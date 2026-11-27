@@ -66,7 +66,7 @@ class ReportService {
       final inline = _datasets[_datasetKey('guest', project, report, datasetId, lang, showcaseRows, 0, const {})];
       if (inline != null && (!forceRefresh && DateTime.now().difference(inline.$1) < ttl) && (inline.$2.rows.length < showcaseRows || limit == showcaseRows)) {
         final page = DatasetPage(descriptor: inline.$2.descriptor, rows: inline.$2.rows.take(limit).toList(), offset: 0, limit: limit, totalRows: inline.$2.totalRows, lineage: inline.$2.lineage);
-        _datasets[key] = (DateTime.now(), page);
+        _datasets[key] = (inline.$1, page);
         return page;
       }
     }
