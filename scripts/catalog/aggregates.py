@@ -316,13 +316,98 @@ def schema_fields_equal(a_fields: list[dict], b_fields: list[dict]) -> bool:
     return normalize(a_fields) == normalize(b_fields)
 
 
+def normalize_condition(c: dict) -> dict:
+    return {
+        "field": c.get("field", ""),
+        "op": c.get("op", ""),
+        "value": c.get("value"),
+    }
+
+
+def normalize_measure(m: dict) -> dict:
+    return {
+        "name": m.get("name", ""),
+        "agg": m.get("agg", ""),
+        "field": m.get("field"),
+        "fields": list(m.get("fields") or []),
+        "by": m.get("by"),
+        "where": [normalize_condition(c) for c in (m.get("where") or [])],
+        "n": m.get("n"),
+    }
+
+
+def normalize_derived(d: dict) -> dict:
+    return {
+        "name": d.get("name", ""),
+        "expr": d.get("expr"),
+        "expr_field": d.get("expr_field"),
+    }
+
+
+def normalize_stage(s: dict) -> dict:
+    return {
+        "group_by": list(s.get("group_by") or []),
+        "measures": [normalize_measure(m) for m in (s.get("measures") or [])],
+        "derived": [normalize_derived(d) for d in (s.get("derived") or [])],
+        "partition_by": list(s.get("partition_by") or []),
+        "having": [normalize_condition(c) for c in (s.get("having") or [])],
+        "windows": list(s.get("windows") or []),
+    }
+
+
+def normalize_field(f: dict) -> dict:
+    return {
+        "name": f.get("name", ""),
+        "label": dict(f.get("label") or {}),
+        "type": f.get("type") or f.get("field_type") or "",
+        "role": f.get("role") or "measure",
+        "unit": f.get("unit"),
+        "decimals": f.get("decimals"),
+        "missing_means": f.get("missing_means") or "no_data",
+        "denominator_field": f.get("denominator_field"),
+        "denominator_text": f.get("denominator_text"),
+    }
+
+
+def normalize_spec(s: dict) -> dict:
+    if not s:
+        return {}
+    return {
+        "title": dict(s.get("title") or {}),
+        "description": dict(s.get("description") or {}),
+        "equation": s.get("equation"),
+        "source": s.get("source"),
+        "union": list(s.get("union") or []),
+        "lookups": list(s.get("lookups") or []),
+        "latest_snapshot": (
+            {
+                "order_field": s["latest_snapshot"].get("order_field", ""),
+                "complete_field": s["latest_snapshot"].get("complete_field", ""),
+                "id_field": s["latest_snapshot"].get("id_field", ""),
+            }
+            if s.get("latest_snapshot")
+            else None
+        ),
+        "buckets": list(s.get("buckets") or []),
+        "row_derived": [normalize_derived(d) for d in (s.get("row_derived") or [])],
+        "where": [normalize_condition(c) for c in (s.get("where") or [])],
+        "filters": list(s.get("filters") or []),
+        "stages": [normalize_stage(st) for st in (s.get("stages") or [])],
+        "derived": [normalize_derived(d) for d in (s.get("derived") or [])],
+        "having": [normalize_condition(c) for c in (s.get("having") or [])],
+        "calculator": s.get("calculator"),
+        "params": dict(s.get("params") or {}),
+        "refs": dict(s.get("refs") or {}),
+        "sort": list(s.get("sort") or []),
+        "limit": s.get("limit"),
+        "fields": [normalize_field(f) for f in (s.get("fields") or [])],
+        "value_labels": dict(s.get("value_labels") or {}),
+        "warm": bool(s.get("warm", False)),
+    }
+
+
 def calculation_definitions_equal(existing: dict, target: dict) -> bool:
-    if existing == target:
-        return True
-    for key in ("title", "source", "latest_snapshot", "where", "stages", "fields"):
-        if key in target and existing.get(key) != target[key]:
-            return False
-    return True
+    return normalize_spec(existing) == normalize_spec(target)
 
 
 def reconcile_schema(
@@ -330,49 +415,47 @@ def reconcile_schema(
 ) -> int:
     existing_schemas = engine.get(f"/admin/projects/{project}/schemas")
     versions = [s for s in existing_schemas if s.get("schema_name") == schema_name]
-    versions.sort(key=lambda x: x.get("version", 0))
+    v1_list = [s for s in versions if s.get("version") == SCHEMA_VERSION]
 
-    # 1. Exact matching published version: already immutable and complete.
-    for s in versions:
-        if s.get("status") == "published" and schema_fields_equal(
-            s.get("fields", []), target_fields
-        ):
-            return s["version"]
-
-    # 2. Exact matching draft version: publish it.
-    for s in versions:
-        if s.get("status") == "draft" and schema_fields_equal(
-            s.get("fields", []), target_fields
-        ):
-            v = s["version"]
+    if v1_list:
+        v1 = v1_list[0]
+        if v1.get("status") == "published":
+            if schema_fields_equal(v1.get("fields", []), target_fields):
+                return SCHEMA_VERSION
+            raise RuntimeError(
+                f"Schema {schema_name} v{SCHEMA_VERSION} is published with different immutable fields; "
+                f"cannot mutate pinned producer schema version {SCHEMA_VERSION} without coordinated migration."
+            )
+        if v1.get("status") == "draft":
+            if not schema_fields_equal(v1.get("fields", []), target_fields):
+                engine.request(
+                    "POST",
+                    f"/projects/{project}/admin/schemas",
+                    {
+                        "schema_name": schema_name,
+                        "version": SCHEMA_VERSION,
+                        "fields": target_fields,
+                    },
+                )
             engine.request(
                 "POST",
-                f"/projects/{project}/admin/schemas/{schema_name}/versions/{v}/publish",
+                f"/projects/{project}/admin/schemas/{schema_name}/versions/{SCHEMA_VERSION}/publish",
                 {},
             )
-            return v
+            return SCHEMA_VERSION
 
-    # 3. Existing draft version that can be updated to target fields.
-    drafts = [s for s in versions if s.get("status") == "draft"]
-    if drafts:
-        v = drafts[-1]["version"]
-        engine.request(
-            "POST",
-            f"/projects/{project}/admin/schemas",
-            {"schema_name": schema_name, "version": v, "fields": target_fields},
+    if versions and not v1_list:
+        raise RuntimeError(
+            f"Schema {schema_name} has existing versions {[s.get('version') for s in versions]} "
+            f"but pinned v{SCHEMA_VERSION} is absent; coordinated migration required."
         )
-        engine.request(
-            "POST",
-            f"/projects/{project}/admin/schemas/{schema_name}/versions/{v}/publish",
-            {},
-        )
-        return v
 
-    # 4. No matching version and no draft: create next draft and publish.
-    req_body: dict = {"schema_name": schema_name, "fields": target_fields}
-    if not versions:
-        req_body["version"] = SCHEMA_VERSION
-    saved = engine.request("POST", f"/projects/{project}/admin/schemas", req_body)
+    # Clean catalog: create draft v1 and publish.
+    saved = engine.request(
+        "POST",
+        f"/projects/{project}/admin/schemas",
+        {"schema_name": schema_name, "version": SCHEMA_VERSION, "fields": target_fields},
+    )
     v = saved.get("version", SCHEMA_VERSION)
     engine.request(
         "POST",
@@ -387,40 +470,45 @@ def reconcile_calculation(
     project: str,
     calc_id: str,
     target_def: dict,
+    schema_version: int,
     existing_calcs: list[dict],
 ) -> int:
     versions = [c for c in existing_calcs if c.get("calculation_id") == calc_id]
     versions.sort(key=lambda x: x.get("version", 0))
 
-    # 1. Exact matching published version: already immutable and complete.
+    # 1. Exact matching published version: definition, schema pin, and no pending review.
     for c in versions:
-        if c.get("status") == "published" and calculation_definitions_equal(
-            c.get("definition", {}), target_def
+        if (
+            c.get("status") == "published"
+            and calculation_definitions_equal(c.get("definition", {}), target_def)
+            and c.get("input_schema") == SCHEMA_NAME
+            and c.get("input_schema_version") == schema_version
+            and not c.get("needs_review")
         ):
             return c["version"]
 
-    # 2. Exact matching draft version: publish it.
-    for c in versions:
-        if c.get("status") == "draft" and calculation_definitions_equal(
-            c.get("definition", {}), target_def
-        ):
-            v = c["version"]
-            engine.request(
-                "POST",
-                f"/projects/{project}/admin/calculations/{calc_id}/versions/{v}/publish",
-                {},
-            )
-            return v
-
-    # 3. Existing draft version that can be updated to target definition.
+    # 2. Existing draft version: if definition, schema pin, and needs_review are clean, publish.
     drafts = [c for c in versions if c.get("status") == "draft"]
     if drafts:
-        v = drafts[-1]["version"]
-        engine.request(
-            "POST",
-            f"/projects/{project}/admin/calculations",
-            {"calculation_id": calc_id, "version": v, "definition": target_def},
+        draft = drafts[-1]
+        v = draft["version"]
+        is_exact = (
+            calculation_definitions_equal(draft.get("definition", {}), target_def)
+            and draft.get("input_schema_version") == schema_version
+            and not draft.get("needs_review")
         )
+        if not is_exact:
+            # Re-save draft with exact selected schema pin and definition.
+            engine.request(
+                "POST",
+                f"/projects/{project}/admin/calculations",
+                {
+                    "calculation_id": calc_id,
+                    "version": v,
+                    "input_schema_version": schema_version,
+                    "definition": target_def,
+                },
+            )
         engine.request(
             "POST",
             f"/projects/{project}/admin/calculations/{calc_id}/versions/{v}/publish",
@@ -428,8 +516,12 @@ def reconcile_calculation(
         )
         return v
 
-    # 4. No matching version and no draft: create next draft and publish.
-    req_body: dict = {"calculation_id": calc_id, "definition": target_def}
+    # 3. No matching version and no draft: create next draft with explicit input_schema_version and publish.
+    req_body: dict = {
+        "calculation_id": calc_id,
+        "input_schema_version": schema_version,
+        "definition": target_def,
+    }
     if not versions:
         req_body["version"] = 1
     saved = engine.request("POST", f"/projects/{project}/admin/calculations", req_body)
@@ -444,7 +536,7 @@ def reconcile_calculation(
 
 def apply_bundle(engine: Engine, project: str) -> None:
     bundle = build_bundle()
-    reconcile_schema(engine, project, SCHEMA_NAME, SCHEMA_FIELDS)
+    schema_version = reconcile_schema(engine, project, SCHEMA_NAME, SCHEMA_FIELDS)
     engine.request(
         "PUT",
         f"/projects/{project}/admin/reports/{REPORT_ID}",
@@ -461,6 +553,7 @@ def apply_bundle(engine: Engine, project: str) -> None:
             project,
             ds_id,
             ds["calculation"],
+            schema_version,
             existing_calcs,
         )
         engine.request(

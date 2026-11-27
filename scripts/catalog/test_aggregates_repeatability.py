@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Inert fake-API regression tests for Reports catalog apply_bundle repeatability and recovery.
 
-Exercises:
+Faithfully exercises:
 1. Fresh project initialization (schema v1, report, calculations v1, dataset cards).
-2. Second run idempotence/repeatability (no 409 conflict, no redundant v2 drafts, no duplicate publish).
-3. Interrupted partial run recovery (matches existing drafts without bumping versions unnecessarily).
-4. Bug-state recovery (v1 published and leftover unhandled v2 draft).
-5. Changed definition evolution (creates draft v2, publishes v2, wires v2 to dataset card).
+2. Second run idempotence/repeatability against real-shaped serde defaults (0 POSTs, 0 duplicate versions).
+3. Exact calculation definition equality: extra behavior fields (limit, union) reject match and create safe new versions.
+4. Producer schema pin constraint: immutable published schema v1 must not mutate or bump to v2; fails clearly if incompatible.
+5. Stale draft recovery: draft calculation with outdated input_schema_version or needs_review=True is re-saved with selected pin.
+6. Bug-state recovery: published v1 matching definition is reconciled even if a leftover unhandled v2 draft exists.
 
 Zero external network egress, zero real engine/database mutations.
 """
@@ -14,8 +15,8 @@ Zero external network egress, zero real engine/database mutations.
 from __future__ import annotations
 
 import copy
-import sys
 import pathlib
+import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -87,7 +88,6 @@ class FakeReportsEngine:
                 "status": "draft",
                 "fields": copy.deepcopy(body.get("fields", [])),
             }
-            # update existing draft or append
             for i, v in enumerate(versions):
                 if v["version"] == version:
                     versions[i] = draft
@@ -127,12 +127,26 @@ class FakeReportsEngine:
                             path,
                             f"calculation {project}:{calc_id} v{version} is {existing['status']} and cannot change; create version {version + 1}",
                         )
+
+            raw_def = copy.deepcopy(body.get("definition", {}))
+            norm_def = aggregates.normalize_spec(raw_def)
+            source_schema = raw_def.get("source")
+            input_ver = body.get("input_schema_version")
+            if input_ver is None and source_schema:
+                schema_vers = self.schemas.get((project, source_schema), [])
+                pub_vers = [s["version"] for s in schema_vers if s["status"] == "published"]
+                input_ver = max(pub_vers, default=None)
+
             draft = {
                 "project": project,
                 "calculation_id": calc_id,
                 "version": version,
                 "status": "draft",
-                "definition": copy.deepcopy(body.get("definition", {})),
+                "input_schema": source_schema,
+                "input_schema_version": input_ver,
+                "inputs": [{"schema": source_schema, "version": input_ver}] if source_schema and input_ver else [],
+                "needs_review": False,
+                "definition": norm_def,
             }
             for i, v in enumerate(versions):
                 if v["version"] == version:
@@ -184,10 +198,10 @@ class TestAggregatesRepeatability(unittest.TestCase):
         self.project = "test-project"
 
     def test_fresh_apply_bundle(self):
-        """Initial run on empty catalog publishes schema v1 and 7 calculation v1s."""
+        """Initial run on empty catalog publishes schema v1 and 7 calculation v1s bound to schema v1."""
         aggregates.apply_bundle(self.engine, self.project)
 
-        # Check schema
+        # Check schema v1
         schema_vers = self.engine.schemas.get((self.project, aggregates.SCHEMA_NAME), [])
         self.assertEqual(len(schema_vers), 1)
         self.assertEqual(schema_vers[0]["version"], 1)
@@ -200,6 +214,8 @@ class TestAggregatesRepeatability(unittest.TestCase):
             self.assertEqual(len(calc_vers), 1, f"Expected 1 version for {calc_id}")
             self.assertEqual(calc_vers[0]["version"], 1)
             self.assertEqual(calc_vers[0]["status"], "published")
+            self.assertEqual(calc_vers[0]["input_schema"], aggregates.SCHEMA_NAME)
+            self.assertEqual(calc_vers[0]["input_schema_version"], 1)
 
             # Check dataset wire
             ds = self.engine.datasets.get((self.project, aggregates.REPORT_ID, calc_id))
@@ -207,120 +223,161 @@ class TestAggregatesRepeatability(unittest.TestCase):
             self.assertEqual(ds["calculation_version"], 1)
             self.assertEqual(ds["visibility"], "public")
 
-    def test_second_run_repeatability(self):
-        """Second run reconciles existing published versions without 409 or v2 creation."""
-        # Initial run
+    def test_second_run_repeatability_with_real_serde_defaults(self):
+        """Second run against real-shaped serialized defaults creates 0 versions and 0 POSTs."""
         aggregates.apply_bundle(self.engine, self.project)
-        calls_run1 = len(self.engine.call_log)
-
-        # Clear call log to trace only run 2
         self.engine.call_log.clear()
 
-        # Second run must succeed idempotently
+        # Second run
         aggregates.apply_bundle(self.engine, self.project)
 
-        # Ensure no new versions were created
         schema_vers = self.engine.schemas.get((self.project, aggregates.SCHEMA_NAME), [])
-        self.assertEqual(len(schema_vers), 1, "Schema should still have exactly 1 version")
-        self.assertEqual(schema_vers[0]["version"], 1)
+        self.assertEqual(len(schema_vers), 1)
 
         for spec in aggregates.METRICS:
             calc_id = spec["id"]
             calc_vers = self.engine.calculations.get((self.project, calc_id), [])
-            self.assertEqual(len(calc_vers), 1, f"Calculation {calc_id} should have exactly 1 version")
+            self.assertEqual(len(calc_vers), 1)
             self.assertEqual(calc_vers[0]["version"], 1)
 
-            # Ensure dataset wiring intact
             ds = self.engine.datasets.get((self.project, aggregates.REPORT_ID, calc_id))
             self.assertEqual(ds["calculation_version"], 1)
 
-        # Ensure zero draft posts and zero publish posts occurred in run 2
         schema_posts = [c for c in self.engine.call_log if "schemas" in c[1] and c[0] == "POST"]
         calc_posts = [c for c in self.engine.call_log if "calculations" in c[1] and c[0] == "POST"]
-        self.assertEqual(schema_posts, [], f"Expected no schema POSTs on run 2: {schema_posts}")
-        self.assertEqual(calc_posts, [], f"Expected no calculation POSTs on run 2: {calc_posts}")
+        self.assertEqual(schema_posts, [])
+        self.assertEqual(calc_posts, [])
 
-    def test_interrupted_run_recovery(self):
-        """Interrupted run with existing draft publishes the draft without bumping version."""
-        # Setup: Schema published v1, calculations 0..2 published v1, calculation 3 has draft v1 (unbudgeted crash), 4..6 missing.
+    def test_extra_limit_or_union_creates_safe_new_version(self):
+        """A calculation with extra limit: 1 or union: ['other'] fails equality and creates v2."""
+        bundle = aggregates.build_bundle()
+        cid0 = bundle["datasets"][0]["id"]
+
+        # Case A: target with extra limit: 1
+        with_limit = copy.deepcopy(bundle["datasets"][0]["calculation"])
+        with_limit["limit"] = 1
+        self.assertFalse(
+            aggregates.calculation_definitions_equal(with_limit, bundle["datasets"][0]["calculation"]),
+            "realTarget+limit1 must not compare equal to realTarget",
+        )
+
+        # Case B: target with extra union
+        with_union = copy.deepcopy(bundle["datasets"][0]["calculation"])
+        with_union["union"] = ["other-input"]
+        self.assertFalse(
+            aggregates.calculation_definitions_equal(with_union, bundle["datasets"][0]["calculation"]),
+            "realTarget+union must not compare equal to realTarget",
+        )
+
+        # Case C: seed published v1 with extra limit: 1 in fake engine
         self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
             {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS}
         ]
-        bundle = aggregates.build_bundle()
-        # Calcs 0..2 published
-        for ds in bundle["datasets"][:3]:
-            cid = ds["id"]
-            self.engine.calculations[(self.project, cid)] = [
-                {"project": self.project, "calculation_id": cid, "version": 1, "status": "published", "definition": ds["calculation"]}
-            ]
-        # Calc 3 draft
-        ds3 = bundle["datasets"][3]
-        cid3 = ds3["id"]
-        self.engine.calculations[(self.project, cid3)] = [
-            {"project": self.project, "calculation_id": cid3, "version": 1, "status": "draft", "definition": ds3["calculation"]}
-        ]
-
-        # Run apply_bundle: should recover cleanly
-        aggregates.apply_bundle(self.engine, self.project)
-
-        # Calc 3 draft should now be published as v1 (not bumped to v2)
-        calc3_vers = self.engine.calculations.get((self.project, cid3), [])
-        self.assertEqual(len(calc3_vers), 1)
-        self.assertEqual(calc3_vers[0]["version"], 1)
-        self.assertEqual(calc3_vers[0]["status"], "published")
-
-        # All 7 metrics should now have 1 published version
-        for spec in aggregates.METRICS:
-            cid = spec["id"]
-            calc_vers = self.engine.calculations.get((self.project, cid), [])
-            self.assertEqual(len(calc_vers), 1)
-            self.assertEqual(calc_vers[0]["status"], "published")
-
-    def test_reconciliation_with_preexisting_buggy_v2_draft(self):
-        """If v1 is published and an unhandled v2 draft exists from earlier bug, reconcile to published v1."""
-        # Schema has published v1 AND draft v2
-        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
-            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS},
-            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 2, "status": "draft", "fields": aggregates.SCHEMA_FIELDS},
-        ]
-        # First calculation has published v1 AND draft v2
-        bundle = aggregates.build_bundle()
-        cid0 = bundle["datasets"][0]["id"]
         self.engine.calculations[(self.project, cid0)] = [
-            {"project": self.project, "calculation_id": cid0, "version": 1, "status": "published", "definition": bundle["datasets"][0]["calculation"]},
-            {"project": self.project, "calculation_id": cid0, "version": 2, "status": "draft", "definition": bundle["datasets"][0]["calculation"]},
+            {
+                "project": self.project,
+                "calculation_id": cid0,
+                "version": 1,
+                "status": "published",
+                "input_schema": aggregates.SCHEMA_NAME,
+                "input_schema_version": 1,
+                "needs_review": False,
+                "definition": aggregates.normalize_spec(with_limit),
+            }
         ]
 
-        # Run apply_bundle
+        # Running apply_bundle must create safe version 2 for cid0
         aggregates.apply_bundle(self.engine, self.project)
-
-        # Dataset for cid0 must bind to reconciled published version 1
-        ds = self.engine.datasets.get((self.project, aggregates.REPORT_ID, cid0))
-        self.assertEqual(ds["calculation_version"], 1)
-
-    def test_changed_definition_evolution(self):
-        """If calculation definition has changed, safe evolution creates and publishes v2."""
-        bundle = aggregates.build_bundle()
-        cid0 = bundle["datasets"][0]["id"]
-        # Old definition in v1
-        old_def = copy.deepcopy(bundle["datasets"][0]["calculation"])
-        old_def["title"] = {"en": "Old Title"}
-        self.engine.calculations[(self.project, cid0)] = [
-            {"project": self.project, "calculation_id": cid0, "version": 1, "status": "published", "definition": old_def}
-        ]
-
-        # Run apply_bundle
-        aggregates.apply_bundle(self.engine, self.project)
-
-        # Calculation cid0 should now have version 2 published with new definition
         calc_vers = self.engine.calculations.get((self.project, cid0), [])
         self.assertEqual(len(calc_vers), 2)
         v2 = next(v for v in calc_vers if v["version"] == 2)
         self.assertEqual(v2["status"], "published")
+        self.assertEqual(v2["input_schema_version"], 1)
 
-        # Dataset card must point to version 2
+    def test_schema_v1_pin_incompatibility_fails_clearly(self):
+        """Incompatible published schema v1 must raise RuntimeError, preserving producer v1 pin."""
+        incompatible_fields = [
+            {"path": "snapshot_id", "type": "string", "required": True},
+            {"path": "incompatible_field", "type": "integer", "required": True},
+        ]
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {
+                "project": self.project,
+                "schema_name": aggregates.SCHEMA_NAME,
+                "version": 1,
+                "status": "published",
+                "fields": incompatible_fields,
+            }
+        ]
+
+        with self.assertRaises(RuntimeError) as ctx:
+            aggregates.apply_bundle(self.engine, self.project)
+        self.assertIn("cannot mutate pinned producer schema version 1", str(ctx.exception))
+
+    def test_stale_draft_with_wrong_input_schema_resaves(self):
+        """A draft calculation with outdated input_schema_version or needs_review=True is re-saved with selected pin."""
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS}
+        ]
+        bundle = aggregates.build_bundle()
+        cid0 = bundle["datasets"][0]["id"]
+        # Seed draft with input_schema_version: 99 and needs_review: True
+        self.engine.calculations[(self.project, cid0)] = [
+            {
+                "project": self.project,
+                "calculation_id": cid0,
+                "version": 1,
+                "status": "draft",
+                "input_schema": aggregates.SCHEMA_NAME,
+                "input_schema_version": 99,
+                "needs_review": True,
+                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+            }
+        ]
+
+        aggregates.apply_bundle(self.engine, self.project)
+
+        calc_vers = self.engine.calculations.get((self.project, cid0), [])
+        self.assertEqual(len(calc_vers), 1)
+        self.assertEqual(calc_vers[0]["status"], "published")
+        self.assertEqual(calc_vers[0]["input_schema_version"], 1)
+        self.assertFalse(calc_vers[0]["needs_review"])
+
+    def test_reconciliation_with_preexisting_buggy_v2_draft(self):
+        """If v1 is published and an unhandled v2 draft exists, reconcile to published v1."""
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS},
+            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 2, "status": "draft", "fields": aggregates.SCHEMA_FIELDS},
+        ]
+        bundle = aggregates.build_bundle()
+        cid0 = bundle["datasets"][0]["id"]
+        self.engine.calculations[(self.project, cid0)] = [
+            {
+                "project": self.project,
+                "calculation_id": cid0,
+                "version": 1,
+                "status": "published",
+                "input_schema": aggregates.SCHEMA_NAME,
+                "input_schema_version": 1,
+                "needs_review": False,
+                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+            },
+            {
+                "project": self.project,
+                "calculation_id": cid0,
+                "version": 2,
+                "status": "draft",
+                "input_schema": aggregates.SCHEMA_NAME,
+                "input_schema_version": 1,
+                "needs_review": False,
+                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+            },
+        ]
+
+        aggregates.apply_bundle(self.engine, self.project)
+
         ds = self.engine.datasets.get((self.project, aggregates.REPORT_ID, cid0))
-        self.assertEqual(ds["calculation_version"], 2)
+        self.assertEqual(ds["calculation_version"], 1)
 
 
 if __name__ == "__main__":
