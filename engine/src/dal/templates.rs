@@ -447,6 +447,18 @@ pub async fn bind_card_visual(
     }
 
     let mut tx = db.pool.begin().await?;
+    bind_card_visual_tx(&mut tx, project, report, card_id, binding).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn bind_card_visual_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    project: &str,
+    report: &str,
+    card_id: &str,
+    binding: &CardVisualBinding,
+) -> Result<(), ReportError> {
     sqlx::query(
         "INSERT INTO report_card_visuals(project_slug, report_slug, card_id, template_id, template_version)
          VALUES ($1, $2, $3, $4, $5)
@@ -458,7 +470,7 @@ pub async fn bind_card_visual(
     .bind(card_id)
     .bind(&binding.template)
     .bind(binding.version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query(
@@ -467,7 +479,7 @@ pub async fn bind_card_visual(
     .bind(project)
     .bind(report)
     .bind(card_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     for (slot_name, fields) in &binding.mapping {
         for (pos, field_name) in fields.iter().enumerate() {
@@ -481,7 +493,7 @@ pub async fn bind_card_visual(
             .bind(slot_name)
             .bind(pos as i64)
             .bind(field_name)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
     }
@@ -492,7 +504,7 @@ pub async fn bind_card_visual(
     .bind(project)
     .bind(report)
     .bind(card_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     for (opt_name, val) in &binding.options {
         sqlx::query(
@@ -504,11 +516,10 @@ pub async fn bind_card_visual(
         .bind(card_id)
         .bind(opt_name)
         .bind(val)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    tx.commit().await?;
     Ok(())
 }
 

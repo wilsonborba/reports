@@ -567,6 +567,53 @@ pub async fn upsert_dataset(db: &Db, d: &DatasetRecord) -> Result<(), ReportErro
     Ok(())
 }
 
+pub async fn upsert_dataset_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    d: &DatasetRecord,
+) -> Result<(), ReportError> {
+    let source_app = if d.source_app.is_empty() {
+        "reports"
+    } else {
+        d.source_app.as_str()
+    };
+    let authority = if d.control_authority.is_empty() {
+        "user_owned"
+    } else {
+        d.control_authority.as_str()
+    };
+    let audience = if d.audience.is_empty() {
+        crate::domain::auth::Audience::from_visibility(crate::domain::auth::Visibility::parse(
+            &d.visibility,
+        ))
+        .as_str()
+    } else {
+        d.audience.as_str()
+    };
+    let sql = "INSERT INTO datasets (project_slug, report_slug, dataset_id, data_tier, calculation_id, calculation_version, visibility, discoverable, source_app, owner_id, control_authority, audience) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+         ON CONFLICT (project_slug, report_slug, dataset_id) DO UPDATE SET \
+         data_tier = EXCLUDED.data_tier, calculation_id = EXCLUDED.calculation_id, \
+         calculation_version = EXCLUDED.calculation_version, visibility = EXCLUDED.visibility, \
+         discoverable = EXCLUDED.discoverable, source_app = EXCLUDED.source_app, \
+         owner_id = EXCLUDED.owner_id, control_authority = EXCLUDED.control_authority, audience = EXCLUDED.audience";
+    sqlx::query(sql)
+        .bind(&d.project)
+        .bind(&d.report_slug)
+        .bind(&d.dataset_id)
+        .bind(tier_text(d.data_tier))
+        .bind(&d.calculation_id)
+        .bind(d.calculation_version)
+        .bind(&d.visibility)
+        .bind(d.discoverable)
+        .bind(source_app)
+        .bind(&d.owner_id)
+        .bind(authority)
+        .bind(audience)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 pub async fn delete_dataset(
     db: &Db,
     project: &str,

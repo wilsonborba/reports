@@ -864,3 +864,339 @@ async fn owner_api_p1_patch_failed_couch_write_preserves_binding_and_state() {
     assert_eq!(st_ds, StatusCode::OK);
     assert_eq!(ds_after["visual"]["options"]["legend"], "true");
 }
+
+#[tokio::test]
+async fn owner_api_p1_interleaved_replace_vs_replace_atomic_cas_winner_takes_all() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create initial valid item
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "Initial", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Client A (winner) replaces dataset with If-Match initial_etag
+    let (st_a, winner_detail) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "Winner", "y": 100 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_a, StatusCode::OK);
+    let winner_etag = winner_detail["item"]["etag"].as_str().unwrap();
+    assert_ne!(winner_etag, initial_etag);
+
+    // Client B (loser) attempts replace using the now-stale initial_etag
+    let (st_b, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "Loser", "y": 999 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_b, StatusCode::CONFLICT);
+
+    // Owner detail MUST match Winner completely
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["item"]["etag"], winner_etag);
+    assert_eq!(item_after["item"]["row_count"], 1);
+    assert_eq!(item_after["rows"], json!([{ "x": "Winner", "y": 100 }]));
+
+    // Dataset calculation_version and visual MUST match Winner completely
+    let (st_ds, ds_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds, StatusCode::OK);
+    assert_eq!(ds_after["lineage"]["calculation_version"], 2);
+    assert_eq!(ds_after["visual"]["template"], "bar-v1");
+    assert_eq!(ds_after["visual"]["mapping"]["category"], json!(["x"]));
+    assert_eq!(ds_after["visual"]["mapping"]["value"], json!(["y"]));
+
+    let ds_calc_ver: i64 = sqlx::query_scalar(
+        "SELECT calculation_version FROM datasets WHERE project_slug = 'cortex' AND report_slug = $1 AND dataset_id = $2",
+    )
+    .bind(report_slug)
+    .bind(dataset_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(ds_calc_ver, 2);
+
+    // Total calculation versions for this calculation must be 2, not 3
+    let calc_id = format!("owner-calc-{item_id}");
+    let calc_versions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM calculation_versions WHERE project_slug = 'cortex' AND calculation_id = $1",
+    )
+    .bind(&calc_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(calc_versions, 2);
+}
+
+#[tokio::test]
+async fn owner_api_p1_interleaved_patch_vs_replace_atomic_cas_winner_takes_all() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create initial valid item
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "legend": true },
+            "rows": [{ "x": "Initial", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Client A (winner) patches audience to "asodya" and config legend to false
+    let (st_patch, patch_detail) = call_with_headers(
+        &t,
+        "PATCH",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "audience": "asodya",
+            "config": { "legend": false }
+        })),
+    )
+    .await;
+    assert_eq!(st_patch, StatusCode::OK);
+    let patch_etag = patch_detail["item"]["etag"].as_str().unwrap();
+    assert_ne!(patch_etag, initial_etag);
+
+    // Client B (loser) attempts replace using stale initial_etag
+    let (st_replace, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "Loser", "y": 999 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_replace, StatusCode::CONFLICT);
+
+    // Owner detail MUST match Winner patch state
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["item"]["etag"], patch_etag);
+    assert_eq!(item_after["item"]["audience"], "asodya");
+    assert_eq!(item_after["config"]["legend"], false);
+    assert_eq!(item_after["rows"], json!([{ "x": "Initial", "y": 10 }]));
+
+    // Dataset audience, visibility and visual options MUST match Winner patch state
+    let (st_ds, ds_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds, StatusCode::OK);
+    assert_eq!(ds_after["visibility"], "signed_in");
+    assert_eq!(ds_after["lineage"]["calculation_version"], 1);
+    assert_eq!(ds_after["visual"]["options"]["legend"], "false");
+
+    // SQL datasets and reports tables MUST reflect audience and visibility transaction atomically
+    let (ds_aud, ds_vis, ds_ver): (String, String, i64) = sqlx::query_as(
+        "SELECT audience, visibility, calculation_version FROM datasets WHERE project_slug = 'cortex' AND report_slug = $1 AND dataset_id = $2",
+    )
+    .bind(report_slug)
+    .bind(dataset_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(ds_aud, "asodya");
+    assert_eq!(ds_vis, "signed_in");
+    assert_eq!(ds_ver, 1);
+
+    let (rep_aud, rep_vis): (String, String) = sqlx::query_as(
+        "SELECT audience, visibility FROM reports WHERE project_slug = 'cortex' AND slug = $1",
+    )
+    .bind(report_slug)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(rep_aud, "asodya");
+    assert_eq!(rep_vis, "signed_in");
+}
+
+#[tokio::test]
+async fn owner_api_p1_replace_sql_failure_after_couch_success_rolls_back_atomically() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create initial valid item
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "Initial", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let initial_doc_id: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Inject relational failure before visual binding completes
+    sqlx::query(
+        "CREATE TRIGGER fail_visual_insert BEFORE INSERT ON report_card_visuals \
+         BEGIN SELECT RAISE(ABORT, 'injected relational failure'); END;",
+    )
+    .execute(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+
+    // Attempt replace with valid payload and ETag: Couch prepare succeeds, but relational transaction fails
+    let (st_fail, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "ShouldRollback", "y": 999 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_fail, StatusCode::INTERNAL_SERVER_ERROR);
+
+    // Remove trigger
+    sqlx::query("DROP TRIGGER fail_visual_insert")
+        .execute(&t.state.stores.db.pool)
+        .await
+        .unwrap();
+
+    // Stored item state MUST be completely rolled back to initial state
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["item"]["etag"], initial_etag);
+    let doc_id_after: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    assert_eq!(doc_id_after, initial_doc_id);
+    assert_eq!(item_after["rows"], json!([{ "x": "Initial", "y": 10 }]));
+
+    // Dataset calculation_version in SQL MUST remain 1
+    let (st_ds, ds_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds, StatusCode::OK);
+    assert_eq!(ds_after["lineage"]["calculation_version"], 1);
+
+    // Calculation version 2 must NOT exist in relational table
+    let calc_id = format!("owner-calc-{item_id}");
+    let calc_versions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM calculation_versions WHERE project_slug = 'cortex' AND calculation_id = $1",
+    )
+    .bind(&calc_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(calc_versions, 1);
+}

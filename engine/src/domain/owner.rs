@@ -818,7 +818,8 @@ pub async fn replace_dataset(
     }
     let binding = parse_visual_binding(&tpl, &mapping, &config, &input.rows)?;
 
-    let new_doc_key = format!("owner-item:{item_id}:{}", new_id());
+    let prep_token = new_id();
+    let new_doc_key = format!("owner-item:{item_id}:{prep_token}");
     let new_etag = format!("\"{}\"", new_id());
     let ts = now_secs();
     let rec = RecordDoc::new(
@@ -835,26 +836,35 @@ pub async fn replace_dataset(
         }),
     );
     let new_doc_id = rec.id.clone();
+
+    let calc_id = format!("owner-calc-{item_id}");
+    let row_schema = format!("owner-rows-{item_id}-{prep_token}");
+    let row_docs: Vec<RecordDoc> = input
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(idx, row)| {
+            RecordDoc::new(
+                &detail.item.project,
+                &row_schema,
+                1,
+                &format!("owner-row:{item_id}:{prep_token}:{idx}"),
+                None,
+                None,
+                row.clone(),
+            )
+        })
+        .collect();
+
     stores.docs.insert_records(&[rec]).await?;
+    if !row_docs.is_empty() {
+        stores.docs.insert_records(&row_docs).await?;
+    }
 
     let owner_id = require_owner_user(scope)?.to_string();
     let audience = Audience::parse(&detail.item.audience);
 
-    publish_owner_dataset(
-        stores,
-        &detail.item.project,
-        item_id,
-        &detail.item.report_slug,
-        &detail.item.dataset_id,
-        &detail.item.report_slug,
-        &detail.item.source_app,
-        &owner_id,
-        audience,
-        &mapping,
-        &input.rows,
-        &binding,
-    )
-    .await?;
+    let mut tx = stores.db.pool.begin().await?;
 
     let res = sqlx::query(
         "UPDATE user_chart_items SET couch_doc_id = $1, etag = $2, updated_at = $3 WHERE id = $4 AND etag = $5",
@@ -864,13 +874,74 @@ pub async fn replace_dataset(
     .bind(ts)
     .bind(item_id)
     .bind(&detail.item.etag)
-    .execute(&stores.db.pool)
+    .execute(&mut *tx)
     .await?;
     if res.rows_affected() == 0 {
         return Err(ReportError::Conflict(
             "concurrent_modification: item was modified concurrently".into(),
         ));
     }
+
+    let prev_ver: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(version), 0) FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2",
+    )
+    .bind(&detail.item.project)
+    .bind(&calc_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let version = prev_ver + 1;
+
+    let spec = DatasetSpec {
+        title: I18nText::from([("en".into(), detail.item.report_slug.clone())]),
+        source: Some(row_schema.clone()),
+        fields: owner_fields(&mapping, &input.rows),
+        ..Default::default()
+    };
+    let calc = CalculationVersion {
+        project: detail.item.project.clone(),
+        calculation_id: calc_id.clone(),
+        version,
+        status: "draft".to_string(),
+        input_schema: Some(row_schema.clone()),
+        input_schema_version: Some(1),
+        inputs: vec![InputRef {
+            schema: row_schema,
+            version: 1,
+        }],
+        definition: spec.clone(),
+        needs_review: false,
+        created_at: String::new(),
+        published_at: None,
+    };
+    calculations::save_draft_tx(&stores.db, &mut tx, &calc).await?;
+    calculations::publish_tx(&stores.db, &mut tx, &calc).await?;
+
+    let dataset_rec = DatasetRecord {
+        project: detail.item.project.clone(),
+        report_slug: detail.item.report_slug.clone(),
+        dataset_id: detail.item.dataset_id.clone(),
+        data_tier: DataTier::Real,
+        calculation_id: calc_id,
+        calculation_version: version,
+        spec,
+        visibility: audience.to_visibility().as_str().to_string(),
+        discoverable: false,
+        source_app: detail.item.source_app.clone(),
+        owner_id: owner_id.clone(),
+        control_authority: ControlAuthority::UserOwned.as_str().to_string(),
+        audience: audience.as_str().to_string(),
+    };
+    catalog::upsert_dataset_tx(&mut tx, &dataset_rec).await?;
+    templates::bind_card_visual_tx(
+        &mut tx,
+        &detail.item.project,
+        &detail.item.report_slug,
+        &detail.item.dataset_id,
+        &binding,
+    )
+    .await?;
+
+    tx.commit().await?;
 
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
@@ -910,6 +981,7 @@ pub async fn patch_item(
     let ts = now_secs();
 
     let mut new_doc_id = None;
+    let mut visual_binding = None;
     if input.config.is_some() || input.mapping.is_some() {
         let mapping = input.mapping.unwrap_or(detail.mapping);
         let config = input.config.unwrap_or(detail.config);
@@ -936,8 +1008,9 @@ pub async fn patch_item(
         }
         let binding = parse_visual_binding(&tpl, &mapping, &config, &detail.rows)?;
 
-        // Insert new document before modifying visual bindings or item state
-        let new_doc_key = format!("owner-item:{item_id}:{}", new_id());
+        // Prepare Couch document outside relational transaction
+        let prep_token = new_id();
+        let new_doc_key = format!("owner-item:{item_id}:{prep_token}");
         let rec = RecordDoc::new(
             &detail.item.project,
             "owner-chart-v1",
@@ -954,16 +1027,10 @@ pub async fn patch_item(
         let doc_id = rec.id.clone();
         stores.docs.insert_records(&[rec]).await?;
         new_doc_id = Some(doc_id);
-
-        templates::bind_card_visual(
-            &stores.db,
-            &detail.item.project,
-            &detail.item.report_slug,
-            &detail.item.dataset_id,
-            &binding,
-        )
-        .await?;
+        visual_binding = Some(binding);
     }
+
+    let mut tx = stores.db.pool.begin().await?;
 
     let res = if let Some(ref doc_id) = new_doc_id {
         sqlx::query(
@@ -975,7 +1042,7 @@ pub async fn patch_item(
         .bind(ts)
         .bind(item_id)
         .bind(&detail.item.etag)
-        .execute(&stores.db.pool)
+        .execute(&mut *tx)
         .await?
     } else {
         sqlx::query(
@@ -986,7 +1053,7 @@ pub async fn patch_item(
         .bind(ts)
         .bind(item_id)
         .bind(&detail.item.etag)
-        .execute(&stores.db.pool)
+        .execute(&mut *tx)
         .await?
     };
 
@@ -996,6 +1063,17 @@ pub async fn patch_item(
         ));
     }
 
+    if let Some(ref binding) = visual_binding {
+        templates::bind_card_visual_tx(
+            &mut tx,
+            &detail.item.project,
+            &detail.item.report_slug,
+            &detail.item.dataset_id,
+            binding,
+        )
+        .await?;
+    }
+
     sqlx::query(
         "UPDATE reports SET visibility = $1, audience = $2 WHERE project_slug = $3 AND slug = $4",
     )
@@ -1003,7 +1081,7 @@ pub async fn patch_item(
     .bind(new_audience.as_str())
     .bind(&detail.item.project)
     .bind(&detail.item.report_slug)
-    .execute(&stores.db.pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
@@ -1013,8 +1091,10 @@ pub async fn patch_item(
     .bind(new_audience.as_str())
     .bind(&detail.item.project)
     .bind(&detail.item.report_slug)
-    .execute(&stores.db.pool)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)

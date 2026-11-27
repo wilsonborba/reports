@@ -195,7 +195,21 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
         }
     }
     let mut tx = db.pool.begin().await?;
-    let sql=format!("INSERT INTO calculation_versions(project_slug,calculation_id,version,status,input_schema,input_schema_version,needs_review) VALUES ($1,$2,$3,'draft',{}, {},$6) ON CONFLICT(project_slug,calculation_id,version) DO UPDATE SET input_schema=EXCLUDED.input_schema,input_schema_version=EXCLUDED.input_schema_version,needs_review=EXCLUDED.needs_review WHERE calculation_versions.status='draft'",db.opt_in(4),db.opt_num_in(5));
+    save_draft_tx(db, &mut tx, c).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn save_draft_tx(
+    db: &Db,
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    c: &CalculationVersion,
+) -> Result<(), ReportError> {
+    let sql = format!(
+        "INSERT INTO calculation_versions(project_slug,calculation_id,version,status,input_schema,input_schema_version,needs_review) VALUES ($1,$2,$3,'draft',{}, {},$6) ON CONFLICT(project_slug,calculation_id,version) DO UPDATE SET input_schema=EXCLUDED.input_schema,input_schema_version=EXCLUDED.input_schema_version,needs_review=EXCLUDED.needs_review WHERE calculation_versions.status='draft'",
+        db.opt_in(4),
+        db.opt_num_in(5)
+    );
     let done = sqlx::query(&sql)
         .bind(&c.project)
         .bind(&c.calculation_id)
@@ -203,18 +217,18 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
         .bind(opt(&c.input_schema))
         .bind(opt_num(c.input_schema_version))
         .bind(c.needs_review)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     if done.rows_affected() == 0 {
         return Err(ReportError::Conflict(
             "calculation is no longer a draft".into(),
         ));
     }
-    write_inputs(&mut tx, c).await?;
+    write_inputs(tx, c).await?;
     let value =
         serde_json::to_value(&c.definition).map_err(|e| ReportError::Internal(e.to_string()))?;
     super::normalized::write(
-        &mut tx,
+        tx,
         &super::normalized::Key {
             project: &c.project,
             calculation: &c.calculation_id,
@@ -223,26 +237,39 @@ pub async fn save_draft(db: &Db, c: &CalculationVersion) -> Result<(), ReportErr
         &value,
     )
     .await?;
-    tx.commit().await?;
     Ok(())
 }
 
 /// Publishes a draft with its final input list (immutable from now on).
 pub async fn publish(db: &Db, c: &CalculationVersion) -> Result<bool, ReportError> {
     let mut tx = db.pool.begin().await?;
-    let sql=format!("UPDATE calculation_versions SET status='published',published_at={},needs_review=FALSE,input_schema={},input_schema_version={} WHERE project_slug=$3 AND calculation_id=$4 AND version=$5 AND status='draft'",db.now(),db.opt_in(1),db.opt_num_in(2));
+    let ok = publish_tx(db, &mut tx, c).await?;
+    tx.commit().await?;
+    Ok(ok)
+}
+
+pub async fn publish_tx(
+    db: &Db,
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
+    c: &CalculationVersion,
+) -> Result<bool, ReportError> {
+    let sql = format!(
+        "UPDATE calculation_versions SET status='published',published_at={},needs_review=FALSE,input_schema={},input_schema_version={} WHERE project_slug=$3 AND calculation_id=$4 AND version=$5 AND status='draft'",
+        db.now(),
+        db.opt_in(1),
+        db.opt_num_in(2)
+    );
     let done = sqlx::query(&sql)
         .bind(opt(&c.input_schema))
         .bind(opt_num(c.input_schema_version))
         .bind(&c.project)
         .bind(&c.calculation_id)
         .bind(c.version)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     if done.rows_affected() > 0 {
-        write_inputs(&mut tx, c).await?;
+        write_inputs(tx, c).await?;
     }
-    tx.commit().await?;
     Ok(done.rows_affected() > 0)
 }
 
