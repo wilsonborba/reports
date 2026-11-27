@@ -630,7 +630,7 @@ async fn real_consumer_aggregate_catalog_definitions_and_wilson_metrics_work_end
     assert_eq!(status, StatusCode::OK, "{body}");
 
     let datasets = bundle["datasets"].as_array().unwrap();
-    assert_eq!(datasets.len(), 7);
+    assert_eq!(datasets.len(), 8);
     for (idx, ds) in datasets.iter().enumerate() {
         let id = ds["id"].as_str().unwrap();
         let (status, body) = t
@@ -730,12 +730,12 @@ async fn real_consumer_aggregate_catalog_definitions_and_wilson_metrics_work_end
     assert_eq!(retry["created"], 0);
     assert_eq!(retry["duplicates"], 9);
 
-    // Verify public catalog report lists all 7 cards and Wilson/Domain measures render cleanly.
+    // Verify public catalog report lists all 8 cards and Wilson/Domain measures render cleanly.
     let (status, showcase) = t
         .get(&format!("/projects/{PROJECT}/showcase/{report_id}"), &[])
         .await;
     assert_eq!(status, StatusCode::OK, "{showcase}");
-    assert_eq!(showcase["cards"].as_array().unwrap().len(), 7);
+    assert_eq!(showcase["cards"].as_array().unwrap().len(), 8);
 
     let (status, skill_card) = t
         .get(
@@ -759,4 +759,114 @@ async fn real_consumer_aggregate_catalog_definitions_and_wilson_metrics_work_end
     );
     assert_eq!(lang_card["rows"][0]["percentage"], json!(40.0));
     assert_eq!(lang_card["rows"][1]["percentage"], json!(60.0));
+
+    let (status, global_lang_card) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/{report_id}/cards/language-bytes-share"),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{global_lang_card}");
+}
+
+#[tokio::test]
+async fn causal_global_language_bytes_share_produces_exact_nine_and_ninety_one() {
+    let t = TestApp::new().await;
+    setup(&t).await;
+
+    // Causal 2-project fixture:
+    // Project A total 100: Rust 90, Python 10
+    // Project B total 900: Python 900
+    // Global known byte share: Rust 9%, Python 91%
+    ingest_snapshot(
+        &t,
+        "languages",
+        100,
+        vec![
+            row(
+                "languages",
+                100,
+                "project_language_bytes",
+                "repo-a",
+                "Rust",
+                90,
+                Some(100),
+            ),
+            row(
+                "languages",
+                100,
+                "project_language_bytes",
+                "repo-a",
+                "Python",
+                10,
+                Some(100),
+            ),
+            row(
+                "languages",
+                100,
+                "project_language_bytes",
+                "repo-b",
+                "Python",
+                900,
+                Some(900),
+            ),
+        ],
+    )
+    .await;
+
+    let definition = json!({
+        "title": {"en": "Language share"},
+        "source": SCHEMA,
+        "latest_snapshot": {
+            "order_field": "snapshot_order",
+            "complete_field": "snapshot_complete",
+            "id_field": "snapshot_id"
+        },
+        "where": [
+            {"field": "metric", "op": "eq", "value": "project_language_bytes"},
+            {"field": "snapshot_complete", "op": "eq", "value": false},
+            {"field": "denominator", "op": "gt", "value": 0}
+        ],
+        "stages": [{
+            "group_by": ["key"],
+            "measures": [
+                {"name": "bytes", "agg": "sum", "field": "value"}
+            ],
+            "derived": [
+                {"name": "total_bytes", "expr": "sum_bytes"},
+                {"name": "percentage", "expr": "bytes / sum_bytes * 100"}
+            ]
+        }],
+        "fields": [
+            {"name": "key", "label": {"en": "Language"}, "type": "string", "role": "dimension"},
+            {"name": "bytes", "label": {"en": "Bytes"}, "type": "integer", "role": "measure", "unit": "bytes"},
+            {"name": "total_bytes", "label": {"en": "Total known bytes"}, "type": "integer", "role": "measure", "unit": "bytes"},
+            {"name": "percentage", "label": {"en": "Share (%)"}, "type": "percent", "role": "measure", "unit": "%"}
+        ]
+    });
+    t.publish_calculation(PROJECT, "language-bytes-share", definition).await;
+    let (status, body) = t
+        .service(
+            "PUT",
+            &format!("/projects/{PROJECT}/admin/reports/overview/datasets/language-bytes-share"),
+            json!({"visibility": "public", "calculation_id": "language-bytes-share", "calculation_version": 1}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/overview/cards/language-bytes-share"),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = body["rows"].as_array().unwrap();
+    let py = rows.iter().find(|r| r["key"] == "Python").unwrap();
+    let rs = rows.iter().find(|r| r["key"] == "Rust").unwrap();
+    assert_eq!(py["bytes"], json!(910.0));
+    assert_eq!(py["total_bytes"], json!(1000.0));
+    assert_eq!(py["percentage"], json!(91.0));
+    assert_eq!(rs["bytes"], json!(90.0));
+    assert_eq!(rs["total_bytes"], json!(1000.0));
+    assert_eq!(rs["percentage"], json!(9.0));
 }

@@ -98,6 +98,20 @@ METRICS = [
         "unit": "bytes",
     },
     {
+        "id": "language-bytes-share",
+        "metric": "project_language_bytes",
+        "title": {
+            "en": "Language share",
+            "pt-BR": "Proporção de linguagens",
+            "th": "สัดส่วนภาษา",
+        },
+        "source": "GitHub language byte rows",
+        "visual": "donut",
+        "dimension_label": {"en": "Language", "pt-BR": "Linguagem", "th": "ภาษา"},
+        "measure_label": {"en": "Share (%)", "pt-BR": "Participação (%)", "th": "สัดส่วน (%)"},
+        "unit": "%",
+    },
+    {
         "id": "skill-frequency",
         "metric": "skill_frequency",
         "title": {
@@ -156,6 +170,67 @@ METRICS = [
 
 def build_calculation(spec: dict) -> dict:
     metric = spec["metric"]
+    if spec["id"] == "language-bytes-share":
+        return {
+            "title": spec["title"],
+            "source": SCHEMA_NAME,
+            "latest_snapshot": LATEST_SNAPSHOT,
+            "where": [
+                {"field": "metric", "op": "eq", "value": "project_language_bytes"},
+                {"field": "snapshot_complete", "op": "eq", "value": False},
+                {"field": "denominator", "op": "gt", "value": 0},
+            ],
+            "stages": [
+                {
+                    "group_by": ["key"],
+                    "measures": [
+                        {"name": "bytes", "agg": "sum", "field": "value"},
+                    ],
+                    "derived": [
+                        {"name": "total_bytes", "expr": "sum_bytes"},
+                        {"name": "percentage", "expr": "bytes / sum_bytes * 100"},
+                    ],
+                }
+            ],
+            "fields": [
+                {
+                    "name": "key",
+                    "label": {"en": "Language", "pt-BR": "Linguagem", "th": "ภาษา"},
+                    "type": "string",
+                    "role": "dimension",
+                },
+                {
+                    "name": "bytes",
+                    "label": {"en": "Bytes", "pt-BR": "Bytes", "th": "ไบต์"},
+                    "type": "integer",
+                    "unit": "bytes",
+                    "role": "measure",
+                },
+                {
+                    "name": "total_bytes",
+                    "label": {
+                        "en": "Total known bytes",
+                        "pt-BR": "Total de bytes conhecidos",
+                        "th": "ไบต์ที่ทราบทั้งหมด",
+                    },
+                    "type": "integer",
+                    "unit": "bytes",
+                    "role": "measure",
+                },
+                {
+                    "name": "percentage",
+                    "label": {
+                        "en": "Share (%)",
+                        "pt-BR": "Participação (%)",
+                        "th": "สัดส่วน (%)",
+                    },
+                    "type": "percent",
+                    "unit": "%",
+                    "role": "measure",
+                },
+            ],
+        }
+
     if metric == "project_language_bytes":
         return {
             "title": spec["title"],
@@ -286,11 +361,15 @@ def build_bundle() -> dict:
                             {
                                 "field_name": "percentage",
                                 "denominator_field": "total_bytes",
-                                "denominator_text": "total language bytes",
+                                "denominator_text": (
+                                    "total known source bytes"
+                                    if spec["id"] == "language-bytes-share"
+                                    else "total language bytes"
+                                ),
                                 "missing_means": "no_data",
                             }
                         ]
-                        if spec["metric"] == "project_language_bytes"
+                        if spec["id"] in ("project-language-bytes", "language-bytes-share")
                         else []
                     ),
                 },
