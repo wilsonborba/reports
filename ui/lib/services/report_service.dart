@@ -20,7 +20,25 @@ class ReportService {
   /// Rows of a public card that the showcase sends inline.
   static const int showcaseRows = 500;
 
-  ReportService(this.api, {this.ttl = const Duration(minutes: 5), this.publicOnly = false});
+  ReportService(this.api, {this.ttl = const Duration(minutes: 5), this.publicOnly = false}) {
+    SessionStore.instance.addListener(_onSessionChanged);
+  }
+
+  void _onSessionChanged() {
+    if (!SessionStore.instance.hasSession) {
+      clearUserScope();
+    }
+  }
+
+  void clearUserScope([String? userId]) {
+    if (userId != null) {
+      _reports.removeWhere((k, _) => k.startsWith('u:$userId/'));
+      _datasets.removeWhere((k, _) => k.startsWith('u:$userId/'));
+    } else {
+      _reports.removeWhere((k, _) => k.startsWith('u:'));
+      _datasets.removeWhere((k, _) => k.startsWith('u:'));
+    }
+  }
 
   String get _mode => !publicOnly && SessionStore.instance.hasSession ? 'u:${SessionStore.instance.user?.userId}' : 'guest';
 
@@ -34,8 +52,10 @@ class ReportService {
     if (!publicOnly && session.hasSession) {
       try {
         final view = ReportView.fromJson(await api.getJson('/projects/$project/reports/$report', q));
-        _reports[key] = (DateTime.now(), view);
-        return view;
+        if (session.hasSession && _mode == key.split('/').first) {
+          _reports[key] = (DateTime.now(), view);
+          return view;
+        }
       } on ApiException catch (e) {
         if (!e.needsLogin) rethrow;
         session.markExpired();
@@ -82,8 +102,10 @@ class ReportService {
     if (!publicOnly && session.hasSession) {
       try {
         final page = DatasetPage.fromJson(await api.getJson('/projects/$project/reports/$report/datasets/$datasetId', query));
-        _datasets[key] = page;
-        return page;
+        if (session.hasSession && _mode == mode) {
+          _datasets[key] = page;
+          return page;
+        }
       } on ApiException catch (e) {
         if (!e.needsLogin) rethrow;
         session.markExpired();

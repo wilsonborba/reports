@@ -8,6 +8,7 @@ import '../services/catalog_service.dart';
 import '../export/artifact_jobs.dart';
 import '../export/report_artifacts.dart';
 import '../services/report_service.dart';
+import '../services/session_store.dart';
 import '../services/section_name_store.dart';
 import '../utils/download_helper.dart';
 import '../widgets/catalog/catalog_widgets.dart';
@@ -38,6 +39,34 @@ class _ReportPageViewState extends State<ReportPageView> {
   Future<ReportView>? _future;
   Future<ProjectSummary?>? _project;
   String? _key;
+  String _sessionScope = SessionStore.instance.hasSession
+      ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+      : '__guest__';
+  int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    SessionStore.instance.addListener(_onSessionChanged);
+  }
+
+  void _onSessionChanged() {
+    if (!mounted) return;
+    final currentScope = SessionStore.instance.hasSession
+        ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+        : '__guest__';
+    if (currentScope != _sessionScope) {
+      setState(() {
+        _sessionScope = currentScope;
+        _key = null;
+        _future = null;
+        _colorsFor = null;
+        _jobs?.dispose();
+        _jobs = null;
+        _loadGeneration++;
+      });
+    }
+  }
 
   /// Tier of the cards to show (engine filter); null shows every card.
   String? _tier;
@@ -59,10 +88,13 @@ class _ReportPageViewState extends State<ReportPageView> {
 
   void _load(String lang) {
     _lang = lang;
-    final reportChanged = _key == null || !_key!.startsWith('${widget.project}/${widget.report}/');
+    final currentScope = SessionStore.instance.hasSession
+        ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+        : '__guest__';
+    final reportChanged = _key == null || !_key!.startsWith('$currentScope/${widget.project}/${widget.report}/');
     // Another report starts without a tier filter.
     if (reportChanged) _tier = null;
-    final key = '${widget.project}/${widget.report}/$lang/${_tier ?? ''}';
+    final key = '$currentScope/${widget.project}/${widget.report}/$lang/${_tier ?? ''}';
     if (key == _key) return;
     _key = key;
     if (reportChanged) {
@@ -74,9 +106,19 @@ class _ReportPageViewState extends State<ReportPageView> {
         if (mounted && project == widget.project && report == widget.report) setState(() => _names = n);
       });
     }
-    _future = ReportService.instance.report(widget.project, widget.report, lang: lang, tier: _tier);
+    final gen = ++_loadGeneration;
+    _future = ReportService.instance.report(widget.project, widget.report, lang: lang, tier: _tier).then((v) {
+      if (!mounted || gen != _loadGeneration) {
+        throw StateError('Outdated session response fenced');
+      }
+      return v;
+    });
     // The guest prompt shows what a sign in would open in this report (engine counts).
-    _future!.then((v) => GuestPrompt.report.value = v.access, onError: (_) => GuestPrompt.report.value = null);
+    _future!.then<void>((v) {
+      GuestPrompt.report.value = v.access;
+    }).catchError((_) {
+      GuestPrompt.report.value = null;
+    });
     _project = CatalogService.instance.project(widget.project, lang: lang);
   }
 
@@ -94,6 +136,7 @@ class _ReportPageViewState extends State<ReportPageView> {
 
   @override
   void dispose() {
+    SessionStore.instance.removeListener(_onSessionChanged);
     _jobs?.dispose();
     GuestPrompt.report.value = null;
     super.dispose();

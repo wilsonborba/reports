@@ -77,6 +77,10 @@ class _DatasetFullViewState extends State<DatasetFullView> {
   bool _deleted = false;
   int _probeGeneration = 0;
   String? _probedUserId;
+  String _sessionScope = SessionStore.instance.hasSession
+      ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+      : '__guest__';
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -99,6 +103,9 @@ class _DatasetFullViewState extends State<DatasetFullView> {
         _mutating = false;
         _deleted = false;
         _probeGeneration++;
+        _loadGeneration++;
+        _last = null;
+        _key = null;
       });
       _probeOwnership();
     }
@@ -113,7 +120,29 @@ class _DatasetFullViewState extends State<DatasetFullView> {
   void _onSessionChanged() {
     if (!mounted) return;
     final currentUserId = SessionStore.instance.user?.userId;
-    if (!SessionStore.instance.hasSession || currentUserId == null) {
+    final currentScope = SessionStore.instance.hasSession
+        ? (currentUserId ?? '__authenticated__')
+        : '__guest__';
+    if (currentScope != _sessionScope) {
+      setState(() {
+        _sessionScope = currentScope;
+        _key = null;
+        _last = null;
+        _view = null;
+        _rows = null;
+        _loadGeneration++;
+        _resolvedOwner = false;
+        _ownerItemId = null;
+        _ownerRefCount = 0;
+        _ownerVisibility = null;
+        _probedUserId = currentUserId;
+        _mutating = false;
+        _probeGeneration++;
+      });
+      if (SessionStore.instance.hasSession) {
+        _probeOwnership();
+      }
+    } else if (!SessionStore.instance.hasSession || currentUserId == null) {
       if (_resolvedOwner || _ownerItemId != null || _probedUserId != null || _mutating) {
         setState(() {
           _resolvedOwner = false;
@@ -289,19 +318,28 @@ class _DatasetFullViewState extends State<DatasetFullView> {
   }
 
   void _load(String lang) {
+    final currentScope = SessionStore.instance.hasSession
+        ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+        : '__guest__';
     final sorted = widget.filters.keys.toList()..sort();
-    final key = '${widget.project}/${widget.report}/${widget.datasetId}/$lang/${sorted.map((k) => '$k=${widget.filters[k]}').join('&')}';
+    final key = '$currentScope/${widget.project}/${widget.report}/${widget.datasetId}/$lang/${sorted.map((k) => '$k=${widget.filters[k]}').join('&')}';
     if (key == _key) return;
     _key = key;
+    _last = null;
+    final gen = ++_loadGeneration;
     final service = widget.service ?? ReportService.instance;
-    _view = service.report(widget.project, widget.report, lang: lang);
+    final viewFuture = service.report(widget.project, widget.report, lang: lang);
+    _view = viewFuture;
     if (!widget.compact) _project = CatalogService.instance.project(widget.project, lang: lang);
-    _rows = _view!.then((view) async {
+    _rows = viewFuture.then((view) async {
       final slot = _slot(view);
       final page = await service.allRows(widget.project, widget.report, widget.datasetId, lang: lang, filters: widget.filters);
       final companions = <String, DatasetPage>{};
       for (final c in slot.companions.where((c) => view.dataset(c) != null)) {
         companions[c] = await service.allRows(widget.project, widget.report, c, lang: lang);
+      }
+      if (!mounted || gen != _loadGeneration) {
+        throw StateError('Outdated session response fenced');
       }
       return (page, companions);
     });

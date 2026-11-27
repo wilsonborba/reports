@@ -85,6 +85,10 @@ class _DatasetSlotState extends State<DatasetSlot> {
   bool _deleted = false;
   int _probeGeneration = 0;
   String? _probedUserId;
+  String _sessionScope = SessionStore.instance.hasSession
+      ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+      : '__guest__';
+  int _loadGeneration = 0;
 
   ApiClient get _api => widget.apiClient ?? ApiClient();
 
@@ -104,7 +108,28 @@ class _DatasetSlotState extends State<DatasetSlot> {
   void _onSessionChanged() {
     if (!mounted) return;
     final currentUserId = SessionStore.instance.user?.userId;
-    if (!SessionStore.instance.hasSession || currentUserId == null) {
+    final currentScope = SessionStore.instance.hasSession
+        ? (currentUserId ?? '__authenticated__')
+        : '__guest__';
+    if (currentScope != _sessionScope) {
+      setState(() {
+        _sessionScope = currentScope;
+        _key = null;
+        _last = null;
+        _future = null;
+        _loadGeneration++;
+        _resolvedOwner = false;
+        _ownerItemId = null;
+        _ownerRefCount = 0;
+        _ownerVisibility = null;
+        _probedUserId = currentUserId;
+        _mutating = false;
+        _probeGeneration++;
+      });
+      if (SessionStore.instance.hasSession) {
+        _probeOwnership();
+      }
+    } else if (!SessionStore.instance.hasSession || currentUserId == null) {
       if (_resolvedOwner || _ownerItemId != null || _probedUserId != null || _mutating) {
         setState(() {
           _resolvedOwner = false;
@@ -314,7 +339,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
     // The same place on the board can show another card: take that card's own state.
     if (oldWidget.project != widget.project ||
         oldWidget.report != widget.report ||
-        oldWidget.slot.key != widget.slot.key) {
+        oldWidget.slot.key != widget.slot.key ||
+        oldWidget.view != widget.view) {
       _ownerItemId = null;
       _resolvedOwner = false;
       _ownerRefCount = 0;
@@ -322,6 +348,9 @@ class _DatasetSlotState extends State<DatasetSlot> {
       _mutating = false;
       _deleted = false;
       _probeGeneration++;
+      _loadGeneration++;
+      _last = null;
+      _key = null;
       _probeOwnership();
       _filters =
           widget.initialFilters ??
@@ -332,7 +361,6 @@ class _DatasetSlotState extends State<DatasetSlot> {
           );
       _filtersOpen = false;
       _asTable = widget.initialTable;
-      _last = null;
     }
   }
 
@@ -362,14 +390,25 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final descriptor = widget.view.dataset(widget.slot.datasetId);
     if (descriptor == null || !descriptor.canView) {
       _future = null;
+      _last = null;
       return;
     }
+    final currentScope = SessionStore.instance.hasSession
+        ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+        : '__guest__';
     final sorted = _filters.keys.toList()..sort();
     final key =
-        '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
+        '$currentScope/${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
     if (key == _key) return;
     _key = key;
-    _future = _fetch(lang, _filters);
+    _last = null;
+    final gen = ++_loadGeneration;
+    _future = _fetch(lang, _filters).then((data) {
+      if (!mounted || gen != _loadGeneration) {
+        throw StateError('Outdated session response fenced');
+      }
+      return data;
+    });
   }
 
   /// Full view URL with the visual, the chart or table view and the card filters.
