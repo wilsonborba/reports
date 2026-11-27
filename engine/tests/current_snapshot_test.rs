@@ -767,10 +767,35 @@ async fn real_consumer_aggregate_catalog_definitions_and_wilson_metrics_work_end
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{global_lang_card}");
+    let global_rows = global_lang_card["rows"].as_array().unwrap();
+    let py = global_rows.iter().find(|r| r["key"] == "Python").unwrap();
+    let dart = global_rows.iter().find(|r| r["key"] == "Dart").unwrap();
+    assert_eq!(py["bytes"], json!(6000.0));
+    assert_eq!(py["total_bytes"], json!(10000.0));
+    assert_eq!(py["percentage"], json!(60.0));
+    assert_eq!(dart["bytes"], json!(4000.0));
+    assert_eq!(dart["total_bytes"], json!(10000.0));
+    assert_eq!(dart["percentage"], json!(40.0));
 }
 
 #[tokio::test]
 async fn causal_global_language_bytes_share_produces_exact_nine_and_ninety_one() {
+    let out = std::process::Command::new("python3")
+        .args(["../scripts/catalog/aggregates.py", "--dump-json"])
+        .output()
+        .expect("run aggregates.py --dump-json");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bundle: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let datasets = bundle["datasets"].as_array().unwrap();
+    let lang_share_ds = datasets
+        .iter()
+        .find(|ds| ds["id"] == "language-bytes-share")
+        .expect("language-bytes-share in bundle");
+
     let t = TestApp::new().await;
     setup(&t).await;
 
@@ -814,45 +839,34 @@ async fn causal_global_language_bytes_share_produces_exact_nine_and_ninety_one()
     )
     .await;
 
-    let definition = json!({
-        "title": {"en": "Language share"},
-        "source": SCHEMA,
-        "latest_snapshot": {
-            "order_field": "snapshot_order",
-            "complete_field": "snapshot_complete",
-            "id_field": "snapshot_id"
-        },
-        "where": [
-            {"field": "metric", "op": "eq", "value": "project_language_bytes"},
-            {"field": "snapshot_complete", "op": "eq", "value": false},
-            {"field": "denominator", "op": "gt", "value": 0}
-        ],
-        "stages": [{
-            "group_by": ["key"],
-            "measures": [
-                {"name": "bytes", "agg": "sum", "field": "value"}
-            ],
-            "derived": [
-                {"name": "total_bytes", "expr": "sum_bytes"},
-                {"name": "percentage", "expr": "bytes / sum_bytes * 100"}
-            ]
-        }],
-        "fields": [
-            {"name": "key", "label": {"en": "Language"}, "type": "string", "role": "dimension"},
-            {"name": "bytes", "label": {"en": "Bytes"}, "type": "integer", "role": "measure", "unit": "bytes"},
-            {"name": "total_bytes", "label": {"en": "Total known bytes"}, "type": "integer", "role": "measure", "unit": "bytes"},
-            {"name": "percentage", "label": {"en": "Share (%)"}, "type": "percent", "role": "measure", "unit": "%"}
-        ]
-    });
-    t.publish_calculation(PROJECT, "language-bytes-share", definition).await;
+    t.publish_calculation(
+        PROJECT,
+        "language-bytes-share",
+        lang_share_ds["calculation"].clone(),
+    )
+    .await;
     let (status, body) = t
         .service(
             "PUT",
             &format!("/projects/{PROJECT}/admin/reports/overview/datasets/language-bytes-share"),
-            json!({"visibility": "public", "calculation_id": "language-bytes-share", "calculation_version": 1}),
+            json!({
+                "visibility": "public",
+                "calculation_id": "language-bytes-share",
+                "calculation_version": 1,
+                "visual": lang_share_ds["visual"]
+            }),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = t
+        .service(
+            "PUT",
+            &format!("/projects/{PROJECT}/admin/reports/overview/datasets/language-bytes-share/meta"),
+            lang_share_ds["meta"].clone(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
     let (status, body) = t
         .get(
             &format!("/projects/{PROJECT}/showcase/overview/cards/language-bytes-share"),
@@ -860,6 +874,43 @@ async fn causal_global_language_bytes_share_produces_exact_nine_and_ninety_one()
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let fields = body["fields"].as_array().unwrap();
+    let pct_field = fields
+        .iter()
+        .find(|f| f["name"] == "percentage")
+        .expect("percentage field in card");
+    assert_eq!(pct_field["label"], json!("Share"));
+    assert_eq!(pct_field["unit"], json!("%"));
+    assert_eq!(pct_field["denominator_field"], json!("total_bytes"));
+
+    let (status, body_pt) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/overview/cards/language-bytes-share"),
+            &[("Accept-Language", "pt-BR")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let fields_pt = body_pt["fields"].as_array().unwrap();
+    let pct_field_pt = fields_pt
+        .iter()
+        .find(|f| f["name"] == "percentage")
+        .expect("percentage field in pt card");
+    assert_eq!(pct_field_pt["label"], json!("Participação"));
+
+    let (status, body_th) = t
+        .get(
+            &format!("/projects/{PROJECT}/showcase/overview/cards/language-bytes-share"),
+            &[("Accept-Language", "th")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let fields_th = body_th["fields"].as_array().unwrap();
+    let pct_field_th = fields_th
+        .iter()
+        .find(|f| f["name"] == "percentage")
+        .expect("percentage field in th card");
+    assert_eq!(pct_field_th["label"], json!("สัดส่วน"));
+
     let rows = body["rows"].as_array().unwrap();
     let py = rows.iter().find(|r| r["key"] == "Python").unwrap();
     let rs = rows.iter().find(|r| r["key"] == "Rust").unwrap();

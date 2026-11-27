@@ -108,7 +108,7 @@ METRICS = [
         "source": "GitHub language byte rows",
         "visual": "donut",
         "dimension_label": {"en": "Language", "pt-BR": "Linguagem", "th": "ภาษา"},
-        "measure_label": {"en": "Share (%)", "pt-BR": "Participação (%)", "th": "สัดส่วน (%)"},
+        "measure_label": {"en": "Share", "pt-BR": "Participação", "th": "สัดส่วน"},
         "unit": "%",
     },
     {
@@ -220,9 +220,9 @@ def build_calculation(spec: dict) -> dict:
                 {
                     "name": "percentage",
                     "label": {
-                        "en": "Share (%)",
-                        "pt-BR": "Participação (%)",
-                        "th": "สัดส่วน (%)",
+                        "en": "Share",
+                        "pt-BR": "Participação",
+                        "th": "สัดส่วน",
                     },
                     "type": "percent",
                     "unit": "%",
@@ -285,9 +285,9 @@ def build_calculation(spec: dict) -> dict:
                 {
                     "name": "percentage",
                     "label": {
-                        "en": "Share (%)",
-                        "pt-BR": "Participação (%)",
-                        "th": "สัดส่วน (%)",
+                        "en": "Share",
+                        "pt-BR": "Participação",
+                        "th": "สัดส่วน",
                     },
                     "type": "percent",
                     "unit": "%",
