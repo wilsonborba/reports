@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Inert fake-API regression tests for Reports catalog apply_bundle repeatability and recovery.
 
-Faithfully exercises:
+Faithfully exercises independent Rust-serde shapes and causal provenance cases:
 1. Fresh project initialization (schema v1, report, calculations v1, dataset cards).
-2. Second run idempotence/repeatability against real-shaped serde defaults (0 POSTs, 0 duplicate versions).
-3. Exact calculation definition equality: extra behavior fields (limit, union) reject match and create safe new versions.
-4. Producer schema pin constraint: immutable published schema v1 must not mutate or bump to v2; fails clearly if incompatible.
-5. Stale draft recovery: draft calculation with outdated input_schema_version or needs_review=True is re-saved with selected pin.
-6. Bug-state recovery: published v1 matching definition is reconciled even if a leftover unhandled v2 draft exists.
+2. Second run idempotence against independently constructed Rust serde defaults (0 POSTs, 0 duplicate versions).
+3. Exact calculation definition equality: extra limit1 or union fields fail match and create safe new versions.
+4. Producer schema pin constraint: matching v1 + higher incompatible published v2 pins v1; missing v1 only v2 fails without POST.
+5. Stale draft re-saving: wrong pin-only draft (input_schema_version != 1) or review flag-only draft (needs_review == True) is re-saved with selected pin.
+6. Bug-state recovery: published v1 matching definition is reconciled even when leftover unhandled v2 draft exists.
 
 Zero external network egress, zero real engine/database mutations.
 """
@@ -27,6 +27,125 @@ class FakeEngineError(RuntimeError):
     def __init__(self, status: int, method: str, path: str, body: str):
         super().__init__(f"{method} {path} returned {status}: {body}")
         self.status = status
+
+
+def _independent_rust_serde_spec(raw: dict) -> dict:
+    """Independent simulation of Rust serde JSON serialization for DatasetSpec without using function under test."""
+    return {
+        "title": dict(raw.get("title") or {}),
+        "description": dict(raw.get("description") or {}),
+        "equation": raw.get("equation"),
+        "source": raw.get("source"),
+        "union": list(raw.get("union") or []),
+        "lookups": list(raw.get("lookups") or []),
+        "latest_snapshot": (
+            {
+                "order_field": raw["latest_snapshot"]["order_field"],
+                "complete_field": raw["latest_snapshot"]["complete_field"],
+                "id_field": raw["latest_snapshot"]["id_field"],
+            }
+            if raw.get("latest_snapshot")
+            else None
+        ),
+        "buckets": list(raw.get("buckets") or []),
+        "row_derived": [
+            {
+                "name": d.get("name", ""),
+                "expr": d.get("expr"),
+                "expr_field": d.get("expr_field"),
+            }
+            for d in (raw.get("row_derived") or [])
+        ],
+        "where": [
+            {
+                "field": c.get("field", ""),
+                "op": c.get("op", ""),
+                "value": c.get("value"),
+            }
+            for c in (raw.get("where") or [])
+        ],
+        "filters": list(raw.get("filters") or []),
+        "stages": [
+            {
+                "group_by": list(st.get("group_by") or []),
+                "measures": [
+                    {
+                        "name": m.get("name", ""),
+                        "agg": m.get("agg", ""),
+                        "field": m.get("field"),
+                        "fields": list(m.get("fields") or []),
+                        "by": m.get("by"),
+                        "where": [
+                            {
+                                "field": c.get("field", ""),
+                                "op": c.get("op", ""),
+                                "value": c.get("value"),
+                            }
+                            for c in (m.get("where") or [])
+                        ],
+                        "n": m.get("n"),
+                    }
+                    for m in (st.get("measures") or [])
+                ],
+                "derived": [
+                    {
+                        "name": d.get("name", ""),
+                        "expr": d.get("expr"),
+                        "expr_field": d.get("expr_field"),
+                    }
+                    for d in (st.get("derived") or [])
+                ],
+                "partition_by": list(st.get("partition_by") or []),
+                "having": [
+                    {
+                        "field": c.get("field", ""),
+                        "op": c.get("op", ""),
+                        "value": c.get("value"),
+                    }
+                    for c in (st.get("having") or [])
+                ],
+                "windows": list(st.get("windows") or []),
+            }
+            for st in (raw.get("stages") or [])
+        ],
+        "derived": [
+            {
+                "name": d.get("name", ""),
+                "expr": d.get("expr"),
+                "expr_field": d.get("expr_field"),
+            }
+            for d in (raw.get("derived") or [])
+        ],
+        "having": [
+            {
+                "field": c.get("field", ""),
+                "op": c.get("op", ""),
+                "value": c.get("value"),
+            }
+            for c in (raw.get("having") or [])
+        ],
+        "calculator": raw.get("calculator"),
+        "params": dict(raw.get("params") or {}),
+        "refs": dict(raw.get("refs") or {}),
+        "sort": list(raw.get("sort") or []),
+        "limit": raw.get("limit"),
+        "fields": [
+            {
+                "name": f.get("name", ""),
+                "label": dict(f.get("label") or {}),
+                "type": f.get("type") or f.get("field_type") or "",
+                "role": f.get("role") or "measure",
+                "unit": f.get("unit"),
+                "decimals": f.get("decimals"),
+                "missing_means": f.get("missing_means") or "no_data",
+                "denominator_field": f.get("denominator_field"),
+                "denominator_text": f.get("denominator_text"),
+            }
+            for f in (raw.get("fields") or [])
+        ],
+        "value_labels": dict(raw.get("value_labels") or {}),
+        "warm": bool(raw.get("warm", False)),
+    }
 
 
 class FakeReportsEngine:
@@ -129,7 +248,7 @@ class FakeReportsEngine:
                         )
 
             raw_def = copy.deepcopy(body.get("definition", {}))
-            norm_def = aggregates.normalize_spec(raw_def)
+            norm_def = _independent_rust_serde_spec(raw_def)
             source_schema = raw_def.get("source")
             input_ver = body.get("input_schema_version")
             if input_ver is None and source_schema:
@@ -223,8 +342,8 @@ class TestAggregatesRepeatability(unittest.TestCase):
             self.assertEqual(ds["calculation_version"], 1)
             self.assertEqual(ds["visibility"], "public")
 
-    def test_second_run_repeatability_with_real_serde_defaults(self):
-        """Second run against real-shaped serialized defaults creates 0 versions and 0 POSTs."""
+    def test_second_run_repeatability_with_independent_rust_serde_defaults(self):
+        """Second run against independent Rust-serde shapes creates 0 versions and 0 POSTs."""
         aggregates.apply_bundle(self.engine, self.project)
         self.engine.call_log.clear()
 
@@ -282,7 +401,7 @@ class TestAggregatesRepeatability(unittest.TestCase):
                 "input_schema": aggregates.SCHEMA_NAME,
                 "input_schema_version": 1,
                 "needs_review": False,
-                "definition": aggregates.normalize_spec(with_limit),
+                "definition": _independent_rust_serde_spec(with_limit),
             }
         ]
 
@@ -294,11 +413,11 @@ class TestAggregatesRepeatability(unittest.TestCase):
         self.assertEqual(v2["status"], "published")
         self.assertEqual(v2["input_schema_version"], 1)
 
-    def test_schema_v1_pin_incompatibility_fails_clearly(self):
-        """Incompatible published schema v1 must raise RuntimeError, preserving producer v1 pin."""
+    def test_matching_v1_with_higher_incompatible_published_v2_pins_v1(self):
+        """When matching published v1 and higher incompatible published v2 both exist, pin v1."""
         incompatible_fields = [
             {"path": "snapshot_id", "type": "string", "required": True},
-            {"path": "incompatible_field", "type": "integer", "required": True},
+            {"path": "incompatible_extra", "type": "string", "required": True},
         ]
         self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
             {
@@ -306,22 +425,54 @@ class TestAggregatesRepeatability(unittest.TestCase):
                 "schema_name": aggregates.SCHEMA_NAME,
                 "version": 1,
                 "status": "published",
+                "fields": aggregates.SCHEMA_FIELDS,
+            },
+            {
+                "project": self.project,
+                "schema_name": aggregates.SCHEMA_NAME,
+                "version": 2,
+                "status": "published",
                 "fields": incompatible_fields,
+            },
+        ]
+        # Run apply_bundle
+        aggregates.apply_bundle(self.engine, self.project)
+
+        # Schema must be pinned to version 1
+        for spec in aggregates.METRICS:
+            cid = spec["id"]
+            calc_vers = self.engine.calculations.get((self.project, cid), [])
+            self.assertEqual(calc_vers[0]["input_schema_version"], 1)
+
+    def test_missing_v1_only_v2_fails_clearly_without_post(self):
+        """If v1 is missing and only v2 exists, fails with RuntimeError and sends zero POSTs."""
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {
+                "project": self.project,
+                "schema_name": aggregates.SCHEMA_NAME,
+                "version": 2,
+                "status": "published",
+                "fields": aggregates.SCHEMA_FIELDS,
             }
         ]
+        self.engine.call_log.clear()
 
         with self.assertRaises(RuntimeError) as ctx:
             aggregates.apply_bundle(self.engine, self.project)
-        self.assertIn("cannot mutate pinned producer schema version 1", str(ctx.exception))
+        self.assertIn("pinned v1 is absent", str(ctx.exception))
 
-    def test_stale_draft_with_wrong_input_schema_resaves(self):
-        """A draft calculation with outdated input_schema_version or needs_review=True is re-saved with selected pin."""
+        # Must send zero POST requests
+        posts = [c for c in self.engine.call_log if c[0] == "POST"]
+        self.assertEqual(posts, [], f"Expected zero POSTs when v1 is absent, but got {posts}")
+
+    def test_wrong_pin_only_stale_draft_resaves_correct_input(self):
+        """A draft calculation with wrong pin (input_schema_version != 1) is re-saved with selected pin 1."""
         self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
             {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS}
         ]
         bundle = aggregates.build_bundle()
         cid0 = bundle["datasets"][0]["id"]
-        # Seed draft with input_schema_version: 99 and needs_review: True
+        # Seed draft with input_schema_version: 99 and needs_review: False
         self.engine.calculations[(self.project, cid0)] = [
             {
                 "project": self.project,
@@ -330,8 +481,37 @@ class TestAggregatesRepeatability(unittest.TestCase):
                 "status": "draft",
                 "input_schema": aggregates.SCHEMA_NAME,
                 "input_schema_version": 99,
+                "needs_review": False,
+                "definition": _independent_rust_serde_spec(bundle["datasets"][0]["calculation"]),
+            }
+        ]
+
+        aggregates.apply_bundle(self.engine, self.project)
+
+        calc_vers = self.engine.calculations.get((self.project, cid0), [])
+        self.assertEqual(len(calc_vers), 1)
+        self.assertEqual(calc_vers[0]["status"], "published")
+        self.assertEqual(calc_vers[0]["input_schema_version"], 1)
+        self.assertFalse(calc_vers[0]["needs_review"])
+
+    def test_review_flag_only_stale_draft_resaves_correct_input(self):
+        """A draft calculation with needs_review=True is re-saved to clear review flag and bind pin 1."""
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {"project": self.project, "schema_name": aggregates.SCHEMA_NAME, "version": 1, "status": "published", "fields": aggregates.SCHEMA_FIELDS}
+        ]
+        bundle = aggregates.build_bundle()
+        cid0 = bundle["datasets"][0]["id"]
+        # Seed draft with input_schema_version: 1 and needs_review: True
+        self.engine.calculations[(self.project, cid0)] = [
+            {
+                "project": self.project,
+                "calculation_id": cid0,
+                "version": 1,
+                "status": "draft",
+                "input_schema": aggregates.SCHEMA_NAME,
+                "input_schema_version": 1,
                 "needs_review": True,
-                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+                "definition": _independent_rust_serde_spec(bundle["datasets"][0]["calculation"]),
             }
         ]
 
@@ -360,7 +540,7 @@ class TestAggregatesRepeatability(unittest.TestCase):
                 "input_schema": aggregates.SCHEMA_NAME,
                 "input_schema_version": 1,
                 "needs_review": False,
-                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+                "definition": _independent_rust_serde_spec(bundle["datasets"][0]["calculation"]),
             },
             {
                 "project": self.project,
@@ -370,7 +550,7 @@ class TestAggregatesRepeatability(unittest.TestCase):
                 "input_schema": aggregates.SCHEMA_NAME,
                 "input_schema_version": 1,
                 "needs_review": False,
-                "definition": aggregates.normalize_spec(bundle["datasets"][0]["calculation"]),
+                "definition": _independent_rust_serde_spec(bundle["datasets"][0]["calculation"]),
             },
         ]
 
