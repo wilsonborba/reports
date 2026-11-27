@@ -1617,4 +1617,191 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'real producer collision: two reports both have primary dataset; foreign-owner in report 1, caller in report 2; each resolves and mutates strictly its own item',
+    (tester) async {
+      final prevStore = SessionStore.instance;
+      final calls = <String>[];
+      final mock = MockClient((req) async {
+        calls.add('${req.method} ${req.url.path}?${req.url.query}');
+        if (req.method == 'GET' && req.url.path == '/me') {
+          return http.Response(jsonEncode({'user_id': 'user-caller'}), 200);
+        }
+        if (req.method == 'GET' && req.url.path.endsWith('/me/items/primary')) {
+          final proj = req.url.queryParameters['project'];
+          final rep = req.url.queryParameters['report'];
+          if (proj == 'proj-1' && rep == 'rep-foreign') {
+            // First item in producer DB belongs to another owner -> 403 or foreign control
+            return http.Response('{"error":"forbidden: not owner"}', 403);
+          }
+          if (proj == 'proj-1' && rep == 'rep-caller') {
+            // Second item belongs to caller
+            return http.Response(
+              jsonEncode({
+                'item': {
+                  'id': 'item-caller-uuid-222',
+                  'control_authority': 'user_owned',
+                  'reference_count': 0,
+                },
+              }),
+              200,
+            );
+          }
+        }
+        if (req.method == 'GET' &&
+            req.url.path.contains('/datasets/primary')) {
+          return http.Response(
+            jsonEncode({
+              'dataset_id': 'primary',
+              'rows': [
+                {'metric': 'val', 'count': 42},
+              ],
+              'total_rows': 1,
+            }),
+            200,
+          );
+        }
+        if (req.method == 'PATCH' &&
+            req.url.path.endsWith('/me/items/item-caller-uuid-222')) {
+          return http.Response(
+            jsonEncode({'item': {'id': 'item-caller-uuid-222'}}),
+            200,
+          );
+        }
+        if (req.method == 'DELETE' &&
+            req.url.path.endsWith('/me/items/item-caller-uuid-222')) {
+          return http.Response(jsonEncode({'deleted': true}), 200);
+        }
+        if (req.url.path.contains('foreign')) {
+          throw StateError('Destructive or mutation request targeted foreign item: ${req.url}');
+        }
+        return http.Response('not found', 404);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'https://reports.invalid',
+        client: mock,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-live' : null,
+      );
+      final sessionStore = SessionStore(
+        api: api,
+        cookieReader: (k) => k == 'csrf' ? 'csrf-live' : null,
+      );
+      SessionStore.instance = sessionStore;
+      await sessionStore.refresh();
+
+      try {
+        const descPrimary = DatasetDescriptor(
+          datasetId: 'primary',
+          title: 'Primary Chart',
+          description: 'Standard producer primary dataset',
+          equation: null,
+          fields: [],
+          filters: [],
+          visibility: 'public',
+        );
+
+        // 1. Render card in foreign report (rep-foreign)
+        final foreignSlot = DatasetSlot(
+          project: 'proj-1',
+          report: 'rep-foreign',
+          view: const ReportView(
+            project: 'proj-1',
+            report: 'rep-foreign',
+            title: 'Foreign Report',
+            description: '',
+            tags: [],
+            period: null,
+            updatedAt: '',
+            datasets: [descPrimary],
+          ),
+          slot: const Slot('primary', visual: Visual.bar, measures: ['count']),
+          controls: const CardControls(isOwner: false, isLive: false),
+          fill: false,
+          apiClient: api,
+          service: ReportService(api),
+        );
+
+        await tester.pumpWidget(_wrap(foreignSlot));
+        await tester.pumpAndSettle();
+
+        // Foreign card probes with project=proj-1&report=rep-foreign
+        expect(
+          calls.any((c) =>
+              c.contains('/me/items/primary') &&
+              c.contains('project=proj-1') &&
+              c.contains('report=rep-foreign')),
+          isTrue,
+        );
+        // Foreign card must NOT have owner controls
+        expect(find.byKey(const Key('card_mark_owner')), findsNothing);
+
+        // 2. Render card in caller report (rep-caller)
+        final callerSlot = DatasetSlot(
+          project: 'proj-1',
+          report: 'rep-caller',
+          view: const ReportView(
+            project: 'proj-1',
+            report: 'rep-caller',
+            title: 'Caller Report',
+            description: '',
+            tags: [],
+            period: null,
+            updatedAt: '',
+            datasets: [descPrimary],
+          ),
+          slot: const Slot('primary', visual: Visual.bar, measures: ['count']),
+          controls: const CardControls(isOwner: false, isLive: false),
+          fill: false,
+          apiClient: api,
+          service: ReportService(api),
+        );
+
+        await tester.pumpWidget(_wrap(callerSlot));
+        await tester.pumpAndSettle();
+
+        // Caller card probes with project=proj-1&report=rep-caller
+        expect(
+          calls.any((c) =>
+              c.contains('/me/items/primary') &&
+              c.contains('project=proj-1') &&
+              c.contains('report=rep-caller')),
+          isTrue,
+        );
+        // Caller card resolves ownership
+        expect(find.byKey(const Key('card_mark_owner')), findsOneWidget);
+
+        // 3. Mutate visibility on caller card
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_visibility_personal')));
+        await tester.pumpAndSettle();
+
+        // Assert mutation used EXACT item ID for caller
+        expect(
+          calls.any((c) => c.contains('PATCH') && c.contains('/me/items/item-caller-uuid-222')),
+          isTrue,
+        );
+        expect(calls.any((c) => c.contains('item-foreign-uuid-111')), isFalse);
+
+        // 4. Delete caller card
+        await tester.tap(find.byKey(const Key('card_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_menu_delete')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('card_delete_confirm')));
+        await tester.pumpAndSettle();
+
+        // Assert delete used EXACT item ID for caller
+        expect(
+          calls.any((c) => c.contains('DELETE') && c.contains('/me/items/item-caller-uuid-222')),
+          isTrue,
+        );
+        expect(calls.any((c) => c.contains('item-foreign-uuid-111')), isFalse);
+      } finally {
+        SessionStore.instance = prevStore;
+      }
+    },
+  );
 }

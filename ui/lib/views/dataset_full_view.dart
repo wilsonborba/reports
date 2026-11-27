@@ -146,7 +146,11 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     final currentUserId = SessionStore.instance.user?.userId;
     _probedUserId = currentUserId;
     try {
-      final res = await _api.getOwnerItem(datasetId);
+      final res = await _api.getOwnerItem(
+        datasetId,
+        project: widget.project,
+        report: widget.report,
+      );
       final item = res['item'];
       if (!mounted || gen != _probeGeneration || !SessionStore.instance.hasSession) return;
       if (SessionStore.instance.user?.userId != currentUserId) return;

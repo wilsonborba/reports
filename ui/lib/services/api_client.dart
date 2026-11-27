@@ -129,8 +129,20 @@ class ApiClient {
     throw ApiException(500, 'unexpected answer of $path');
   }
 
-  Future<Map<String, dynamic>> getOwnerItem(String itemOrDatasetId) =>
-      getJson('/me/items/${Uri.encodeComponent(itemOrDatasetId)}');
+  Future<Map<String, dynamic>> getOwnerItem(
+    String itemOrDatasetId, {
+    String? project,
+    String? report,
+  }) {
+    final query = <String, String>{};
+    if (project != null && project.isNotEmpty) query['project'] = project;
+    if (report != null && report.isNotEmpty) query['report'] = report;
+    final uri = Uri(
+      path: '/me/items/${Uri.encodeComponent(itemOrDatasetId)}',
+      queryParameters: query.isEmpty ? null : query,
+    );
+    return getJson(uri.toString());
+  }
 
   Future<Map<String, dynamic>> patchOwnerItemVisibility(
     String itemId,

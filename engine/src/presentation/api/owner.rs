@@ -17,6 +17,12 @@ pub struct DeleteParams {
     pub confirm: bool,
 }
 
+#[derive(Deserialize, Default)]
+pub struct GetItemParams {
+    pub project: Option<String>,
+    pub report: Option<String>,
+}
+
 pub async fn create_item(
     State(state): State<Arc<AppState>>,
     Caller(scope): Caller,
@@ -50,8 +56,16 @@ pub async fn get_item(
     State(state): State<Arc<AppState>>,
     Caller(scope): Caller,
     Path(id): Path<String>,
+    Query(params): Query<GetItemParams>,
 ) -> Result<impl IntoResponse, ReportError> {
-    let detail = owner::get_item(&state.stores, &scope, &id).await?;
+    let detail = owner::get_item(
+        &state.stores,
+        &scope,
+        &id,
+        params.project.as_deref(),
+        params.report.as_deref(),
+    )
+    .await?;
     Ok((
         StatusCode::OK,
         [(header::ETAG, detail.item.etag.clone())],

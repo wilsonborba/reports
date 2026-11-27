@@ -342,7 +342,7 @@ pub async fn create_item(
         .await?
         {
             let id: String = existing.try_get("id")?;
-            let detail = get_item(stores, scope, &id).await?;
+            let detail = get_item(stores, scope, &id, None, None).await?;
             return Ok((detail, false));
         }
     }
@@ -443,7 +443,7 @@ pub async fn create_item(
     .await?;
 
     datasets.catalog_changed(project).await;
-    let detail = get_item(stores, scope, &item_id).await?;
+    let detail = get_item(stores, scope, &item_id, Some(project), Some(&report_slug)).await?;
     Ok((detail, true))
 }
 
@@ -451,16 +451,39 @@ pub async fn get_item(
     stores: &Stores,
     scope: &ViewerScope,
     item_id: &str,
+    project_slug: Option<&str>,
+    report_slug: Option<&str>,
 ) -> Result<OwnerItemDetail, ReportError> {
     let caller = require_owner_user(scope)?;
-    let row = sqlx::query(
-        "SELECT id, project_slug, report_slug, dataset_id, owner_id, source_app, template_id, template_version,
-                audience, control_authority, couch_doc_id, etag, reference_count, created_at, updated_at
-         FROM user_chart_items WHERE id = $1 OR dataset_id = $1",
-    )
-    .bind(item_id)
-    .fetch_optional(&stores.db.pool)
-    .await?
+    let row = match (project_slug, report_slug) {
+        (Some(proj), Some(rep)) => {
+            sqlx::query(
+                "SELECT id, project_slug, report_slug, dataset_id, owner_id, source_app, template_id, template_version,
+                        audience, control_authority, couch_doc_id, etag, reference_count, created_at, updated_at
+                 FROM user_chart_items
+                 WHERE (id = $1) OR (dataset_id = $1 AND project_slug = $2 AND report_slug = $3)
+                 ORDER BY CASE WHEN owner_id = $4 THEN 0 ELSE 1 END, id ASC
+                 LIMIT 1",
+            )
+            .bind(item_id)
+            .bind(proj)
+            .bind(rep)
+            .bind(caller)
+            .fetch_optional(&stores.db.pool)
+            .await?
+        }
+        _ => {
+            sqlx::query(
+                "SELECT id, project_slug, report_slug, dataset_id, owner_id, source_app, template_id, template_version,
+                        audience, control_authority, couch_doc_id, etag, reference_count, created_at, updated_at
+                 FROM user_chart_items
+                 WHERE id = $1",
+            )
+            .bind(item_id)
+            .fetch_optional(&stores.db.pool)
+            .await?
+        }
+    }
     .ok_or_else(|| ReportError::NotFound("item not found".into()))?;
 
     let owner_id: String = row.try_get("owner_id")?;
@@ -499,7 +522,7 @@ pub async fn replace_dataset(
     if_match: Option<&str>,
     input: ReplaceDatasetInput,
 ) -> Result<OwnerItemDetail, ReportError> {
-    let detail = get_item(stores, scope, item_id).await?;
+    let detail = get_item(stores, scope, item_id, None, None).await?;
     let expected = if_match.map(str::trim).unwrap_or("");
     if expected.is_empty() || expected != detail.item.etag {
         return Err(ReportError::Conflict(
@@ -571,7 +594,7 @@ pub async fn replace_dataset(
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
-    get_item(stores, scope, item_id).await
+    get_item(stores, scope, item_id, None, None).await
 }
 
 pub async fn patch_item(
@@ -581,7 +604,7 @@ pub async fn patch_item(
     item_id: &str,
     input: PatchOwnerItemInput,
 ) -> Result<OwnerItemDetail, ReportError> {
-    let detail = get_item(stores, scope, item_id).await?;
+    let detail = get_item(stores, scope, item_id, None, None).await?;
     let caller = require_owner_user(scope)?;
     let authority = ControlAuthority::parse(&detail.item.control_authority);
     if !scope.can_publish_owned(&detail.item.project, caller, authority) {
@@ -658,7 +681,7 @@ pub async fn patch_item(
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
-    get_item(stores, scope, item_id).await
+    get_item(stores, scope, item_id, None, None).await
 }
 
 pub async fn delete_item(
@@ -668,7 +691,7 @@ pub async fn delete_item(
     item_id: &str,
     confirm_reuse: bool,
 ) -> Result<DeleteOwnerItemOutcome, ReportError> {
-    let detail = get_item(stores, scope, item_id).await?;
+    let detail = get_item(stores, scope, item_id, None, None).await?;
     let caller = require_owner_user(scope)?;
     let authority = ControlAuthority::parse(&detail.item.control_authority);
     if !scope.can_publish_owned(&detail.item.project, caller, authority) {
