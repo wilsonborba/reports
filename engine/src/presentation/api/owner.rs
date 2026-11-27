@@ -94,9 +94,12 @@ pub async fn patch_item(
     State(state): State<Arc<AppState>>,
     Caller(scope): Caller,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Json(body): Json<PatchOwnerItemInput>,
 ) -> Result<impl IntoResponse, ReportError> {
-    let detail = owner::patch_item(&state.stores, &state.datasets, &scope, &id, body).await?;
+    let if_match = headers.get(header::IF_MATCH).and_then(|v| v.to_str().ok());
+    let detail =
+        owner::patch_item(&state.stores, &state.datasets, &scope, &id, if_match, body).await?;
     Ok((
         StatusCode::OK,
         [(header::ETAG, detail.item.etag.clone())],

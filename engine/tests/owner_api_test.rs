@@ -1,5 +1,7 @@
 mod common;
 
+use std::sync::atomic::Ordering;
+
 use axum::http::StatusCode;
 use common::*;
 use serde_json::{json, Value};
@@ -474,4 +476,391 @@ async fn making_one_personal_item_public_never_exposes_another_personal_item() {
     .await;
     assert_eq!(st, StatusCode::OK);
     assert!(owner_ds2.to_string().contains("SecretChartRow"));
+}
+
+#[tokio::test]
+async fn owner_api_schema_and_options_validation_suite() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // 1. Unknown slot is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y", "unknown_slot": "z" },
+            "rows": [{ "x": "A", "y": 10, "z": 1 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 2. Missing field in rows is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "absent_field" },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 3. Incompatible measure type (string instead of numeric) is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "A", "y": "not_a_number" }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 4. Later-row incompatible value is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [
+                { "x": "A", "y": 10 },
+                { "x": "B", "y": "string_in_row_two" }
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 5. Invalid option: non-object config is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": "scalar_not_allowed",
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 5b. Invalid option: unknown option is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "unknown_opt": "foo" },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 5c. Invalid option: invalid bool / enum value is rejected with 400 Bad Request
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "legend": "not_true_or_false" },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // 6. Valid mapping and valid config succeeds with 201 Created
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "legend": true },
+            "rows": [{ "x": "ValidA", "y": 100 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    assert_eq!(created["item"]["row_count"], 1);
+}
+
+#[tokio::test]
+async fn owner_api_p1_rejected_replace_preserves_stored_owner_state() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create initial valid item
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "legend": true },
+            "rows": [{ "x": "Row1", "y": 10 }, { "x": "Row2", "y": 20 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let initial_doc_id: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Verify initial dataset visual binding
+    let (st_ds, initial_ds) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds, StatusCode::OK);
+    assert_eq!(initial_ds["visual"]["template"], "bar-v1");
+    assert_eq!(initial_ds["visual"]["mapping"]["category"], json!(["x"]));
+    assert_eq!(initial_ds["visual"]["mapping"]["value"], json!(["y"]));
+
+    // Attempt 1: Replace with missing required slot (value)
+    let (st_err1, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x" },
+            "rows": [{ "x": "BadReplace" }]
+        })),
+    )
+    .await;
+    assert_eq!(st_err1, StatusCode::BAD_REQUEST);
+
+    // Attempt 2: Replace with unknown slot
+    let (st_err2, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "y", "bogus_slot": "x" },
+            "rows": [{ "x": "BadReplace", "y": 50 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_err2, StatusCode::BAD_REQUEST);
+
+    // Attempt 3: Replace with incompatible later row value
+    let (st_err3, _) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "rows": [
+                { "x": "GoodRow", "y": 50 },
+                { "x": "BadRow", "y": "not_a_number" }
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(st_err3, StatusCode::BAD_REQUEST);
+
+    // Re-fetch item detail and assert ALL stored state is 100% unchanged
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["item"]["etag"], initial_etag);
+    let doc_id_after: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    assert_eq!(doc_id_after, initial_doc_id);
+    assert_eq!(item_after["item"]["row_count"], 2);
+    assert_eq!(
+        item_after["rows"],
+        json!([{ "x": "Row1", "y": 10 }, { "x": "Row2", "y": 20 }])
+    );
+
+    // Re-fetch dataset page and assert visual binding and rows are 100% unchanged
+    let (st_ds_after, ds_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds_after, StatusCode::OK);
+    assert_eq!(ds_after["visual"]["template"], "bar-v1");
+    assert_eq!(ds_after["visual"]["mapping"]["category"], json!(["x"]));
+    assert_eq!(ds_after["visual"]["mapping"]["value"], json!(["y"]));
+}
+
+#[tokio::test]
+async fn owner_api_p1_patch_failed_couch_write_preserves_binding_and_state() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create initial valid item
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "config": { "legend": true },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let initial_doc_id: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Verify If-Match CAS check on PATCH
+    let (st_cas, _) = call_with_headers(
+        &t,
+        "PATCH",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[("if-match", "\"stale-etag\"")],
+        Some(json!({ "config": { "legend": false } })),
+    )
+    .await;
+    assert_eq!(st_cas, StatusCode::CONFLICT);
+
+    // Simulate CouchDB write failure
+    t.docs.offline.store(true, Ordering::SeqCst);
+
+    // Send PATCH with valid If-Match but failing CouchDB write
+    let (st_fail, _) = call_with_headers(
+        &t,
+        "PATCH",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({ "config": { "legend": false } })),
+    )
+    .await;
+    assert_eq!(st_fail, StatusCode::SERVICE_UNAVAILABLE);
+
+    // Restore CouchDB
+    t.docs.offline.store(false, Ordering::SeqCst);
+
+    // Assert stored item state is completely unchanged
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["item"]["etag"], initial_etag);
+    let doc_id_after: String =
+        sqlx::query_scalar("SELECT couch_doc_id FROM user_chart_items WHERE id = $1")
+            .bind(item_id)
+            .fetch_one(&t.state.stores.db.pool)
+            .await
+            .unwrap();
+    assert_eq!(doc_id_after, initial_doc_id);
+    assert_eq!(item_after["config"]["legend"], true);
+
+    // Assert dataset visual binding in SQL is completely unchanged
+    let (st_ds, ds_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds, StatusCode::OK);
+    assert_eq!(ds_after["visual"]["options"]["legend"], "true");
 }

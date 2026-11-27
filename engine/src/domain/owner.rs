@@ -153,6 +153,7 @@ fn parse_visual_binding(
     tpl: &VisualTemplateVersion,
     mapping_val: &Value,
     config_val: &Value,
+    rows: &[Value],
 ) -> Result<CardVisualBinding, ReportError> {
     let map_obj = mapping_val.as_object().ok_or_else(|| {
         ReportError::BadRequest("invalid_mapping: mapping must be a JSON object".into())
@@ -170,6 +171,17 @@ fn parse_visual_binding(
                 "invalid_mapping: slot name cannot be empty".into(),
             ));
         }
+        let slot_def = tpl
+            .slots
+            .iter()
+            .find(|s| s.slot_name == slot)
+            .ok_or_else(|| {
+                ReportError::BadRequest(format!(
+                    "unknown_slot: slot '{slot}' is not defined in template '{}'",
+                    tpl.template_id
+                ))
+            })?;
+
         let fields = match field_val {
             Value::String(s) => {
                 let trimmed = s.trim();
@@ -203,6 +215,51 @@ fn parse_visual_binding(
                 )));
             }
         };
+
+        // Validate presence and type of mapped fields across all submitted rows
+        for field in &fields {
+            for (row_idx, row) in rows.iter().enumerate() {
+                let row_obj = row.as_object().ok_or_else(|| {
+                    ReportError::BadRequest(format!(
+                        "invalid_row: row {row_idx} must be a JSON object"
+                    ))
+                })?;
+                let val = row_obj.get(field).ok_or_else(|| {
+                    ReportError::BadRequest(format!(
+                        "missing_field: mapped field '{field}' is absent in row {row_idx}"
+                    ))
+                })?;
+
+                if !slot_def.accepted_types.is_empty() {
+                    let matches = slot_def.accepted_types.iter().any(|t| match t.as_str() {
+                        "string" | "text" | "enum" => val.is_string(),
+                        "integer" | "int" => {
+                            val.as_i64().is_some()
+                                || val.as_u64().is_some()
+                                || (val.as_f64().map(|f| f.fract() == 0.0).unwrap_or(false))
+                        }
+                        "float" | "number" | "percent" => val.is_number(),
+                        "bool" | "boolean" => val.is_boolean(),
+                        "date" => val.is_string(),
+                        _ => true,
+                    });
+                    if !matches {
+                        return Err(ReportError::BadRequest(format!(
+                            "incompatible_type: field '{field}' in row {row_idx} does not match accepted types {:?} for slot '{}'",
+                            slot_def.accepted_types, slot_def.slot_name
+                        )));
+                    }
+                }
+
+                if slot_def.role == "measure" && !val.is_number() {
+                    return Err(ReportError::BadRequest(format!(
+                        "incompatible_type: measure slot '{}' field '{field}' in row {row_idx} must be numeric",
+                        slot_def.slot_name
+                    )));
+                }
+            }
+        }
+
         mapping.insert(slot.to_string(), fields);
     }
 
@@ -226,14 +283,76 @@ fn parse_visual_binding(
     }
 
     let mut options: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(cfg_obj) = config_val.as_object() {
+    if !config_val.is_null() {
+        let cfg_obj = config_val.as_object().ok_or_else(|| {
+            ReportError::BadRequest("invalid_config: config must be a JSON object".into())
+        })?;
         for (k, v) in cfg_obj {
+            let opt_def = tpl
+                .options
+                .iter()
+                .find(|o| &o.option_name == k)
+                .ok_or_else(|| {
+                    ReportError::BadRequest(format!(
+                        "unknown_option: option '{k}' is not defined in template '{}'",
+                        tpl.template_id
+                    ))
+                })?;
+            if v.is_object() || v.is_array() {
+                return Err(ReportError::BadRequest(format!(
+                    "invalid_option: option '{k}' must be a scalar value"
+                )));
+            }
             let str_val = match v {
                 Value::String(s) => s.clone(),
                 Value::Bool(b) => b.to_string(),
                 Value::Number(n) => n.to_string(),
-                _ => v.to_string(),
+                _ => {
+                    return Err(ReportError::BadRequest(format!(
+                        "invalid_option: option '{k}' must be a scalar value"
+                    )));
+                }
             };
+            match opt_def.value_type.as_str() {
+                "bool" => {
+                    if str_val != "true" && str_val != "false" {
+                        return Err(ReportError::BadRequest(format!(
+                            "invalid_option: option '{k}' must be 'true' or 'false', got '{str_val}'"
+                        )));
+                    }
+                }
+                "int" => {
+                    if str_val.parse::<i64>().is_err() {
+                        return Err(ReportError::BadRequest(format!(
+                            "invalid_option: option '{k}' must be an integer, got '{str_val}'"
+                        )));
+                    }
+                }
+                "float" => {
+                    if str_val.parse::<f64>().is_err() {
+                        return Err(ReportError::BadRequest(format!(
+                            "invalid_option: option '{k}' must be a number, got '{str_val}'"
+                        )));
+                    }
+                }
+                "enum" => {
+                    if !opt_def.allowed_values.is_empty()
+                        && !opt_def.allowed_values.contains(&str_val)
+                    {
+                        return Err(ReportError::BadRequest(format!(
+                            "invalid_option: option '{k}' value '{str_val}' is not in allowed values: {:?}",
+                            opt_def.allowed_values
+                        )));
+                    }
+                }
+                _ => {}
+            }
+            if !opt_def.allowed_values.is_empty() && !opt_def.allowed_values.contains(&str_val) {
+                return Err(ReportError::BadRequest(format!(
+                    "invalid_option: option '{k}' value '{str_val}' is not in allowed values: {:?}",
+                    opt_def.allowed_values
+                )));
+            }
             options.insert(k.clone(), str_val);
         }
     }
@@ -303,7 +422,6 @@ fn map_summary(row: &sqlx::any::AnyRow, row_count: usize) -> Result<OwnerItemSum
 fn owner_fields(mapping: &Value, rows: &[Value]) -> Vec<FieldSpec> {
     let mut seen = BTreeSet::new();
     let mut fields = Vec::new();
-    let sample = rows.first();
     if let Some(obj) = mapping.as_object() {
         for col_val in obj.values() {
             let cols: Vec<&str> = match col_val {
@@ -316,9 +434,10 @@ fn owner_fields(mapping: &Value, rows: &[Value]) -> Vec<FieldSpec> {
                 if col.is_empty() || !seen.insert(col.to_string()) {
                     continue;
                 }
-                let is_num = sample
-                    .and_then(|r| r.get(col))
-                    .is_some_and(|v| v.is_number());
+                let is_num = !rows.is_empty()
+                    && rows
+                        .iter()
+                        .all(|r| r.get(col).map(|v| v.is_number()).unwrap_or(false));
                 fields.push(FieldSpec {
                     name: col.to_string(),
                     label: I18nText::from([("en".into(), col.to_string())]),
@@ -486,7 +605,7 @@ pub async fn create_item(
 
     let (max_bytes, max_records) = upload_limits(stores).await;
     validate_mapping_and_rows(&input.mapping, &input.rows, max_bytes, max_records)?;
-    let binding = parse_visual_binding(&tpl, &input.mapping, &input.config)?;
+    let binding = parse_visual_binding(&tpl, &input.mapping, &input.config, &input.rows)?;
 
     let item_id = new_id();
     let report_slug = format!(
@@ -679,6 +798,26 @@ pub async fn replace_dataset(
     let (max_bytes, max_records) = upload_limits(stores).await;
     validate_mapping_and_rows(&mapping, &input.rows, max_bytes, max_records)?;
 
+    let tpl = templates::get_version(
+        &stores.db,
+        &detail.item.template_id,
+        detail.item.template_version,
+    )
+    .await?
+    .ok_or_else(|| {
+        ReportError::not_found(format!(
+            "visual template '{} v{}'",
+            detail.item.template_id, detail.item.template_version
+        ))
+    })?;
+    if tpl.status != "published" {
+        return Err(ReportError::Conflict(format!(
+            "visual template {} v{} must be published before binding",
+            detail.item.template_id, detail.item.template_version
+        )));
+    }
+    let binding = parse_visual_binding(&tpl, &mapping, &config, &input.rows)?;
+
     let new_doc_key = format!("owner-item:{item_id}:{}", new_id());
     let new_etag = format!("\"{}\"", new_id());
     let ts = now_secs();
@@ -698,31 +837,8 @@ pub async fn replace_dataset(
     let new_doc_id = rec.id.clone();
     stores.docs.insert_records(&[rec]).await?;
 
-    sqlx::query(
-        "UPDATE user_chart_items SET couch_doc_id = $1, etag = $2, updated_at = $3 WHERE id = $4",
-    )
-    .bind(&new_doc_id)
-    .bind(&new_etag)
-    .bind(ts)
-    .bind(item_id)
-    .execute(&stores.db.pool)
-    .await?;
-
     let owner_id = require_owner_user(scope)?.to_string();
     let audience = Audience::parse(&detail.item.audience);
-    let tpl = templates::get_version(
-        &stores.db,
-        &detail.item.template_id,
-        detail.item.template_version,
-    )
-    .await?
-    .ok_or_else(|| {
-        ReportError::not_found(format!(
-            "visual template '{} v{}'",
-            detail.item.template_id, detail.item.template_version
-        ))
-    })?;
-    let binding = parse_visual_binding(&tpl, &mapping, &config)?;
 
     publish_owner_dataset(
         stores,
@@ -740,6 +856,22 @@ pub async fn replace_dataset(
     )
     .await?;
 
+    let res = sqlx::query(
+        "UPDATE user_chart_items SET couch_doc_id = $1, etag = $2, updated_at = $3 WHERE id = $4 AND etag = $5",
+    )
+    .bind(&new_doc_id)
+    .bind(&new_etag)
+    .bind(ts)
+    .bind(item_id)
+    .bind(&detail.item.etag)
+    .execute(&stores.db.pool)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Err(ReportError::Conflict(
+            "concurrent_modification: item was modified concurrently".into(),
+        ));
+    }
+
     datasets
         .invalidate_visibility_change(&detail.item.project, &detail.item.report_slug)
         .await;
@@ -751,9 +883,17 @@ pub async fn patch_item(
     datasets: &DatasetService,
     scope: &ViewerScope,
     item_id: &str,
+    if_match: Option<&str>,
     input: PatchOwnerItemInput,
 ) -> Result<OwnerItemDetail, ReportError> {
     let detail = get_item(stores, scope, item_id, None, None).await?;
+    if let Some(expected) = if_match.map(str::trim).filter(|s| !s.is_empty()) {
+        if expected != detail.item.etag {
+            return Err(ReportError::Conflict(
+                "precondition_failed: If-Match header must match current ETag".into(),
+            ));
+        }
+    }
     let caller = require_owner_user(scope)?;
     let authority = ControlAuthority::parse(&detail.item.control_authority);
     if !scope.can_publish_owned(&detail.item.project, caller, authority) {
@@ -769,6 +909,7 @@ pub async fn patch_item(
     let new_etag = format!("\"{}\"", new_id());
     let ts = now_secs();
 
+    let mut new_doc_id = None;
     if input.config.is_some() || input.mapping.is_some() {
         let mapping = input.mapping.unwrap_or(detail.mapping);
         let config = input.config.unwrap_or(detail.config);
@@ -787,16 +928,15 @@ pub async fn patch_item(
                 detail.item.template_id, detail.item.template_version
             ))
         })?;
-        let binding = parse_visual_binding(&tpl, &mapping, &config)?;
-        templates::bind_card_visual(
-            &stores.db,
-            &detail.item.project,
-            &detail.item.report_slug,
-            &detail.item.dataset_id,
-            &binding,
-        )
-        .await?;
+        if tpl.status != "published" {
+            return Err(ReportError::Conflict(format!(
+                "visual template {} v{} must be published before binding",
+                detail.item.template_id, detail.item.template_version
+            )));
+        }
+        let binding = parse_visual_binding(&tpl, &mapping, &config, &detail.rows)?;
 
+        // Insert new document before modifying visual bindings or item state
         let new_doc_key = format!("owner-item:{item_id}:{}", new_id());
         let rec = RecordDoc::new(
             &detail.item.project,
@@ -811,24 +951,50 @@ pub async fn patch_item(
                 "rows": detail.rows,
             }),
         );
-        let new_doc_id = rec.id.clone();
+        let doc_id = rec.id.clone();
         stores.docs.insert_records(&[rec]).await?;
-        sqlx::query("UPDATE user_chart_items SET couch_doc_id = $1 WHERE id = $2")
-            .bind(&new_doc_id)
-            .bind(item_id)
-            .execute(&stores.db.pool)
-            .await?;
+        new_doc_id = Some(doc_id);
+
+        templates::bind_card_visual(
+            &stores.db,
+            &detail.item.project,
+            &detail.item.report_slug,
+            &detail.item.dataset_id,
+            &binding,
+        )
+        .await?;
     }
 
-    sqlx::query(
-        "UPDATE user_chart_items SET audience = $1, etag = $2, updated_at = $3 WHERE id = $4",
-    )
-    .bind(new_audience.as_str())
-    .bind(&new_etag)
-    .bind(ts)
-    .bind(item_id)
-    .execute(&stores.db.pool)
-    .await?;
+    let res = if let Some(ref doc_id) = new_doc_id {
+        sqlx::query(
+            "UPDATE user_chart_items SET audience = $1, couch_doc_id = $2, etag = $3, updated_at = $4 WHERE id = $5 AND etag = $6",
+        )
+        .bind(new_audience.as_str())
+        .bind(doc_id)
+        .bind(&new_etag)
+        .bind(ts)
+        .bind(item_id)
+        .bind(&detail.item.etag)
+        .execute(&stores.db.pool)
+        .await?
+    } else {
+        sqlx::query(
+            "UPDATE user_chart_items SET audience = $1, etag = $2, updated_at = $3 WHERE id = $4 AND etag = $5",
+        )
+        .bind(new_audience.as_str())
+        .bind(&new_etag)
+        .bind(ts)
+        .bind(item_id)
+        .bind(&detail.item.etag)
+        .execute(&stores.db.pool)
+        .await?
+    };
+
+    if res.rows_affected() == 0 {
+        return Err(ReportError::Conflict(
+            "concurrent_modification: item was modified concurrently".into(),
+        ));
+    }
 
     sqlx::query(
         "UPDATE reports SET visibility = $1, audience = $2 WHERE project_slug = $3 AND slug = $4",
