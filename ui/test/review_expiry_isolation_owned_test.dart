@@ -247,7 +247,7 @@ void main() {
     }, () => client);
   });
 
-  testWidgets('delayed old-scope response in full view is fenced', (
+  testWidgets('held replacement guest response clears private rows and title while in flight', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -465,7 +465,215 @@ void main() {
     }, () => client);
   });
 
+  testWidgets('late response from expired session is fenced and never rendered in full view', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1000);
+    addTearDown(tester.view.reset);
+    final previousSession = SessionStore.instance;
+    final previousTelemetry = ClientTelemetryService.instance;
+    final previousReport = ReportService.instance;
+    final previousCatalog = CatalogService.instance;
+    final previousAuth = AuthService.instance;
+    final catalogFixture = FakeApi();
+    SharedPreferences.setMockInitialValues({
+      'app_language': 'en',
+      'app_theme_mode': 'light',
+    });
+    final descriptor = <String, Object?>{
+      'dataset_id': 'secret',
+      'title': 'Private fixture dataset',
+      'description': 'Owner-only test sample',
+      'equation': null,
+      'data_tier': 'real',
+      'can_view': true,
+      'visibility': 'restricted',
+      'fields': [
+        {
+          'name': 'label',
+          'label': 'Label',
+          'type': 'string',
+          'role': 'dimension',
+          'missing_means': 'no_data',
+        },
+        {
+          'name': 'value',
+          'label': 'Value',
+          'type': 'integer',
+          'role': 'measure',
+          'unit': 'tokens',
+          'missing_means': 'no_data',
+        },
+      ],
+      'filters': <Object?>[],
+    };
+    final lateACompleter = Completer<http.Response>();
+    final client = MockClient((request) async {
+      var path = request.url.path;
+      if (path.startsWith(FakeApi.prefix)) {
+        path = path.substring(FakeApi.prefix.length);
+      }
+      if (path == '/user/info/v1/') {
+        return http.Response(
+          jsonEncode({
+            'data': {'full_name': 'Review owner'},
+          }),
+          200,
+        );
+      }
+      if (const {
+        '/catalog',
+        '/projects',
+        '/stats',
+        '/projects/cortex',
+        '/projects/cortex/reports',
+      }.contains(path)) {
+        return http.Response(
+          jsonEncode(catalogFixture.routes[path]!(request.url.queryParameters)),
+          200,
+        );
+      }
+      if (path == '/me/projects/cortex/reports') {
+        return http.Response(
+          jsonEncode(
+            catalogFixture.routes['/projects/cortex/reports']!(
+              request.url.queryParameters,
+            ),
+          ),
+          200,
+        );
+      }
+      if (path == '/me/items/secret') {
+        return http.Response(jsonEncode({'code': 'forbidden'}), 403);
+      }
+      if (path == '/projects/cortex/reports/private') {
+        if (!SessionStore.instance.hasSession) {
+          return http.Response(jsonEncode({'code': 'forbidden'}), 403);
+        }
+        return http.Response(
+          jsonEncode({
+            'project': 'cortex',
+            'report': 'private',
+            'title': 'Owner private report',
+            'description': '',
+            'tags': <String>[],
+            'period': null,
+            'updated_at': '2026-11-27T00:00:00Z',
+            'language': 'en',
+            'data_tier': 'real',
+            'tiers': ['real'],
+            'visibility': 'restricted',
+            'access': {
+              'total': 1,
+              'readable': 1,
+              'needs_sign_in': 0,
+              'needs_admin': 0,
+            },
+            'datasets': [descriptor],
+          }),
+          200,
+        );
+      }
+      if (path == '/projects/cortex/reports/private/datasets/secret') {
+        if (SessionStore.instance.hasSession) {
+          // Delay initial user A response
+          return await lateACompleter.future;
+        }
+        return http.Response(jsonEncode({'code': 'forbidden'}), 403);
+      }
+      if (path == '/projects/cortex/showcase/private' ||
+          path == '/projects/cortex/showcase/private/cards/secret') {
+        return http.Response(jsonEncode({'code': 'not_found'}), 404);
+      }
+      return http.Response('{}', 200);
+    });
+    final telemetryClient = MockClient((request) async {
+      return http.Response('{}', 202);
+    });
+    addTearDown(client.close);
+    addTearDown(telemetryClient.close);
+    final api = ApiClient(
+      baseUrl: FakeApi.base,
+      client: client,
+      cookieReader: (_) => null,
+    );
+    final session = SessionStore(api: api, cookieReader: (_) => null);
+    SessionStore.instance = session;
+    session.setForTest(
+      const SessionUser(userId: '11111111-1111-4111-8111-111111111111'),
+    );
+    ClientTelemetryService.instance = ClientTelemetryService(
+      client: telemetryClient,
+      autoFlush: false,
+      environment: 'isolated-review',
+    );
+    await http.runWithClient(() async {
+      try {
+        ReportService.instance = ReportService(api);
+        CatalogService.instance = CatalogService(api);
+        AuthService.instance = AuthService(
+          client: client,
+          cookieReader: (_) => null,
+          launcher: (_) async => throw StateError('No external auth'),
+        );
+        await tester.pumpWidget(
+          const ReportsApp(
+            initialLocation: '/v1/menu/cortex/private/secret?view=table',
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        // Session expires while user A's dataset response is still in-flight
+        session.markExpired();
+        await tester.pump();
+
+        // User A's response now completes with private data
+        lateACompleter.complete(
+          http.Response(
+            jsonEncode({
+              ...descriptor,
+              'language': 'en',
+              'rows': [
+                {'label': 'A_LATE_PRIVATE_ROW', 'value': 99},
+              ],
+              'offset': 0,
+              'limit': 1000,
+              'total_rows': 1,
+              'applied_filters': <String, Object?>{},
+              'lineage': {
+                'calculation_id': 'private-fixture',
+                'calculation_version': 1,
+                'inputs': <Object?>[],
+                'source_watermark': <String, Object?>{},
+                'filters': <String, Object?>{},
+                'calculated_at': '2026-11-27T00:00:00Z',
+              },
+              'visual': null,
+            }),
+            200,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The late response must be completely ignored; private row must never appear
+        expect(find.text('A_LATE_PRIVATE_ROW'), findsNothing);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        SessionStore.instance = previousSession;
+        ReportService.instance = previousReport;
+        CatalogService.instance = previousCatalog;
+        AuthService.instance = previousAuth;
+        ClientTelemetryService.instance = previousTelemetry;
+      }
+    }, () => client);
+  });
+
   test('report artifacts abort immediately if session scope changes', () async {
+    final previousSession = SessionStore.instance;
+    addTearDown(() => SessionStore.instance = previousSession);
+
     final api = ApiClient(baseUrl: FakeApi.base, client: MockClient((_) async => http.Response('{}', 200)));
     final session = SessionStore(api: api, cookieReader: (_) => null);
     SessionStore.instance = session;
@@ -486,7 +694,10 @@ void main() {
     );
   });
 
-  test('artifact jobs suppress save callback when scope changes mid-export or job is disposed', () async {
+  test('artifact jobs suppress save callback when scope changes mid-export', () async {
+    final previousSession = SessionStore.instance;
+    addTearDown(() => SessionStore.instance = previousSession);
+
     final api = ApiClient(baseUrl: FakeApi.base, client: MockClient((_) async => http.Response('{}', 200)));
     final session = SessionStore(api: api, cookieReader: (_) => null);
     SessionStore.instance = session;
@@ -516,6 +727,42 @@ void main() {
 
     // The save callback must never be invoked
     expect(savedFiles, isEmpty, reason: 'Save callback must never be invoked after scope transition');
+    expect(jobs.job(ArtifactFormat.csv).state, isNot(ArtifactState.saved));
+  });
+
+  test('artifact jobs suppress save callback when job is disposed mid-export', () async {
+    final previousSession = SessionStore.instance;
+    addTearDown(() => SessionStore.instance = previousSession);
+
+    final api = ApiClient(baseUrl: FakeApi.base, client: MockClient((_) async => http.Response('{}', 200)));
+    final session = SessionStore(api: api, cookieReader: (_) => null);
+    SessionStore.instance = session;
+    session.setForTest(
+      const SessionUser(userId: '11111111-1111-4111-8111-111111111111'),
+    );
+
+    final exportCompleter = Completer<ExportFile>();
+    final savedFiles = <ExportFile>[];
+    final jobs = ArtifactJobs(
+      runner: (_, _) => exportCompleter.future,
+      save: (f) => savedFiles.add(f),
+    );
+
+    // Start export
+    unawaited(jobs.start(ArtifactFormat.csv, preparing: 'Preparing CSV'));
+    expect(jobs.busy, isTrue);
+
+    // Dispose jobs mid-export
+    jobs.dispose();
+
+    // Export completes and returns valid file
+    exportCompleter.complete(
+      ExportFile('test.csv', Uint8List.fromList([1, 2, 3]), 'text/csv'),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    // The save callback must never be invoked
+    expect(savedFiles, isEmpty, reason: 'Save callback must never be invoked after jobs disposed');
     expect(jobs.job(ArtifactFormat.csv).state, isNot(ArtifactState.saved));
   });
 }
