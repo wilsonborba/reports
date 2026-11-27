@@ -10,6 +10,7 @@ use tower::ServiceExt;
 async fn item_descriptor_preserves_state_and_png_never_leaks_private_rows() {
     let t = TestApp::new().await;
     t.seed_cortex().await;
+    t.seed_bar_v1().await;
     t.ingest(json!([event("preview", "ollama", "local", 100, 10, true)]))
         .await;
     let base = "/projects/cortex/showcase/token-usage/cards/tokens-by-provider";
@@ -90,6 +91,7 @@ async fn item_descriptor_preserves_state_and_png_never_leaks_private_rows() {
 async fn viewer_aware_search_embeds_placeholders_and_immutable_snapshots() {
     let t = TestApp::new().await;
     t.seed_cortex().await;
+    t.seed_bar_v1().await;
     let user_a = "11111111-1111-4111-8111-111111111111";
     let user_b = "22222222-2222-4222-8222-222222222222";
 

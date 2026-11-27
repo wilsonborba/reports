@@ -212,6 +212,56 @@ impl TestApp {
         }
     }
 
+    /// Seeds and publishes template `bar-v1` for owner item tests.
+    pub async fn seed_bar_v1(&self) {
+        let draft_tpl = json!({
+            "template_id": "bar-v1",
+            "version": 1,
+            "kind": "chart",
+            "visual": "bar",
+            "title": {"en": "Bar Chart", "pt-BR": "Gráfico de Barras", "th": "แผนภูมิแท่ง"},
+            "slots": [
+                {
+                    "slot_name": "category",
+                    "role": "dimension",
+                    "is_required": true,
+                    "min_count": 1,
+                    "max_count": 2,
+                    "accepted_types": ["string"]
+                },
+                {
+                    "slot_name": "value",
+                    "role": "measure",
+                    "is_required": true,
+                    "min_count": 1,
+                    "max_count": 4,
+                    "accepted_types": ["integer", "float"]
+                }
+            ],
+            "options": [
+                {
+                    "option_name": "legend",
+                    "value_type": "bool",
+                    "default_value": "true",
+                    "allowed_values": ["true", "false"]
+                }
+            ]
+        });
+        let (s, _) = self
+            .service("POST", "/projects/cortex/admin/templates", draft_tpl)
+            .await;
+        if s == StatusCode::CREATED {
+            let (s, _) = self
+                .service(
+                    "POST",
+                    "/projects/cortex/admin/templates/bar-v1/versions/1/publish",
+                    json!({}),
+                )
+                .await;
+            assert_eq!(s, StatusCode::OK);
+        }
+    }
+
     /// Creates the next draft of a calculation and publishes it. Returns the version.
     pub async fn publish_calculation(&self, project: &str, id: &str, definition: Value) -> i64 {
         let (s, v) = self

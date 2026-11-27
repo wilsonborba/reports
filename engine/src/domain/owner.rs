@@ -7,11 +7,12 @@ use crate::core::error::ReportError;
 use crate::dal::calculations::{self, CalculationVersion, InputRef};
 use crate::dal::catalog::{self, DatasetRecord, ReportMetadata, ReportRecord};
 use crate::dal::documents::RecordDoc;
+use crate::dal::templates::{self, CardVisualBinding, VisualTemplateVersion};
 use crate::dal::Stores;
 use crate::domain::auth::{Audience, ControlAuthority, ViewerScope};
 use crate::domain::datasets::service::DatasetService;
 use crate::domain::datasets::spec::{DataTier, DatasetSpec, FieldSpec, I18nText};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 1_048_576;
 pub const DEFAULT_MAX_UPLOAD_RECORDS: usize = 1000;
@@ -102,8 +103,23 @@ fn validate_mapping_and_rows(
             "invalid_mapping: mapping must bind at least one template slot".into(),
         ));
     }
-    for (slot, field) in map_obj {
-        if slot.trim().is_empty() || field.as_str().map(str::trim).unwrap_or("").is_empty() {
+    for (slot, field_val) in map_obj {
+        if slot.trim().is_empty() {
+            return Err(ReportError::BadRequest(
+                "invalid_mapping: slot name cannot be empty".into(),
+            ));
+        }
+        let is_empty = match field_val {
+            Value::String(s) => s.trim().is_empty(),
+            Value::Array(arr) => {
+                arr.is_empty()
+                    || arr
+                        .iter()
+                        .any(|v| v.as_str().map(str::trim).unwrap_or("").is_empty())
+            }
+            _ => true,
+        };
+        if is_empty {
             return Err(ReportError::BadRequest(format!(
                 "invalid_mapping: slot '{slot}' must bind to a non-empty field name"
             )));
@@ -131,6 +147,103 @@ fn validate_mapping_and_rows(
         }
     }
     Ok(())
+}
+
+fn parse_visual_binding(
+    tpl: &VisualTemplateVersion,
+    mapping_val: &Value,
+    config_val: &Value,
+) -> Result<CardVisualBinding, ReportError> {
+    let map_obj = mapping_val.as_object().ok_or_else(|| {
+        ReportError::BadRequest("invalid_mapping: mapping must be a JSON object".into())
+    })?;
+    if map_obj.is_empty() {
+        return Err(ReportError::BadRequest(
+            "invalid_mapping: mapping must bind at least one template slot".into(),
+        ));
+    }
+    let mut mapping: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (slot, field_val) in map_obj {
+        let slot = slot.trim();
+        if slot.is_empty() {
+            return Err(ReportError::BadRequest(
+                "invalid_mapping: slot name cannot be empty".into(),
+            ));
+        }
+        let fields = match field_val {
+            Value::String(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    return Err(ReportError::BadRequest(format!(
+                        "invalid_mapping: slot '{slot}' must bind to a non-empty field name"
+                    )));
+                }
+                vec![trimmed.to_string()]
+            }
+            Value::Array(arr) => {
+                if arr.is_empty() {
+                    return Err(ReportError::BadRequest(format!(
+                        "invalid_mapping: slot '{slot}' must bind to at least one field name"
+                    )));
+                }
+                let mut v = Vec::new();
+                for f in arr {
+                    let s = f.as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| {
+                        ReportError::BadRequest(format!(
+                            "invalid_mapping: slot '{slot}' array must contain non-empty field names"
+                        ))
+                    })?;
+                    v.push(s.to_string());
+                }
+                v
+            }
+            _ => {
+                return Err(ReportError::BadRequest(format!(
+                    "invalid_mapping: slot '{slot}' must be a string or array of strings"
+                )));
+            }
+        };
+        mapping.insert(slot.to_string(), fields);
+    }
+
+    for slot in &tpl.slots {
+        let count = mapping
+            .get(&slot.slot_name)
+            .map(|v| v.len() as i64)
+            .unwrap_or(0);
+        if slot.is_required && count < slot.min_count {
+            return Err(ReportError::BadRequest(format!(
+                "slot '{}' requires at least {} field(s)",
+                slot.slot_name, slot.min_count
+            )));
+        }
+        if count > slot.max_count {
+            return Err(ReportError::BadRequest(format!(
+                "slot '{}' allows at most {} field(s)",
+                slot.slot_name, slot.max_count
+            )));
+        }
+    }
+
+    let mut options: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(cfg_obj) = config_val.as_object() {
+        for (k, v) in cfg_obj {
+            let str_val = match v {
+                Value::String(s) => s.clone(),
+                Value::Bool(b) => b.to_string(),
+                Value::Number(n) => n.to_string(),
+                _ => v.to_string(),
+            };
+            options.insert(k.clone(), str_val);
+        }
+    }
+
+    Ok(CardVisualBinding {
+        template: tpl.template_id.clone(),
+        version: tpl.version,
+        mapping,
+        options,
+    })
 }
 
 async fn upload_limits(stores: &Stores) -> (usize, usize) {
@@ -193,8 +306,14 @@ fn owner_fields(mapping: &Value, rows: &[Value]) -> Vec<FieldSpec> {
     let sample = rows.first();
     if let Some(obj) = mapping.as_object() {
         for col_val in obj.values() {
-            if let Some(col) = col_val.as_str().map(str::trim).filter(|s| !s.is_empty()) {
-                if !seen.insert(col.to_string()) {
+            let cols: Vec<&str> = match col_val {
+                Value::String(s) => vec![s.as_str()],
+                Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
+                _ => Vec::new(),
+            };
+            for col in cols {
+                let col = col.trim();
+                if col.is_empty() || !seen.insert(col.to_string()) {
                     continue;
                 }
                 let is_num = sample
@@ -230,6 +349,7 @@ async fn publish_owner_dataset(
     audience: Audience,
     mapping: &Value,
     rows: &[Value],
+    binding: &CardVisualBinding,
 ) -> Result<(), ReportError> {
     let calc_id = format!("owner-calc-{item_id}");
     let prev_ver: i64 = sqlx::query_scalar(
@@ -302,6 +422,7 @@ async fn publish_owner_dataset(
         audience: audience.as_str().to_string(),
     };
     catalog::upsert_dataset(&stores.db, &dataset_rec).await?;
+    templates::bind_card_visual(&stores.db, project, report_slug, dataset_id, binding).await?;
     Ok(())
 }
 
@@ -316,10 +437,21 @@ pub async fn create_item(
     let owner_id = require_owner_user(scope)?;
     catalog::active_project(&stores.db, project).await?;
 
-    if input.template_id.trim().is_empty() || input.template_version < 1 {
+    let tpl_id = input.template_id.trim();
+    let tpl_ver = input.template_version;
+    if tpl_id.is_empty() || tpl_ver < 1 {
         return Err(ReportError::BadRequest(
             "invalid_template: template_id and positive template_version are required".into(),
         ));
+    }
+
+    let tpl = templates::get_version(&stores.db, tpl_id, tpl_ver)
+        .await?
+        .ok_or_else(|| ReportError::not_found(format!("visual template '{tpl_id} v{tpl_ver}'")))?;
+    if tpl.status != "published" {
+        return Err(ReportError::Conflict(format!(
+            "visual template {tpl_id} v{tpl_ver} must be published before binding",
+        )));
     }
 
     let idemp = header_idemp
@@ -354,6 +486,7 @@ pub async fn create_item(
 
     let (max_bytes, max_records) = upload_limits(stores).await;
     validate_mapping_and_rows(&input.mapping, &input.rows, max_bytes, max_records)?;
+    let binding = parse_visual_binding(&tpl, &input.mapping, &input.config)?;
 
     let item_id = new_id();
     let report_slug = format!(
@@ -417,6 +550,7 @@ pub async fn create_item(
         audience,
         &input.mapping,
         &input.rows,
+        &binding,
     )
     .await?;
 
@@ -432,8 +566,8 @@ pub async fn create_item(
     .bind(&dataset_id)
     .bind(owner_id)
     .bind(&source_app)
-    .bind(input.template_id.trim())
-    .bind(input.template_version)
+    .bind(tpl_id)
+    .bind(tpl_ver)
     .bind(audience.as_str())
     .bind(&actual_doc_id)
     .bind(&etag)
@@ -576,6 +710,20 @@ pub async fn replace_dataset(
 
     let owner_id = require_owner_user(scope)?.to_string();
     let audience = Audience::parse(&detail.item.audience);
+    let tpl = templates::get_version(
+        &stores.db,
+        &detail.item.template_id,
+        detail.item.template_version,
+    )
+    .await?
+    .ok_or_else(|| {
+        ReportError::not_found(format!(
+            "visual template '{} v{}'",
+            detail.item.template_id, detail.item.template_version
+        ))
+    })?;
+    let binding = parse_visual_binding(&tpl, &mapping, &config)?;
+
     publish_owner_dataset(
         stores,
         &detail.item.project,
@@ -588,6 +736,7 @@ pub async fn replace_dataset(
         audience,
         &mapping,
         &input.rows,
+        &binding,
     )
     .await?;
 
@@ -625,6 +774,29 @@ pub async fn patch_item(
         let config = input.config.unwrap_or(detail.config);
         let (max_bytes, max_records) = upload_limits(stores).await;
         validate_mapping_and_rows(&mapping, &detail.rows, max_bytes, max_records)?;
+
+        let tpl = templates::get_version(
+            &stores.db,
+            &detail.item.template_id,
+            detail.item.template_version,
+        )
+        .await?
+        .ok_or_else(|| {
+            ReportError::not_found(format!(
+                "visual template '{} v{}'",
+                detail.item.template_id, detail.item.template_version
+            ))
+        })?;
+        let binding = parse_visual_binding(&tpl, &mapping, &config)?;
+        templates::bind_card_visual(
+            &stores.db,
+            &detail.item.project,
+            &detail.item.report_slug,
+            &detail.item.dataset_id,
+            &binding,
+        )
+        .await?;
+
         let new_doc_key = format!("owner-item:{item_id}:{}", new_id());
         let rec = RecordDoc::new(
             &detail.item.project,
@@ -711,6 +883,15 @@ pub async fn delete_item(
             ),
         });
     }
+
+    sqlx::query(
+        "DELETE FROM report_card_visuals WHERE project_slug = $1 AND report_slug = $2 AND card_id = $3",
+    )
+    .bind(&detail.item.project)
+    .bind(&detail.item.report_slug)
+    .bind(&detail.item.dataset_id)
+    .execute(&stores.db.pool)
+    .await?;
 
     sqlx::query("DELETE FROM user_chart_items WHERE id = $1")
         .bind(item_id)

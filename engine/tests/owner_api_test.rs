@@ -27,6 +27,90 @@ const USER_2: &str = "22222222-2222-4222-8222-222222222222";
 async fn owner_api_create_idempotency_limits_if_match_visibility_and_delete() {
     let t = TestApp::new().await;
     t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Unknown template is rejected with 404.
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "unknown-tpl",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    // Unpublished (draft) template is rejected with 409 Conflict.
+    let (s, _) = t
+        .service(
+            "POST",
+            "/projects/cortex/admin/templates",
+            json!({
+                "template_id": "draft-bar",
+                "version": 1,
+                "kind": "chart",
+                "visual": "bar",
+                "title": {"en": "Draft Bar"},
+                "slots": [{ "slot_name": "category", "role": "dimension", "is_required": true, "min_count": 1, "max_count": 1, "accepted_types": ["string"] }]
+            }),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "draft-bar",
+            "template_version": 1,
+            "mapping": { "category": "x" },
+            "rows": [{ "x": "A" }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+
+    // Missing required template slot is rejected with 400 Bad Request.
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x" },
+            "rows": [{ "x": "A", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // Exceeded slot max_count is rejected with 400 Bad Request.
+    let (st, _) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": ["x", "x2", "x3"], "value": ["y"] },
+            "rows": [{ "x": "A", "x2": "B", "x3": "C", "y": 10 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
 
     // Invalid mapping is rejected before storage.
     let (st, _) = call_with_headers(
@@ -56,7 +140,7 @@ async fn owner_api_create_idempotency_limits_if_match_visibility_and_delete() {
         Some(json!({
             "template_id": "bar-v1",
             "template_version": 1,
-            "mapping": { "x": "x", "y": "y" },
+            "mapping": { "category": "x", "value": "y" },
             "rows": many_rows
         })),
     )
@@ -85,6 +169,37 @@ async fn owner_api_create_idempotency_limits_if_match_visibility_and_delete() {
     let item_id = created1["item"]["id"].as_str().unwrap().to_string();
     assert_eq!(created1["item"]["audience"], "personal");
     let etag1 = created1["item"]["etag"].as_str().unwrap().to_string();
+
+    // Verify DatasetPage projection reflects the bound template and mapping
+    let report_slug = created1["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created1["item"]["dataset_id"].as_str().unwrap();
+    let (st_page, page) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_page, StatusCode::OK);
+    assert_eq!(page["visual"]["template"], "bar-v1");
+    assert_eq!(page["visual"]["version"], 1);
+    assert_eq!(page["visual"]["mapping"]["category"], json!(["x"]));
+    assert_eq!(page["visual"]["mapping"]["value"], json!(["y"]));
+
+    // Verify legacy dataset without visual binding returns null visual (honest legacy behavior)
+    let (st_legacy, legacy_page) = call_with_headers(
+        &t,
+        "GET",
+        "/projects/cortex/reports/token-usage/datasets/tokens-by-provider",
+        None,
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_legacy, StatusCode::OK);
+    assert!(legacy_page["visual"].is_null());
 
     let (st2, created2) = call_with_headers(
         &t,
@@ -184,6 +299,7 @@ async fn owner_api_create_idempotency_limits_if_match_visibility_and_delete() {
 async fn making_one_personal_item_public_never_exposes_another_personal_item() {
     let t = TestApp::new().await;
     t.seed_cortex().await;
+    t.seed_bar_v1().await;
 
     let (st1, created1) = call_with_headers(
         &t,
