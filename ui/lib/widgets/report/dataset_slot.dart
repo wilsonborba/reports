@@ -78,7 +78,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
     // The same place on the board can show another card: take that card's own state.
     if (oldWidget.project != widget.project ||
         oldWidget.report != widget.report ||
-        oldWidget.slot.key != widget.slot.key) {
+        oldWidget.slot.key != widget.slot.key ||
+        oldWidget.slot.datasetId != widget.slot.datasetId) {
       _filters =
           widget.initialFilters ??
           CardFilterState.instance.get(
@@ -89,6 +90,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       _filtersOpen = false;
       _asTable = widget.initialTable;
       _last = null;
+      _key = null;
     }
   }
 
@@ -114,7 +116,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
     });
   }
 
-  void _load(String lang) {
+  void _load(String lang, {bool force = false}) {
     final descriptor = widget.view.dataset(widget.slot.datasetId);
     if (descriptor == null || !descriptor.canView) {
       _future = null;
@@ -123,7 +125,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
     final sorted = _filters.keys.toList()..sort();
     final key =
         '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
-    if (key == _key) return;
+    if (!force && key == _key) return;
     _key = key;
     _future = _fetch(lang, _filters);
   }

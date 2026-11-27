@@ -15,7 +15,7 @@ class ReportService {
   final Duration ttl;
   final bool publicOnly;
   final Map<String, (DateTime, ReportView)> _reports = {};
-  final Map<String, DatasetPage> _datasets = {};
+  final Map<String, (DateTime, DatasetPage)> _datasets = {};
 
   /// Rows of a public card that the showcase sends inline.
   static const int showcaseRows = 500;
@@ -25,11 +25,11 @@ class ReportService {
   String get _mode => !publicOnly && SessionStore.instance.hasSession ? 'u:${SessionStore.instance.user?.userId}' : 'guest';
 
   /// [tier] keeps only the cards of that tier (engine filter); null shows every card.
-  Future<ReportView> report(String project, String report, {required String lang, String? tier}) async {
+  Future<ReportView> report(String project, String report, {required String lang, String? tier, bool forceRefresh = false}) async {
     final key = '$_mode/$project/$report/$lang/${tier ?? ''}';
     final q = {'lang': lang, 'tier': ?tier};
     final hit = _reports[key];
-    if (hit != null && DateTime.now().difference(hit.$1) < ttl) return hit.$2;
+    if (!forceRefresh && hit != null && DateTime.now().difference(hit.$1) < ttl) return hit.$2;
     final session = SessionStore.instance;
     if (!publicOnly && session.hasSession) {
       try {
@@ -43,8 +43,9 @@ class ReportService {
     }
     final showcase = Showcase.fromJson(await api.getJson('/projects/$project/showcase/$report', q));
     final guestKey = 'guest/$project/$report/$lang/${tier ?? ''}';
-    _reports[guestKey] = (DateTime.now(), showcase.view);
-    showcase.pages.forEach((id, page) => _datasets[_datasetKey('guest', project, report, id, lang, showcaseRows, 0, const {})] = page);
+    final now = DateTime.now();
+    _reports[guestKey] = (now, showcase.view);
+    showcase.pages.forEach((id, page) => _datasets[_datasetKey('guest', project, report, id, lang, showcaseRows, 0, const {})] = (now, page));
     return showcase.view;
   }
 
@@ -55,17 +56,17 @@ class ReportService {
 
   /// [filters] holds query parameters such as `f.provider` or `f.day.from`.
   Future<DatasetPage> dataset(String project, String report, String datasetId,
-      {required String lang, Map<String, String> filters = const {}, int limit = 500, int offset = 0}) async {
+      {required String lang, Map<String, String> filters = const {}, int limit = 500, int offset = 0, bool forceRefresh = false}) async {
     final mode = _mode;
     final key = _datasetKey(mode, project, report, datasetId, lang, limit, offset, filters);
     final hit = _datasets[key];
-    if (hit != null) return hit;
+    if (!forceRefresh && hit != null && DateTime.now().difference(hit.$1) < ttl) return hit.$2;
     // A guest first page that the showcase already sent.
     if (mode == 'guest' && offset == 0 && filters.isEmpty && limit <= showcaseRows) {
       final inline = _datasets[_datasetKey('guest', project, report, datasetId, lang, showcaseRows, 0, const {})];
-      if (inline != null && (inline.rows.length < showcaseRows || limit == showcaseRows)) {
-        final page = DatasetPage(descriptor: inline.descriptor, rows: inline.rows.take(limit).toList(), offset: 0, limit: limit, totalRows: inline.totalRows, lineage: inline.lineage);
-        _datasets[key] = page;
+      if (inline != null && (!forceRefresh && DateTime.now().difference(inline.$1) < ttl) && (inline.$2.rows.length < showcaseRows || limit == showcaseRows)) {
+        final page = DatasetPage(descriptor: inline.$2.descriptor, rows: inline.$2.rows.take(limit).toList(), offset: 0, limit: limit, totalRows: inline.$2.totalRows, lineage: inline.$2.lineage);
+        _datasets[key] = (DateTime.now(), page);
         return page;
       }
     }
@@ -74,7 +75,7 @@ class ReportService {
     if (!publicOnly && session.hasSession) {
       try {
         final page = DatasetPage.fromJson(await api.getJson('/projects/$project/reports/$report/datasets/$datasetId', query));
-        _datasets[key] = page;
+        _datasets[key] = (DateTime.now(), page);
         return page;
       } on ApiException catch (e) {
         if (!e.needsLogin) rethrow;
@@ -82,19 +83,19 @@ class ReportService {
       }
     }
     final page = DatasetPage.fromJson(await api.getJson('/projects/$project/showcase/$report/cards/$datasetId', query));
-    _datasets[_datasetKey('guest', project, report, datasetId, lang, limit, offset, filters)] = page;
+    _datasets[_datasetKey('guest', project, report, datasetId, lang, limit, offset, filters)] = (DateTime.now(), page);
     return page;
   }
 
   /// All rows of a dataset (up to [maxRows]) through `limit` and `offset` pages.
   Future<DatasetPage> allRows(String project, String report, String datasetId,
-      {required String lang, Map<String, String> filters = const {}, int pageSize = 1000, int maxRows = 5000}) async {
-    final first = await dataset(project, report, datasetId, lang: lang, filters: filters, limit: pageSize);
+      {required String lang, Map<String, String> filters = const {}, int pageSize = 1000, int maxRows = 5000, bool forceRefresh = false}) async {
+    final first = await dataset(project, report, datasetId, lang: lang, filters: filters, limit: pageSize, forceRefresh: forceRefresh);
     final rows = [...first.rows];
     final target = first.totalRows < maxRows ? first.totalRows : maxRows;
     var offset = first.rows.length;
     while (rows.length < target && offset < target) {
-      final next = await dataset(project, report, datasetId, lang: lang, filters: filters, limit: pageSize, offset: offset);
+      final next = await dataset(project, report, datasetId, lang: lang, filters: filters, limit: pageSize, offset: offset, forceRefresh: forceRefresh);
       if (next.rows.isEmpty) break;
       rows.addAll(next.rows);
       offset += next.rows.length;
@@ -103,6 +104,20 @@ class ReportService {
   }
 
   int get cachedDatasets => _datasets.length;
+
+  void invalidate(String project, [String? report, String? datasetId]) {
+    final reportPart = report != null ? '/$report/' : '/';
+    _reports.removeWhere((k, _) => k.contains('/$project$reportPart'));
+    if (datasetId != null) {
+      _datasets.removeWhere((k, _) => k.contains('/$project$reportPart$datasetId/'));
+    } else {
+      _datasets.removeWhere((k, _) => k.contains('/$project$reportPart'));
+    }
+  }
+
+  void invalidateReport(String project, String report) => invalidate(project, report);
+
+  void invalidateDataset(String project, String report, String datasetId) => invalidate(project, report, datasetId);
 
   void clear() {
     _reports.clear();
