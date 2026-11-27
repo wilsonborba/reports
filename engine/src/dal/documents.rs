@@ -6,7 +6,7 @@
 //! indexes; the engine only checks that the database exists.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,6 +14,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use tokio::sync::Notify;
 
 use crate::core::error::ReportError;
 
@@ -448,9 +449,20 @@ pub struct MemoryDocuments {
     snapshots: RwLock<Vec<Value>>,
     /// When true, every call fails like an unreachable CouchDB.
     pub offline: std::sync::atomic::AtomicBool,
+    gate: RwLock<Option<(Arc<Notify>, Arc<Notify>)>>,
 }
 
 impl MemoryDocuments {
+    pub fn set_insert_gate(&self, enter: Arc<Notify>, release: Arc<Notify>) {
+        let mut g = self.gate.write().unwrap();
+        *g = Some((enter, release));
+    }
+
+    pub fn clear_insert_gate(&self) {
+        let mut g = self.gate.write().unwrap();
+        *g = None;
+    }
+
     fn ensure_online(&self) -> Result<(), ReportError> {
         if self.offline.load(std::sync::atomic::Ordering::SeqCst) {
             Err(ReportError::Unavailable(
@@ -474,6 +486,14 @@ impl MemoryDocuments {
 impl DocumentStore for MemoryDocuments {
     async fn insert_records(&self, records: &[RecordDoc]) -> Result<InsertOutcome, ReportError> {
         self.ensure_online()?;
+        let gate = {
+            let g = self.gate.read().unwrap();
+            g.clone()
+        };
+        if let Some((enter, release)) = gate {
+            enter.notify_one();
+            release.notified().await;
+        }
         let mut docs = self.docs.write().unwrap();
         let mut outcome = InsertOutcome::default();
         for r in records {

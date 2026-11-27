@@ -982,9 +982,11 @@ pub async fn patch_item(
 
     let mut new_doc_id = None;
     let mut visual_binding = None;
+    let mut new_calculation_data = None;
     if input.config.is_some() || input.mapping.is_some() {
-        let mapping = input.mapping.unwrap_or(detail.mapping);
-        let config = input.config.unwrap_or(detail.config);
+        let mapping_changed = input.mapping.is_some();
+        let mapping = input.mapping.unwrap_or_else(|| detail.mapping.clone());
+        let config = input.config.unwrap_or_else(|| detail.config.clone());
         let (max_bytes, max_records) = upload_limits(stores).await;
         validate_mapping_and_rows(&mapping, &detail.rows, max_bytes, max_records)?;
 
@@ -1025,7 +1027,31 @@ pub async fn patch_item(
             }),
         );
         let doc_id = rec.id.clone();
-        stores.docs.insert_records(&[rec]).await?;
+        let mut docs_to_insert = vec![rec];
+
+        if mapping_changed {
+            let row_schema = format!("owner-rows-{item_id}-{prep_token}");
+            let row_docs: Vec<RecordDoc> = detail
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(idx, row)| {
+                    RecordDoc::new(
+                        &detail.item.project,
+                        &row_schema,
+                        1,
+                        &format!("owner-row:{item_id}:{prep_token}:{idx}"),
+                        None,
+                        None,
+                        row.clone(),
+                    )
+                })
+                .collect();
+            docs_to_insert.extend(row_docs);
+            new_calculation_data = Some((mapping, row_schema));
+        }
+
+        stores.docs.insert_records(&docs_to_insert).await?;
         new_doc_id = Some(doc_id);
         visual_binding = Some(binding);
     }
@@ -1063,6 +1089,70 @@ pub async fn patch_item(
         ));
     }
 
+    if let Some((mapping, row_schema)) = new_calculation_data {
+        let calc_id = format!("owner-calc-{item_id}");
+        let prev_ver: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(version), 0) FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2",
+        )
+        .bind(&detail.item.project)
+        .bind(&calc_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let version = prev_ver + 1;
+
+        let spec = DatasetSpec {
+            title: I18nText::from([("en".into(), detail.item.report_slug.clone())]),
+            source: Some(row_schema.clone()),
+            fields: owner_fields(&mapping, &detail.rows),
+            ..Default::default()
+        };
+        let calc = CalculationVersion {
+            project: detail.item.project.clone(),
+            calculation_id: calc_id.clone(),
+            version,
+            status: "draft".to_string(),
+            input_schema: Some(row_schema.clone()),
+            input_schema_version: Some(1),
+            inputs: vec![InputRef {
+                schema: row_schema,
+                version: 1,
+            }],
+            definition: spec.clone(),
+            needs_review: false,
+            created_at: String::new(),
+            published_at: None,
+        };
+        calculations::save_draft_tx(&stores.db, &mut tx, &calc).await?;
+        calculations::publish_tx(&stores.db, &mut tx, &calc).await?;
+
+        let dataset_rec = DatasetRecord {
+            project: detail.item.project.clone(),
+            report_slug: detail.item.report_slug.clone(),
+            dataset_id: detail.item.dataset_id.clone(),
+            data_tier: DataTier::Real,
+            calculation_id: calc_id,
+            calculation_version: version,
+            spec,
+            visibility: new_audience.to_visibility().as_str().to_string(),
+            discoverable: false,
+            source_app: detail.item.source_app.clone(),
+            owner_id: caller.to_string(),
+            control_authority: ControlAuthority::UserOwned.as_str().to_string(),
+            audience: new_audience.as_str().to_string(),
+        };
+        catalog::upsert_dataset_tx(&mut tx, &dataset_rec).await?;
+    } else {
+        sqlx::query(
+            "UPDATE datasets SET visibility = $1, audience = $2 WHERE project_slug = $3 AND report_slug = $4",
+        )
+        .bind(new_audience.to_visibility().as_str())
+        .bind(new_audience.as_str())
+        .bind(&detail.item.project)
+        .bind(&detail.item.report_slug)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     if let Some(ref binding) = visual_binding {
         templates::bind_card_visual_tx(
             &mut tx,
@@ -1076,16 +1166,6 @@ pub async fn patch_item(
 
     sqlx::query(
         "UPDATE reports SET visibility = $1, audience = $2 WHERE project_slug = $3 AND slug = $4",
-    )
-    .bind(new_audience.to_visibility().as_str())
-    .bind(new_audience.as_str())
-    .bind(&detail.item.project)
-    .bind(&detail.item.report_slug)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        "UPDATE datasets SET visibility = $1, audience = $2 WHERE project_slug = $3 AND report_slug = $4",
     )
     .bind(new_audience.to_visibility().as_str())
     .bind(new_audience.as_str())

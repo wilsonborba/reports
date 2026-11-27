@@ -1,10 +1,50 @@
 mod common;
 
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use common::*;
 use serde_json::{json, Value};
+use tokio::sync::Notify;
+use tower::ServiceExt;
+
+async fn call_app(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    user: Option<&str>,
+    headers: &[(&str, &str)],
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder().method(method).uri(uri);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    if let Some(u) = user {
+        req = req.header("x-uuid", u);
+    }
+    let req = match body {
+        Some(b) => req
+            .header("content-type", "application/json")
+            .body(Body::from(b.to_string()))
+            .unwrap(),
+        None => req.body(Body::empty()).unwrap(),
+    };
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes)
+            .unwrap_or(Value::String(String::from_utf8_lossy(&bytes).into()))
+    };
+    (status, value)
+}
 
 async fn call_with_headers(
     t: &TestApp,
@@ -14,12 +54,7 @@ async fn call_with_headers(
     headers: &[(&str, &str)],
     body: Option<Value>,
 ) -> (StatusCode, Value) {
-    let mut hdrs: Vec<(&str, &str)> = headers.to_vec();
-    if let Some(u) = user {
-        hdrs.push(("x-uuid", u));
-    }
-    let (status, val, _) = t.call(method, uri, &hdrs, body).await;
-    (status, val)
+    call_app(&t.app, method, uri, user, headers, body).await
 }
 
 const USER_1: &str = "11111111-1111-4111-8111-111111111111";
@@ -892,7 +927,36 @@ async fn owner_api_p1_interleaved_replace_vs_replace_atomic_cas_winner_takes_all
     let report_slug = created["item"]["report_slug"].as_str().unwrap();
     let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
 
-    // Client A (winner) replaces dataset with If-Match initial_etag
+    // Install gate on Docs double to hold Request B inside insert_records
+    // (after it loaded initial detail and observed initial_etag, but before opening tx).
+    let enter = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    t.docs.set_insert_gate(enter.clone(), release.clone());
+
+    let app_b = t.app.clone();
+    let item_b = item_id.to_string();
+    let etag_b = initial_etag.clone();
+    let loser_handle = tokio::spawn(async move {
+        call_app(
+            &app_b,
+            "PUT",
+            &format!("/me/items/{item_b}/dataset"),
+            Some(USER_1),
+            &[("if-match", &etag_b)],
+            Some(json!({
+                "mapping": { "category": "x", "value": "y" },
+                "rows": [{ "x": "Loser", "y": 999 }]
+            })),
+        )
+        .await
+    });
+
+    // Wait until Request B has loaded initial_etag, reached Docs double, and paused.
+    enter.notified().await;
+    // Clear gate so winner Request A proceeds without pause.
+    t.docs.clear_insert_gate();
+
+    // Client A (winner) executes synchronously with initial_etag and commits.
     let (st_a, winner_detail) = call_with_headers(
         &t,
         "PUT",
@@ -906,22 +970,12 @@ async fn owner_api_p1_interleaved_replace_vs_replace_atomic_cas_winner_takes_all
     )
     .await;
     assert_eq!(st_a, StatusCode::OK);
-    let winner_etag = winner_detail["item"]["etag"].as_str().unwrap();
+    let winner_etag = winner_detail["item"]["etag"].as_str().unwrap().to_string();
     assert_ne!(winner_etag, initial_etag);
 
-    // Client B (loser) attempts replace using the now-stale initial_etag
-    let (st_b, _) = call_with_headers(
-        &t,
-        "PUT",
-        &format!("/me/items/{item_id}/dataset"),
-        Some(USER_1),
-        &[("if-match", &initial_etag)],
-        Some(json!({
-            "mapping": { "category": "x", "value": "y" },
-            "rows": [{ "x": "Loser", "y": 999 }]
-        })),
-    )
-    .await;
+    // Release Request B so its insert_records finishes and it proceeds to its CAS update.
+    release.notify_one();
+    let (st_b, _) = loser_handle.await.unwrap();
     assert_eq!(st_b, StatusCode::CONFLICT);
 
     // Owner detail MUST match Winner completely
@@ -1005,6 +1059,34 @@ async fn owner_api_p1_interleaved_patch_vs_replace_atomic_cas_winner_takes_all()
     let report_slug = created["item"]["report_slug"].as_str().unwrap();
     let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
 
+    // Install gate on Docs double to hold Request B (replace) inside insert_records
+    // (after it loaded initial detail and observed initial_etag, but before opening tx).
+    let enter = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    t.docs.set_insert_gate(enter.clone(), release.clone());
+
+    let app_b = t.app.clone();
+    let item_b = item_id.to_string();
+    let etag_b = initial_etag.clone();
+    let loser_handle = tokio::spawn(async move {
+        call_app(
+            &app_b,
+            "PUT",
+            &format!("/me/items/{item_b}/dataset"),
+            Some(USER_1),
+            &[("if-match", &etag_b)],
+            Some(json!({
+                "mapping": { "category": "x", "value": "y" },
+                "rows": [{ "x": "Loser", "y": 999 }]
+            })),
+        )
+        .await
+    });
+
+    // Wait until Request B reaches Docs double and pauses.
+    enter.notified().await;
+    t.docs.clear_insert_gate();
+
     // Client A (winner) patches audience to "asodya" and config legend to false
     let (st_patch, patch_detail) = call_with_headers(
         &t,
@@ -1019,22 +1101,12 @@ async fn owner_api_p1_interleaved_patch_vs_replace_atomic_cas_winner_takes_all()
     )
     .await;
     assert_eq!(st_patch, StatusCode::OK);
-    let patch_etag = patch_detail["item"]["etag"].as_str().unwrap();
+    let patch_etag = patch_detail["item"]["etag"].as_str().unwrap().to_string();
     assert_ne!(patch_etag, initial_etag);
 
-    // Client B (loser) attempts replace using stale initial_etag
-    let (st_replace, _) = call_with_headers(
-        &t,
-        "PUT",
-        &format!("/me/items/{item_id}/dataset"),
-        Some(USER_1),
-        &[("if-match", &initial_etag)],
-        Some(json!({
-            "mapping": { "category": "x", "value": "y" },
-            "rows": [{ "x": "Loser", "y": 999 }]
-        })),
-    )
-    .await;
+    // Release Request B so it proceeds to its CAS update with stale initial_etag
+    release.notify_one();
+    let (st_replace, _) = loser_handle.await.unwrap();
     assert_eq!(st_replace, StatusCode::CONFLICT);
 
     // Owner detail MUST match Winner patch state
@@ -1090,6 +1162,131 @@ async fn owner_api_p1_interleaved_patch_vs_replace_atomic_cas_winner_takes_all()
     .unwrap();
     assert_eq!(rep_aud, "asodya");
     assert_eq!(rep_vis, "signed_in");
+}
+
+#[tokio::test]
+async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_rows() {
+    let t = TestApp::new().await;
+    t.seed_cortex().await;
+    t.seed_bar_v1().await;
+
+    // Create item with initial rows containing x, y, and previously-unmapped numeric column z
+    let (st, created) = call_with_headers(
+        &t,
+        "POST",
+        "/me/projects/cortex/items",
+        Some(USER_1),
+        &[],
+        Some(json!({
+            "template_id": "bar-v1",
+            "template_version": 1,
+            "mapping": { "category": "x", "value": "y" },
+            "rows": [{ "x": "ItemA", "y": 10, "z": 20 }]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let item_id = created["item"]["id"].as_str().unwrap();
+    let initial_etag = created["item"]["etag"].as_str().unwrap().to_string();
+    let report_slug = created["item"]["report_slug"].as_str().unwrap();
+    let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
+
+    // Dataset initially has calculation_version 1, spec fields for x and y only, and rows for x and y
+    let (st_ds1, ds1) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds1, StatusCode::OK);
+    assert_eq!(ds1["lineage"]["calculation_version"], 1);
+    let fields1 = ds1["fields"].as_array().unwrap();
+    let field_names1: Vec<&str> = fields1
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert!(field_names1.contains(&"x"));
+    assert!(field_names1.contains(&"y"));
+    assert!(!field_names1.contains(&"z"));
+    assert_eq!(ds1["rows"], json!([{ "x": "ItemA", "y": 10 }]));
+    assert_eq!(ds1["visual"]["mapping"]["value"], json!(["y"]));
+
+    // PATCH mapping: remap value to previously-unmapped numeric column z
+    let (st_patch, patch_res) = call_with_headers(
+        &t,
+        "PATCH",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[("if-match", &initial_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "z" }
+        })),
+    )
+    .await;
+    assert_eq!(st_patch, StatusCode::OK);
+    let patch_etag = patch_res["item"]["etag"].as_str().unwrap();
+    assert_ne!(patch_etag, initial_etag);
+
+    // Owner detail reflects new mapping
+    let (st_item, item_after) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/me/items/{item_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_item, StatusCode::OK);
+    assert_eq!(item_after["mapping"]["value"], "z");
+    assert_eq!(item_after["item"]["etag"], patch_etag);
+
+    // Dataset reflects calculation_version 2, updated spec fields (including z), projected rows (including z), and visual binding
+    let (st_ds2, ds2) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds2, StatusCode::OK);
+    assert_eq!(ds2["lineage"]["calculation_version"], 2);
+    let fields2 = ds2["fields"].as_array().unwrap();
+    let field_names2: Vec<&str> = fields2
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    assert!(field_names2.contains(&"x"));
+    assert!(field_names2.contains(&"z"));
+    assert!(!field_names2.contains(&"y"));
+    assert_eq!(ds2["rows"], json!([{ "x": "ItemA", "z": 20 }]));
+    assert_eq!(ds2["visual"]["mapping"]["value"], json!(["z"]));
+
+    // Verify calculation_versions in SQL has 2 versions
+    let calc_id = format!("owner-calc-{item_id}");
+    let calc_versions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM calculation_versions WHERE project_slug = 'cortex' AND calculation_id = $1",
+    )
+    .bind(&calc_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(calc_versions, 2);
+
+    let ds_calc_ver: i64 = sqlx::query_scalar(
+        "SELECT calculation_version FROM datasets WHERE project_slug = 'cortex' AND report_slug = $1 AND dataset_id = $2",
+    )
+    .bind(report_slug)
+    .bind(dataset_id)
+    .fetch_one(&t.state.stores.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(ds_calc_ver, 2);
 }
 
 #[tokio::test]
