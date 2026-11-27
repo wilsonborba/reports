@@ -508,6 +508,7 @@ void main() {
       ],
       'filters': <Object?>[],
     };
+    final enteredACompleter = Completer<void>();
     final lateACompleter = Completer<http.Response>();
     final client = MockClient((request) async {
       var path = request.url.path;
@@ -577,6 +578,9 @@ void main() {
       }
       if (path == '/projects/cortex/reports/private/datasets/secret') {
         if (SessionStore.instance.hasSession) {
+          if (!enteredACompleter.isCompleted) {
+            enteredACompleter.complete();
+          }
           // Delay initial user A response
           return await lateACompleter.future;
         }
@@ -622,10 +626,11 @@ void main() {
             initialLocation: '/v1/menu/cortex/private/secret?view=table',
           ),
         );
-        await tester.pump();
-        await tester.pump();
+        // Wait deterministically until User A request actually enters the held dataset route
+        await enteredACompleter.future;
+        expect(enteredACompleter.isCompleted, isTrue);
 
-        // Session expires while user A's dataset response is still in-flight
+        // Session expires while user A's dataset response is confirmed in-flight
         session.markExpired();
         await tester.pump();
 

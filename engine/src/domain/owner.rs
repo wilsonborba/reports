@@ -861,6 +861,17 @@ pub async fn replace_dataset(
         stores.docs.insert_records(&row_docs).await?;
     }
 
+    let existing_ds = catalog::get_dataset(
+        &stores.db,
+        &detail.item.project,
+        &detail.item.report_slug,
+        &detail.item.dataset_id,
+    )
+    .await?;
+    let spec_title = existing_ds
+        .map(|d| d.spec.title)
+        .unwrap_or_else(|| I18nText::from([("en".into(), detail.item.report_slug.clone())]));
+
     let owner_id = require_owner_user(scope)?.to_string();
     let audience = Audience::parse(&detail.item.audience);
 
@@ -892,7 +903,7 @@ pub async fn replace_dataset(
     let version = prev_ver + 1;
 
     let spec = DatasetSpec {
-        title: I18nText::from([("en".into(), detail.item.report_slug.clone())]),
+        title: spec_title,
         source: Some(row_schema.clone()),
         fields: owner_fields(&mapping, &input.rows),
         ..Default::default()
@@ -1048,7 +1059,19 @@ pub async fn patch_item(
                 })
                 .collect();
             docs_to_insert.extend(row_docs);
-            new_calculation_data = Some((mapping, row_schema));
+
+            let existing_ds = catalog::get_dataset(
+                &stores.db,
+                &detail.item.project,
+                &detail.item.report_slug,
+                &detail.item.dataset_id,
+            )
+            .await?;
+            let spec_title = existing_ds.map(|d| d.spec.title).unwrap_or_else(|| {
+                I18nText::from([("en".into(), detail.item.report_slug.clone())])
+            });
+
+            new_calculation_data = Some((mapping, row_schema, spec_title));
         }
 
         stores.docs.insert_records(&docs_to_insert).await?;
@@ -1089,7 +1112,7 @@ pub async fn patch_item(
         ));
     }
 
-    if let Some((mapping, row_schema)) = new_calculation_data {
+    if let Some((mapping, row_schema, spec_title)) = new_calculation_data {
         let calc_id = format!("owner-calc-{item_id}");
         let prev_ver: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(version), 0) FROM calculation_versions WHERE project_slug = $1 AND calculation_id = $2",
@@ -1101,7 +1124,7 @@ pub async fn patch_item(
         let version = prev_ver + 1;
 
         let spec = DatasetSpec {
-            title: I18nText::from([("en".into(), detail.item.report_slug.clone())]),
+            title: spec_title,
             source: Some(row_schema.clone()),
             fields: owner_fields(&mapping, &detail.rows),
             ..Default::default()

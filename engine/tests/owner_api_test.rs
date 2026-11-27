@@ -1170,7 +1170,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     t.seed_cortex().await;
     t.seed_bar_v1().await;
 
-    // Create item with initial rows containing x, y, and previously-unmapped numeric column z
+    // Create item with initial rows containing x, y, and previously-unmapped numeric column z, with a custom title
     let (st, created) = call_with_headers(
         &t,
         "POST",
@@ -1178,6 +1178,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
         Some(USER_1),
         &[],
         Some(json!({
+            "title": "Monthly sales",
             "template_id": "bar-v1",
             "template_version": 1,
             "mapping": { "category": "x", "value": "y" },
@@ -1191,7 +1192,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     let report_slug = created["item"]["report_slug"].as_str().unwrap();
     let dataset_id = created["item"]["dataset_id"].as_str().unwrap();
 
-    // Dataset initially has calculation_version 1, spec fields for x and y only, and rows for x and y
+    // Dataset initially has calculation_version 1, spec fields for x and y only, rows for x and y, and custom title preserved
     let (st_ds1, ds1) = call_with_headers(
         &t,
         "GET",
@@ -1203,6 +1204,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     .await;
     assert_eq!(st_ds1, StatusCode::OK);
     assert_eq!(ds1["lineage"]["calculation_version"], 1);
+    assert_eq!(ds1["title"], "Monthly sales");
     let fields1 = ds1["fields"].as_array().unwrap();
     let field_names1: Vec<&str> = fields1
         .iter()
@@ -1244,7 +1246,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     assert_eq!(item_after["mapping"]["value"], "z");
     assert_eq!(item_after["item"]["etag"], patch_etag);
 
-    // Dataset reflects calculation_version 2, updated spec fields (including z), projected rows (including z), and visual binding
+    // Dataset reflects calculation_version 2, updated spec fields (including z), projected rows (including z), visual binding, and preserved custom title
     let (st_ds2, ds2) = call_with_headers(
         &t,
         "GET",
@@ -1256,6 +1258,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     .await;
     assert_eq!(st_ds2, StatusCode::OK);
     assert_eq!(ds2["lineage"]["calculation_version"], 2);
+    assert_eq!(ds2["title"], "Monthly sales");
     let fields2 = ds2["fields"].as_array().unwrap();
     let field_names2: Vec<&str> = fields2
         .iter()
@@ -1267,7 +1270,37 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     assert_eq!(ds2["rows"], json!([{ "x": "ItemA", "z": 20 }]));
     assert_eq!(ds2["visual"]["mapping"]["value"], json!(["z"]));
 
-    // Verify calculation_versions in SQL has 2 versions
+    // Dataset replace: replace rows and verify custom title remains preserved
+    let (st_put, put_res) = call_with_headers(
+        &t,
+        "PUT",
+        &format!("/me/items/{item_id}/dataset"),
+        Some(USER_1),
+        &[("if-match", patch_etag)],
+        Some(json!({
+            "mapping": { "category": "x", "value": "z" },
+            "rows": [{ "x": "ItemB", "z": 50 }]
+        })),
+    )
+    .await;
+    assert_eq!(st_put, StatusCode::OK);
+    let _put_etag = put_res["item"]["etag"].as_str().unwrap();
+
+    let (st_ds3, ds3) = call_with_headers(
+        &t,
+        "GET",
+        &format!("/projects/cortex/reports/{report_slug}/datasets/{dataset_id}"),
+        Some(USER_1),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(st_ds3, StatusCode::OK);
+    assert_eq!(ds3["lineage"]["calculation_version"], 3);
+    assert_eq!(ds3["title"], "Monthly sales");
+    assert_eq!(ds3["rows"], json!([{ "x": "ItemB", "z": 50 }]));
+
+    // Verify calculation_versions in SQL has 3 versions
     let calc_id = format!("owner-calc-{item_id}");
     let calc_versions: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM calculation_versions WHERE project_slug = 'cortex' AND calculation_id = $1",
@@ -1276,7 +1309,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     .fetch_one(&t.state.stores.db.pool)
     .await
     .unwrap();
-    assert_eq!(calc_versions, 2);
+    assert_eq!(calc_versions, 3);
 
     let ds_calc_ver: i64 = sqlx::query_scalar(
         "SELECT calculation_version FROM datasets WHERE project_slug = 'cortex' AND report_slug = $1 AND dataset_id = $2",
@@ -1286,7 +1319,7 @@ async fn owner_api_p1_patch_mapping_remap_updates_dataset_fields_version_and_row
     .fetch_one(&t.state.stores.db.pool)
     .await
     .unwrap();
-    assert_eq!(ds_calc_ver, 2);
+    assert_eq!(ds_calc_ver, 3);
 }
 
 #[tokio::test]
