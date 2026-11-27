@@ -80,7 +80,15 @@ class CsvExport {
       progress(ExportProgress(t('export_loading', {'i': i + 1, 'n': cards.length}), done: i, total: cards.length));
       final page = await load(card);
       final rows = page.rows.length > maxRows ? page.rows.sublist(0, maxRows) : page.rows;
-      final limited = DatasetPage(descriptor: page.descriptor, rows: rows, offset: 0, limit: rows.length, totalRows: page.totalRows);
+      final limited = DatasetPage(
+        descriptor: page.descriptor,
+        rows: rows,
+        offset: 0,
+        limit: rows.length,
+        totalRows: page.totalRows,
+        lineage: page.lineage,
+        visual: page.visual,
+      );
       final name = fileName(i, card);
       archive.addFile(ArchiveFile.bytes(name, encode(table(limited))));
       index

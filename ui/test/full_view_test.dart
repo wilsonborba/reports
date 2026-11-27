@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reports_ui/main.dart';
+import 'package:reports_ui/services/report_service.dart';
 import 'package:reports_ui/widgets/charts/visual_chooser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/fake_api.dart';
@@ -107,5 +108,46 @@ void main() {
     // Every row is in the chart.
     await tester.scrollUntilVisible(find.text('Provider 1200'), 400, scrollable: find.byType(Scrollable).first);
     expect(find.text('Provider 1200'), findsOneWidget);
+  });
+
+  test('allRows preserves bound visual template through paging and keeps legacy visual null', () async {
+    final fake = FakeApi();
+    final ranking = {
+      'dataset_id': 'providers',
+      'title': 'Provider Ranking',
+      'description': 'Tokens per provider',
+      'equation': null,
+      'fields': [
+        {'name': 'provider', 'label': 'Provider', 'type': 'string', 'role': 'dimension'},
+        {'name': 'volume', 'label': 'Volume', 'type': 'integer', 'role': 'measure'},
+      ],
+      'filters': [],
+    };
+    fake.routes['/projects/cortex/reports/big/datasets/bound'] = (q) => {
+      ...ranking,
+      'rows': [{'provider': 'Provider 1', 'volume': 100}],
+      'offset': 0, 'limit': 500, 'total_rows': 1, 'applied_filters': {},
+      'visual': {
+        'template': 'bar-v1',
+        'version': 1,
+        'mapping': {'category': ['provider'], 'value': ['volume']},
+        'options': {'sort': 'desc'},
+      },
+    };
+    fake.routes['/projects/cortex/reports/big/datasets/legacy'] = (q) => {
+      ...ranking,
+      'rows': [{'provider': 'Provider 1', 'volume': 100}],
+      'offset': 0, 'limit': 500, 'total_rows': 1, 'applied_filters': {},
+      'visual': null,
+    };
+    final service = ReportService(fake.apiClient);
+    final boundPage = await service.allRows('cortex', 'big', 'bound', lang: 'en');
+    expect(boundPage.visual, isNotNull);
+    expect(boundPage.visual!.template, 'bar-v1');
+    expect(boundPage.visual!.version, 1);
+    expect(boundPage.visual!.mapping['category'], ['provider']);
+
+    final legacyPage = await service.allRows('cortex', 'big', 'legacy', lang: 'en');
+    expect(legacyPage.visual, isNull);
   });
 }

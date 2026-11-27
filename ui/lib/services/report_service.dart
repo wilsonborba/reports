@@ -64,7 +64,15 @@ class ReportService {
     if (mode == 'guest' && offset == 0 && filters.isEmpty && limit <= showcaseRows) {
       final inline = _datasets[_datasetKey('guest', project, report, datasetId, lang, showcaseRows, 0, const {})];
       if (inline != null && (inline.rows.length < showcaseRows || limit == showcaseRows)) {
-        final page = DatasetPage(descriptor: inline.descriptor, rows: inline.rows.take(limit).toList(), offset: 0, limit: limit, totalRows: inline.totalRows, lineage: inline.lineage);
+        final page = DatasetPage(
+          descriptor: inline.descriptor,
+          rows: inline.rows.take(limit).toList(),
+          offset: 0,
+          limit: limit,
+          totalRows: inline.totalRows,
+          lineage: inline.lineage,
+          visual: inline.visual,
+        );
         _datasets[key] = page;
         return page;
       }
@@ -99,7 +107,15 @@ class ReportService {
       rows.addAll(next.rows);
       offset += next.rows.length;
     }
-    return DatasetPage(descriptor: first.descriptor, rows: rows.take(target).toList(), offset: 0, limit: target, totalRows: first.totalRows, lineage: first.lineage);
+    return DatasetPage(
+      descriptor: first.descriptor,
+      rows: rows.take(target).toList(),
+      offset: 0,
+      limit: target,
+      totalRows: first.totalRows,
+      lineage: first.lineage,
+      visual: first.visual,
+    );
   }
 
   int get cachedDatasets => _datasets.length;
