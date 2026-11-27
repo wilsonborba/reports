@@ -343,6 +343,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
       }
       return (page, companions);
     });
+    _rows!.ignore();
   }
 
   /// This chart with the given state (the URL holds the whole state).
@@ -362,6 +363,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
     _load(widget.language ?? context.langCode);
     final p = context.palette;
     return FutureBuilder<ReportView>(
+      key: ValueKey('full_view_report_$_loadGeneration'),
       future: _view,
       builder: (context, vs) {
         if (vs.hasError) {
@@ -413,6 +415,7 @@ class _DatasetFullViewState extends State<DatasetFullView> {
             ),
             if (!widget.compact) const SizedBox(height: 18),
             FutureBuilder<(DatasetPage, Map<String, DatasetPage>)>(
+              key: ValueKey('full_view_rows_$_loadGeneration'),
               future: _rows,
               builder: (context, rs) {
                 if (rs.hasData) _last = rs.data;

@@ -147,6 +147,7 @@ class _ReportPageViewState extends State<ReportPageView> {
     _load(context.langCode);
     final p = context.palette;
     return FutureBuilder<ReportView>(
+      key: ValueKey('report_page_$_loadGeneration'),
       future: _future,
       builder: (context, snap) {
         if (snap.hasError) {

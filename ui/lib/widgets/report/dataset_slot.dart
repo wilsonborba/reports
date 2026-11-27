@@ -521,6 +521,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
           )
         : null;
     return FutureBuilder<SlotData>(
+      key: ValueKey('slot_future_$_loadGeneration'),
       future: _future,
       builder: (context, snap) {
         if (snap.hasData) _last = snap.data;

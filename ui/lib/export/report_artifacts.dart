@@ -60,43 +60,44 @@ class ReportArtifacts {
       projectInfo: info,
       sectionName: (i) => names[i] ?? SectionPills.labelWith(t, i),
     );
-    switch (format) {
-      case ArtifactFormat.csv:
-        return CsvExport.build(plan,
-            load: (c) async {
-              checkScope();
-              final p = await service.allRows(project, report, c.slot.datasetId, lang: lang, filters: c.filters, maxRows: CsvExport.maxRows);
-              checkScope();
-              return p;
-            },
-            progress: progress,
-            t: t);
-      case ArtifactFormat.md:
-        return MarkdownExport.build(plan,
-            load: (c) async {
-              checkScope();
-              final p = await service.dataset(project, report, c.slot.datasetId, lang: lang, filters: c.filters, limit: cardRows);
-              checkScope();
-              return p;
-            }, progress: progress, t: t);
-      case ArtifactFormat.pdf:
-        _fonts ??= await PdfFonts.load(rootBundle.load);
-        return PdfExport.build(
-          plan,
+    final file = await switch (format) {
+      ArtifactFormat.csv => CsvExport.build(plan,
+          load: (c) async {
+            checkScope();
+            final p = await service.allRows(project, report, c.slot.datasetId, lang: lang, filters: c.filters, maxRows: CsvExport.maxRows);
+            checkScope();
+            return p;
+          },
+          progress: progress,
+          t: t),
+      ArtifactFormat.md => MarkdownExport.build(plan,
           load: (c) async {
             checkScope();
             final p = await service.dataset(project, report, c.slot.datasetId, lang: lang, filters: c.filters, limit: cardRows);
             checkScope();
             return p;
-          },
-          progress: progress,
-          t: t,
-          fonts: _fonts!,
-          palette: ThemeRegistry.palette(project, Brightness.light),
-          renderText: renderTextImage,
-          logo: await _logo(info),
-        );
-    }
+          }, progress: progress, t: t),
+      ArtifactFormat.pdf => () async {
+          _fonts ??= await PdfFonts.load(rootBundle.load);
+          return PdfExport.build(
+            plan,
+            load: (c) async {
+              checkScope();
+              final p = await service.dataset(project, report, c.slot.datasetId, lang: lang, filters: c.filters, limit: cardRows);
+              checkScope();
+              return p;
+            },
+            progress: progress,
+            t: t,
+            fonts: _fonts!,
+            palette: ThemeRegistry.palette(project, Brightness.light),
+            renderText: renderTextImage,
+            logo: await _logo(info),
+          );
+        }(),
+    };
+    checkScope();
+    return file;
   }
 
   /// Light logo (or icon) of the project from the asset API; null when it does not load.

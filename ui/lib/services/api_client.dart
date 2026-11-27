@@ -195,7 +195,9 @@ class ApiClient {
     final body = utf8.decode(res.bodyBytes);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       final error = ApiException(res.statusCode, body);
-      if (res.statusCode != 401 && res.statusCode != 403 && res.statusCode != 404) {
+      if (res.statusCode != 401 &&
+          res.statusCode != 403 &&
+          !(res.statusCode == 404 && path.contains('/showcase/'))) {
         ClientTelemetryService.instance.reportServiceFailure(
           service: service,
           method: method,

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../services/session_store.dart';
 import 'export_plan.dart';
 
 enum ArtifactFormat { pdf, md, csv }
@@ -40,12 +41,20 @@ class ArtifactJobs extends ChangeNotifier {
   /// Starts an export; a running export of the same format is not started twice.
   Future<void> start(ArtifactFormat f, {required String preparing}) async {
     if (job(f).state == ArtifactState.running) return;
+    final startScope = SessionStore.instance.hasSession
+        ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+        : '__guest__';
     _set(f, ArtifactJob(ArtifactState.running, progress: ExportProgress(preparing)));
     try {
       final file = await runner(f, (p) => _set(f, ArtifactJob(ArtifactState.running, progress: p)));
+      final currentScope = SessionStore.instance.hasSession
+          ? (SessionStore.instance.user?.userId ?? '__authenticated__')
+          : '__guest__';
+      if (_disposed || currentScope != startScope) return;
       save(file);
       _set(f, ArtifactJob(ArtifactState.saved, file: file.name));
     } catch (e, st) {
+      if (_disposed) return;
       debugPrint('Export ${f.name} failed: $e\n$st');
       _set(f, const ArtifactJob(ArtifactState.failed));
     }

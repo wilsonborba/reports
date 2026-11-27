@@ -1,10 +1,13 @@
 // Cache-only focused behavior repro. No screenshots or live services.
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:reports_ui/export/artifact_jobs.dart';
+import 'package:reports_ui/export/export_plan.dart';
 import 'package:reports_ui/export/report_artifacts.dart';
 import 'package:reports_ui/main.dart';
 import 'package:reports_ui/services/auth_service.dart';
@@ -287,6 +290,7 @@ void main() {
       ],
       'filters': <Object?>[],
     };
+    Completer<http.Response>? guestCompleter;
     final client = MockClient((request) async {
       var path = request.url.path;
       if (path.startsWith(FakeApi.prefix)) {
@@ -326,8 +330,13 @@ void main() {
       if (path == '/me/items/secret') {
         return http.Response(jsonEncode({'code': 'forbidden'}), 403);
       }
-      if (path == '/projects/cortex/reports/private' &&
-          SessionStore.instance.hasSession) {
+      if (path == '/projects/cortex/reports/private') {
+        if (!SessionStore.instance.hasSession) {
+          if (guestCompleter != null) {
+            return await guestCompleter!.future;
+          }
+          return http.Response(jsonEncode({'code': 'forbidden'}), 403);
+        }
         return http.Response(
           jsonEncode({
             'project': 'cortex',
@@ -353,6 +362,9 @@ void main() {
         );
       }
       if (path == '/projects/cortex/reports/private/datasets/secret') {
+        if (!SessionStore.instance.hasSession) {
+          return http.Response(jsonEncode({'code': 'forbidden'}), 403);
+        }
         return http.Response(
           jsonEncode({
             ...descriptor,
@@ -419,11 +431,29 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('A_PRIVATE_ROW_ONLY'), findsOneWidget);
+        expect(find.text('Private fixture dataset'), findsWidgets);
 
+        // Prepare held guest response to simulate slow in-flight replacement
+        guestCompleter = Completer<http.Response>();
         session.markExpired();
+
+        // Pump single frame to transition state; guest request is now in-flight
+        await tester.pump();
+
+        // While replacement guest request is in-flight, private row and title must disappear immediately
+        expect(find.text('A_PRIVATE_ROW_ONLY'), findsNothing);
+        expect(find.text('Private fixture dataset'), findsNothing);
+        expect(find.byType(CircularProgressIndicator), findsWidgets);
+
+        // Release the held guest response (403 forbidden)
+        guestCompleter!.complete(
+          http.Response(jsonEncode({'code': 'forbidden'}), 403),
+        );
         await tester.pumpAndSettle();
+
         expect(session.hasSession, isFalse);
         expect(find.text('A_PRIVATE_ROW_ONLY'), findsNothing);
+        expect(find.text('Private fixture dataset'), findsNothing);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         SessionStore.instance = previousSession;
@@ -454,5 +484,38 @@ void main() {
       throwsA(isA<Exception>()),
       reason: 'Export must abort when session scope changes or expires',
     );
+  });
+
+  test('artifact jobs suppress save callback when scope changes mid-export or job is disposed', () async {
+    final api = ApiClient(baseUrl: FakeApi.base, client: MockClient((_) async => http.Response('{}', 200)));
+    final session = SessionStore(api: api, cookieReader: (_) => null);
+    SessionStore.instance = session;
+    session.setForTest(
+      const SessionUser(userId: '11111111-1111-4111-8111-111111111111'),
+    );
+
+    final exportCompleter = Completer<ExportFile>();
+    final savedFiles = <ExportFile>[];
+    final jobs = ArtifactJobs(
+      runner: (_, _) => exportCompleter.future,
+      save: (f) => savedFiles.add(f),
+    );
+
+    // Start export
+    unawaited(jobs.start(ArtifactFormat.csv, preparing: 'Preparing CSV'));
+    expect(jobs.busy, isTrue);
+
+    // Session expires while export is running mid-encode
+    session.markExpired();
+
+    // Export completes and returns valid file
+    exportCompleter.complete(
+      ExportFile('test.csv', Uint8List.fromList([1, 2, 3]), 'text/csv'),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    // The save callback must never be invoked
+    expect(savedFiles, isEmpty, reason: 'Save callback must never be invoked after scope transition');
+    expect(jobs.job(ArtifactFormat.csv).state, isNot(ArtifactState.saved));
   });
 }
