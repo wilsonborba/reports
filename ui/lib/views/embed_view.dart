@@ -18,14 +18,31 @@ class EmbedView extends StatefulWidget {
 }
 class _EmbedViewState extends State<EmbedView> {
   late final service=ReportService(ReportService.instance.api,publicOnly:true);
-  late final Future<ReportView> report = load();
-  Future<ReportView> load() async {
+  late Future<ReportView> report = load();
+  Future<ReportView> load({bool force = false}) async {
     await CatalogService.instance.project(widget.project,lang:widget.language);
-    return service.report(widget.project,widget.report,lang:widget.language);
+    return service.report(widget.project,widget.report,lang:widget.language,forceRefresh:force);
+  }
+  @override
+  void didUpdateWidget(EmbedView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if(oldWidget.project!=widget.project || oldWidget.report!=widget.report || oldWidget.dataset!=widget.dataset || oldWidget.language!=widget.language || oldWidget.query!=widget.query) {
+      setState(() {
+        report = load(force: true);
+      });
+    }
   }
   @override Widget build(BuildContext context) => FutureBuilder<ReportView>(future:report,builder:(context,snapshot) {
-    if(snapshot.hasError) return const Scaffold(body:Center(child:Icon(Icons.error_outline)));
-    if(!snapshot.hasData) return const Scaffold(body:Center(child:CircularProgressIndicator()));
+    if(snapshot.hasError) {
+      return Scaffold(body:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
+        const Icon(Icons.error_outline),
+        const SizedBox(height:8),
+        TextButton.icon(key:const Key('embed_retry'),onPressed:()=>setState((){report=load(force:true);}),icon:const Icon(Icons.refresh_rounded,size:14),label:const Text('Retry'))
+      ])));
+    }
+    if(!snapshot.hasData) {
+      return const Scaffold(body:Center(child:CircularProgressIndicator()));
+    }
     final view=snapshot.data!;
     final visual=DatasetFullView.visualOf(widget.query['visual']);
     final slot=LayoutRegistry.sectionsFor(view).expand((s)=>s).where((s)=>s.datasetId==widget.dataset && (visual==null || s.visual==visual)).firstOrNull ?? Slot(widget.dataset,visual:visual ?? Visual.auto);

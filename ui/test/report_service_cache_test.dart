@@ -91,4 +91,32 @@ void main() {
     await service.dataset('cortex', 'report_1', 'a1', lang: 'en', limit: 10);
     expect(api.calls['/projects/cortex/showcase/report_1/cards/a1'], greaterThan(initialCalls));
   });
+
+  testWidgets('consumer reload lifecycle demonstrates two different snapshots on dataset update', (tester) async {
+    final api = FakeApi();
+    // Snapshot 1 has 3 rows per dataset
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 3, prefix: 'd');
+    api.install(withSession: false);
+
+    final service = ReportService(ApiClient(client: api.client));
+
+    // First snapshot access: returns 3 rows
+    final page1 = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
+    expect(page1.rows.length, equals(3));
+
+    // Producer data changes on server (Snapshot 2 with 5 rows)
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 5, prefix: 'd');
+
+    // Before reload/invalidation: cached service still returns Snapshot 1
+    final cachedPage = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
+    expect(cachedPage.rows.length, equals(3));
+
+    // Invalidate / forceRefresh reload lifecycle invoked
+    service.invalidateDataset('cortex', 'report_1', 'd1');
+
+    // Next consumer access receives fresh Snapshot 2 with 5 rows
+    final page2 = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
+    expect(page2.rows.length, equals(5));
+    expect(page2.rows.length, isNot(equals(page1.rows.length)));
+  });
 }

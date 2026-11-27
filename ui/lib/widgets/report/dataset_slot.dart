@@ -79,7 +79,8 @@ class _DatasetSlotState extends State<DatasetSlot> {
     if (oldWidget.project != widget.project ||
         oldWidget.report != widget.report ||
         oldWidget.slot.key != widget.slot.key ||
-        oldWidget.slot.datasetId != widget.slot.datasetId) {
+        oldWidget.slot.datasetId != widget.slot.datasetId ||
+        oldWidget.view != widget.view) {
       _filters =
           widget.initialFilters ??
           CardFilterState.instance.get(
@@ -91,6 +92,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
       _asTable = widget.initialTable;
       _last = null;
       _key = null;
+      _load(widget.language ?? '', force: true);
     }
   }
 
@@ -235,9 +237,29 @@ class _DatasetSlotState extends State<DatasetSlot> {
         final data = snap.hasData ? snap.data : (loading ? _last : null);
         final Widget body;
         if (snap.hasError) {
-          body = Text(
-            context.tr('error_loading'),
-            style: TextStyle(color: p.negative),
+          body = Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  context.tr('error_loading'),
+                  style: TextStyle(color: p.negative),
+                ),
+                const SizedBox(height: 8),
+                track(
+                  'dataset.error.retry',
+                  TextButton.icon(
+                    key: const Key('card_error_retry'),
+                    onPressed: () => setState(() {
+                      _key = null;
+                      _load(widget.language ?? context.langCode, force: true);
+                    }),
+                    icon: const Icon(Icons.refresh_rounded, size: 14),
+                    label: Text(context.tr('retry')),
+                  ),
+                ),
+              ],
+            ),
           );
         } else if (data == null) {
           body = const SizedBox(height: 120);
