@@ -300,18 +300,151 @@ def build_bundle() -> dict:
     }
 
 
-def apply_bundle(engine: Engine, project: str) -> None:
-    bundle = build_bundle()
+def schema_fields_equal(a_fields: list[dict], b_fields: list[dict]) -> bool:
+    def normalize(fields: list[dict]):
+        return sorted(
+            [
+                (
+                    f.get("path"),
+                    f.get("type") or f.get("field_type"),
+                    bool(f.get("required", False)),
+                )
+                for f in fields
+            ]
+        )
+
+    return normalize(a_fields) == normalize(b_fields)
+
+
+def calculation_definitions_equal(existing: dict, target: dict) -> bool:
+    if existing == target:
+        return True
+    for key in ("title", "source", "latest_snapshot", "where", "stages", "fields"):
+        if key in target and existing.get(key) != target[key]:
+            return False
+    return True
+
+
+def reconcile_schema(
+    engine: Engine, project: str, schema_name: str, target_fields: list[dict]
+) -> int:
+    existing_schemas = engine.get(f"/admin/projects/{project}/schemas")
+    versions = [s for s in existing_schemas if s.get("schema_name") == schema_name]
+    versions.sort(key=lambda x: x.get("version", 0))
+
+    # 1. Exact matching published version: already immutable and complete.
+    for s in versions:
+        if s.get("status") == "published" and schema_fields_equal(
+            s.get("fields", []), target_fields
+        ):
+            return s["version"]
+
+    # 2. Exact matching draft version: publish it.
+    for s in versions:
+        if s.get("status") == "draft" and schema_fields_equal(
+            s.get("fields", []), target_fields
+        ):
+            v = s["version"]
+            engine.request(
+                "POST",
+                f"/projects/{project}/admin/schemas/{schema_name}/versions/{v}/publish",
+                {},
+            )
+            return v
+
+    # 3. Existing draft version that can be updated to target fields.
+    drafts = [s for s in versions if s.get("status") == "draft"]
+    if drafts:
+        v = drafts[-1]["version"]
+        engine.request(
+            "POST",
+            f"/projects/{project}/admin/schemas",
+            {"schema_name": schema_name, "version": v, "fields": target_fields},
+        )
+        engine.request(
+            "POST",
+            f"/projects/{project}/admin/schemas/{schema_name}/versions/{v}/publish",
+            {},
+        )
+        return v
+
+    # 4. No matching version and no draft: create next draft and publish.
+    req_body: dict = {"schema_name": schema_name, "fields": target_fields}
+    if not versions:
+        req_body["version"] = SCHEMA_VERSION
+    saved = engine.request("POST", f"/projects/{project}/admin/schemas", req_body)
+    v = saved.get("version", SCHEMA_VERSION)
     engine.request(
         "POST",
-        f"/projects/{project}/admin/schemas",
-        {"schema_name": SCHEMA_NAME, "fields": SCHEMA_FIELDS},
-    )
-    engine.request(
-        "POST",
-        f"/projects/{project}/admin/schemas/{SCHEMA_NAME}/versions/{SCHEMA_VERSION}/publish",
+        f"/projects/{project}/admin/schemas/{schema_name}/versions/{v}/publish",
         {},
     )
+    return v
+
+
+def reconcile_calculation(
+    engine: Engine,
+    project: str,
+    calc_id: str,
+    target_def: dict,
+    existing_calcs: list[dict],
+) -> int:
+    versions = [c for c in existing_calcs if c.get("calculation_id") == calc_id]
+    versions.sort(key=lambda x: x.get("version", 0))
+
+    # 1. Exact matching published version: already immutable and complete.
+    for c in versions:
+        if c.get("status") == "published" and calculation_definitions_equal(
+            c.get("definition", {}), target_def
+        ):
+            return c["version"]
+
+    # 2. Exact matching draft version: publish it.
+    for c in versions:
+        if c.get("status") == "draft" and calculation_definitions_equal(
+            c.get("definition", {}), target_def
+        ):
+            v = c["version"]
+            engine.request(
+                "POST",
+                f"/projects/{project}/admin/calculations/{calc_id}/versions/{v}/publish",
+                {},
+            )
+            return v
+
+    # 3. Existing draft version that can be updated to target definition.
+    drafts = [c for c in versions if c.get("status") == "draft"]
+    if drafts:
+        v = drafts[-1]["version"]
+        engine.request(
+            "POST",
+            f"/projects/{project}/admin/calculations",
+            {"calculation_id": calc_id, "version": v, "definition": target_def},
+        )
+        engine.request(
+            "POST",
+            f"/projects/{project}/admin/calculations/{calc_id}/versions/{v}/publish",
+            {},
+        )
+        return v
+
+    # 4. No matching version and no draft: create next draft and publish.
+    req_body: dict = {"calculation_id": calc_id, "definition": target_def}
+    if not versions:
+        req_body["version"] = 1
+    saved = engine.request("POST", f"/projects/{project}/admin/calculations", req_body)
+    v = saved.get("version", 1)
+    engine.request(
+        "POST",
+        f"/projects/{project}/admin/calculations/{calc_id}/versions/{v}/publish",
+        {},
+    )
+    return v
+
+
+def apply_bundle(engine: Engine, project: str) -> None:
+    bundle = build_bundle()
+    reconcile_schema(engine, project, SCHEMA_NAME, SCHEMA_FIELDS)
     engine.request(
         "PUT",
         f"/projects/{project}/admin/reports/{REPORT_ID}",
@@ -320,17 +453,15 @@ def apply_bundle(engine: Engine, project: str) -> None:
             "visibility": bundle["report"]["visibility"],
         },
     )
+    existing_calcs = engine.get(f"/admin/projects/{project}/calculations")
     for order, ds in enumerate(bundle["datasets"], start=1):
         ds_id = ds["id"]
-        engine.request(
-            "POST",
-            f"/projects/{project}/admin/calculations",
-            {"calculation_id": ds_id, "definition": ds["calculation"]},
-        )
-        engine.request(
-            "POST",
-            f"/projects/{project}/admin/calculations/{ds_id}/versions/1/publish",
-            {},
+        calc_version = reconcile_calculation(
+            engine,
+            project,
+            ds_id,
+            ds["calculation"],
+            existing_calcs,
         )
         engine.request(
             "PUT",
@@ -338,7 +469,7 @@ def apply_bundle(engine: Engine, project: str) -> None:
             {
                 "visibility": "public",
                 "calculation_id": ds_id,
-                "calculation_version": 1,
+                "calculation_version": calc_version,
                 "visual": ds["visual"],
                 "card_order": order,
             },
