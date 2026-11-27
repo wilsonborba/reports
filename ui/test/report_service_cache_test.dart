@@ -1,6 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:reports_ui/layouts/report_layout.dart';
 import 'package:reports_ui/services/api_client.dart';
 import 'package:reports_ui/services/report_service.dart';
+import 'package:reports_ui/themes/reports_theme.dart';
+import 'package:reports_ui/views/embed_view.dart';
+import 'package:reports_ui/widgets/report/dataset_slot.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'support/fake_api.dart';
 
@@ -93,30 +98,150 @@ void main() {
   });
 
   testWidgets('consumer reload lifecycle demonstrates two different snapshots on dataset update', (tester) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
     final api = FakeApi();
-    // Snapshot 1 has 3 rows per dataset
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 3, prefix: 'd');
+    api.install(withSession: false);
+
+    var query = {'view': 'table'};
+    late StateSetter updateState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ReportsTheme.palette(Brightness.light).toTheme(Brightness.light),
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            updateState = setState;
+            return Scaffold(
+              body: EmbedView(
+                key: const Key('embed_consumer'),
+                project: 'cortex',
+                report: 'report_1',
+                dataset: 'd1',
+                language: 'en',
+                query: query,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Snapshot 1 (3 rows): row 12 exists, row 14 does not exist
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('14'), findsNothing);
+
+    // Producer data changes on server to Snapshot 2 (5 rows)
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 5, prefix: 'd');
+
+    // Trigger reload lifecycle via consumer update (changed query parameter)
+    updateState(() {
+      query = {'view': 'table', 'reload': '1'};
+    });
+    await tester.pumpAndSettle();
+
+    // Snapshot 2 (5 rows): row 14 is now visible without manual test-only cache invalidation!
+    expect(find.text('14'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('DatasetSlot didUpdateWidget reloads with forceRefresh when view changes', (tester) async {
+    final api = FakeApi();
     api.withReport('cortex', 'report_1', 1, rowsPerDataset: 3, prefix: 'd');
     api.install(withSession: false);
 
     final service = ReportService(ApiClient(client: api.client));
+    final viewA = await service.report('cortex', 'report_1', lang: 'en');
 
-    // First snapshot access: returns 3 rows
-    final page1 = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
-    expect(page1.rows.length, equals(3));
+    var currentView = viewA;
+    late StateSetter updateState;
 
-    // Producer data changes on server (Snapshot 2 with 5 rows)
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ReportsTheme.palette(Brightness.light).toTheme(Brightness.light),
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            updateState = setState;
+            return Scaffold(
+              body: DatasetSlot(
+                key: const Key('slot_consumer'),
+                project: 'cortex',
+                report: 'report_1',
+                slot: const Slot('d1', visual: Visual.table),
+                view: currentView,
+                language: 'en',
+                initialTable: true,
+                service: service,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('14'), findsNothing);
+
+    // Producer updates on server
     api.withReport('cortex', 'report_1', 1, rowsPerDataset: 5, prefix: 'd');
 
-    // Before reload/invalidation: cached service still returns Snapshot 1
-    final cachedPage = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
-    expect(cachedPage.rows.length, equals(3));
+    // Force load fresh report view from service
+    final viewB = await service.report('cortex', 'report_1', lang: 'en', forceRefresh: true);
 
-    // Invalidate / forceRefresh reload lifecycle invoked
-    service.invalidateDataset('cortex', 'report_1', 'd1');
+    // Pass new view into existing DatasetSlot widget
+    updateState(() {
+      currentView = viewB;
+    });
+    await tester.pumpAndSettle();
 
-    // Next consumer access receives fresh Snapshot 2 with 5 rows
-    final page2 = await service.dataset('cortex', 'report_1', 'd1', lang: 'en');
-    expect(page2.rows.length, equals(5));
-    expect(page2.rows.length, isNot(equals(page1.rows.length)));
+    // Row 14 is now visible through DatasetSlot reload lifecycle!
+    expect(find.text('14'), findsOneWidget);
+  });
+
+  testWidgets('consumer error retry button refetches dataset and recovers', (tester) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final api = FakeApi();
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 3, prefix: 'd');
+    api.routes['/projects/cortex/showcase/report_1/cards/d1'] = (_) => throw StateError('simulated server outage');
+    api.install(withSession: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ReportsTheme.palette(Brightness.light).toTheme(Brightness.light),
+        home: const Scaffold(
+          body: EmbedView(
+            key: Key('embed_error_test'),
+            project: 'cortex',
+            report: 'report_1',
+            dataset: 'd1',
+            language: 'en',
+            query: {'view': 'table'},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Error UI and retry button are visible
+    expect(find.byKey(const Key('card_error_retry')), findsOneWidget);
+
+    // Outage resolved on server
+    api.withReport('cortex', 'report_1', 1, rowsPerDataset: 3, prefix: 'd');
+
+    // Tap retry button
+    await tester.tap(find.byKey(const Key('card_error_retry')));
+    await tester.pumpAndSettle();
+
+    // Error is gone, data table with row 12 is visible!
+    expect(find.byKey(const Key('card_error_retry')), findsNothing);
+    expect(find.text('12'), findsOneWidget);
   });
 }

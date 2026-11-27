@@ -60,6 +60,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
   Future<SlotData>? _future;
   String? _key;
   SlotData? _last;
+  String? _currentLang;
 
   /// Active card filters; they stay in session memory for the exports.
   late Map<String, String> _filters =
@@ -92,11 +93,18 @@ class _DatasetSlotState extends State<DatasetSlot> {
       _asTable = widget.initialTable;
       _last = null;
       _key = null;
-      _load(widget.language ?? '', force: true);
+      final lang = widget.language ?? _currentLang;
+      if (lang != null && lang.isNotEmpty) {
+        _load(lang, force: true);
+      }
     }
   }
 
-  Future<SlotData> _fetch(String lang, Map<String, String> filters) async {
+  Future<SlotData> _fetch(
+    String lang,
+    Map<String, String> filters, {
+    bool forceRefresh = false,
+  }) async {
     final service = widget.service ?? ReportService.instance;
     final ids = [
       widget.slot.datasetId,
@@ -111,6 +119,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
           lang: lang,
           filters: id == widget.slot.datasetId ? filters : const {},
           limit: id == widget.slot.datasetId ? 500 : 2000,
+          forceRefresh: forceRefresh,
         ),
     ]);
     return SlotData(pages.first, {
@@ -119,6 +128,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
   }
 
   void _load(String lang, {bool force = false}) {
+    _currentLang = lang;
     final descriptor = widget.view.dataset(widget.slot.datasetId);
     if (descriptor == null || !descriptor.canView) {
       _future = null;
@@ -129,7 +139,7 @@ class _DatasetSlotState extends State<DatasetSlot> {
         '${widget.project}/${widget.report}/${widget.slot.key}/$lang/${sorted.map((k) => '$k=${_filters[k]}').join('&')}';
     if (!force && key == _key) return;
     _key = key;
-    _future = _fetch(lang, _filters);
+    _future = _fetch(lang, _filters, forceRefresh: force);
   }
 
   /// Full view URL with the visual, the chart or table view and the card filters.

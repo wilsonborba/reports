@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/strings.dart';
 import '../layouts/report_layout.dart';
 import '../models/report.dart';
 import '../services/catalog_service.dart';
@@ -37,7 +38,7 @@ class _EmbedViewState extends State<EmbedView> {
       return Scaffold(body:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
         const Icon(Icons.error_outline),
         const SizedBox(height:8),
-        TextButton.icon(key:const Key('embed_retry'),onPressed:()=>setState((){report=load(force:true);}),icon:const Icon(Icons.refresh_rounded,size:14),label:const Text('Retry'))
+        TextButton.icon(key:const Key('embed_retry'),onPressed:()=>setState((){report=load(force:true);}),icon:const Icon(Icons.refresh_rounded,size:14),label:Text(context.tr('retry')))
       ])));
     }
     if(!snapshot.hasData) {
