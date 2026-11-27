@@ -444,6 +444,29 @@ class TestAggregatesRepeatability(unittest.TestCase):
             calc_vers = self.engine.calculations.get((self.project, cid), [])
             self.assertEqual(calc_vers[0]["input_schema_version"], 1)
 
+    def test_schema_v1_pin_incompatibility_fails_clearly(self):
+        """Incompatible published schema v1 must raise RuntimeError, preserving producer v1 pin without writes."""
+        incompatible_fields = [
+            {"path": "snapshot_id", "type": "string", "required": True},
+            {"path": "incompatible_field", "type": "integer", "required": True},
+        ]
+        self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
+            {
+                "project": self.project,
+                "schema_name": aggregates.SCHEMA_NAME,
+                "version": 1,
+                "status": "published",
+                "fields": incompatible_fields,
+            }
+        ]
+        self.engine.call_log.clear()
+
+        with self.assertRaises(RuntimeError) as ctx:
+            aggregates.apply_bundle(self.engine, self.project)
+        self.assertIn("cannot mutate pinned producer schema version 1", str(ctx.exception))
+        posts = [c for c in self.engine.call_log if c[0] == "POST"]
+        self.assertEqual(len(posts), 0)
+
     def test_missing_v1_only_v2_fails_clearly_without_post(self):
         """If v1 is missing and only v2 exists, fails with RuntimeError and sends zero POSTs."""
         self.engine.schemas[(self.project, aggregates.SCHEMA_NAME)] = [
